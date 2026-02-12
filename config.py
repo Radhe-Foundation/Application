@@ -1,0 +1,253 @@
+"""
+Vernika - Configuration Module
+Industry-Level Human Resource Management System
+
+This module contains all configuration settings for the application.
+Settings can be overridden using environment variables.
+"""
+
+import os
+from pathlib import Path
+from typing import Optional
+from dotenv import load_dotenv
+
+# Load environment variables from .env file
+load_dotenv()
+
+# ==================== APPLICATION INFO ====================
+APP_NAME = "Vernika"
+APP_VERSION = "1.0.0"
+APP_DESCRIPTION = "Industry-Level Human Resource Management System"
+
+# ==================== DATABASE CONFIGURATION ====================
+
+# Database type: postgresql or sqlite
+# Default to SQLite for local development, PostgreSQL for production
+DATABASE_TYPE = os.getenv("DATABASE_TYPE", "sqlite")
+
+# PostgreSQL configuration (for cloud database)
+DATABASE_URL = os.getenv("DATABASE_URL", "")
+DB_HOST = os.getenv("DB_HOST", "")
+DB_PORT = int(os.getenv("DB_PORT", "5432"))
+DB_NAME = os.getenv("DB_NAME", "postgres")
+DB_USER = os.getenv("DB_USER", "postgres")
+DB_PASSWORD = os.getenv("DB_PASSWORD", "")
+DB_SSL_MODE = os.getenv("DB_SSL_MODE", "require")
+DB_SSL_CERT = os.getenv("DB_SSL_CERT", "None")
+
+# SQLite configuration (for local development)
+DATABASE_PATH = os.getenv("DATABASE_PATH", "vernika.db")
+
+# Build DATABASE_URL based on configuration
+if DATABASE_TYPE == "postgresql":
+    if not DATABASE_URL:
+        if DB_HOST:
+            DATABASE_URL = f"postgresql://{DB_USER}:{DB_PASSWORD}@{DB_HOST}:{DB_PORT}/{DB_NAME}"
+        else:
+            # Fallback to SQLite if PostgreSQL credentials not provided
+            print("⚠️  PostgreSQL credentials not found, falling back to SQLite")
+            DATABASE_TYPE = "sqlite"
+            DATABASE_URL = f"sqlite:///{DATABASE_PATH}"
+else:
+    # SQLite (default for local development)
+    DATABASE_URL = f"sqlite:///{DATABASE_PATH}"
+
+# MySQL configuration (for production)
+# DATABASE_URL = os.getenv("DATABASE_URL", "mysql+pymysql://user:pass@localhost/vernika")
+
+# Database pool settings
+DB_POOL_SIZE = int(os.getenv("DB_POOL_SIZE", "5"))
+DB_MAX_OVERFLOW = int(os.getenv("DB_MAX_OVERFLOW", "10"))
+DB_POOL_RECYCLE = int(os.getenv("DB_POOL_RECYCLE", "3600"))
+DB_ECHO = os.getenv("DB_ECHO", "false").lower() == "true"
+
+# ==================== SECURITY CONFIGURATION ====================
+# Secret key for JWT tokens and encryption
+SECRET_KEY = os.getenv(
+    "SECRET_KEY", "vernika-hra-secret-key-change-in-production-2024")
+
+# JWT settings
+ALGORITHM = "HS256"
+ACCESS_TOKEN_EXPIRE_MINUTES = int(
+    os.getenv("ACCESS_TOKEN_EXPIRE_MINUTES", "480"))  # 8 hours
+REFRESH_TOKEN_EXPIRE_DAYS = int(os.getenv("REFRESH_TOKEN_EXPIRE_DAYS", "7"))
+
+# Password settings
+HASH_ALGORITHM = "bcrypt"
+BCRYPT_ROUNDS = int(os.getenv("BCRYPT_ROUNDS", "12"))
+
+# Session settings
+SESSION_TIMEOUT_MINUTES = int(os.getenv("SESSION_TIMEOUT_MINUTES", "30"))
+MAX_LOGIN_ATTEMPTS = int(os.getenv("MAX_LOGIN_ATTEMPTS", "5"))
+LOCKOUT_DURATION_MINUTES = int(os.getenv("LOCKOUT_DURATION_MINUTES", "15"))
+
+# ==================== WINDOW CONFIGURATION ====================
+WINDOW_WIDTH = int(os.getenv("WINDOW_WIDTH", "1400"))
+WINDOW_HEIGHT = int(os.getenv("WINDOW_HEIGHT", "900"))
+WINDOW_MIN_WIDTH = int(os.getenv("WINDOW_MIN_WIDTH", "1024"))
+WINDOW_MIN_HEIGHT = int(os.getenv("WINDOW_MIN_HEIGHT", "768"))
+WINDOW_RESIZABLE = os.getenv("WINDOW_RESIZABLE", "true").lower() == "true"
+WINDOW_MAXIMIZED = os.getenv("WINDOW_MAXIMIZED", "true").lower() == "true"
+
+# ==================== THEME CONFIGURATION ====================
+# Primary colors (Material Design 3 palette)
+THEME_PRIMARY = "#2E86AB"  # Teal blue
+THEME_SECONDARY = "#A23B72"  # Pink/magenta
+THEME_TERTIARY = "#0B6E99"  # Darker teal
+
+# Background colors
+THEME_BACKGROUND = "#F8F9FA"  # Light gray
+THEME_SURFACE = "#FFFFFF"  # White
+THEME_SURFACE_VARIANT = "#E8E8E8"  # Light surface variant
+
+# Text colors
+THEME_ON_PRIMARY = "#FFFFFF"
+THEME_ON_SECONDARY = "#FFFFFF"
+THEME_ON_BACKGROUND = "#212529"
+THEME_ON_SURFACE = "#212529"
+THEME_ON_SURFACE_VARIANT = "#6C757D"
+
+# Status colors
+THEME_SUCCESS = "#28A745"  # Green
+THEME_WARNING = "#FFC107"  # Yellow/amber
+THEME_ERROR = "#DC3545"  # Red
+THEME_INFO = "#17A2B8"  # Blue
+
+# Dark theme colors (optional)
+THEME_DARK_PRIMARY = "#5EADCC"
+THEME_DARK_BACKGROUND = "#121212"
+THEME_DARK_SURFACE = "#1E1E1E"
+
+# Default theme mode
+THEME_MODE = os.getenv("THEME_MODE", "light")  # "light" or "dark"
+
+# ==================== COMPANY CONFIGURATION ====================
+COMPANY_NAME = os.getenv("COMPANY_NAME", "Vernika Technologies")
+COMPANY_ADDRESS = os.getenv("COMPANY_ADDRESS", "")
+COMPANY_PHONE = os.getenv("COMPANY_PHONE", "")
+COMPANY_EMAIL = os.getenv("COMPANY_EMAIL", "hr@vernika.com")
+COMPANY_WEBSITE = os.getenv("COMPANY_WEBSITE", "")
+
+# ==================== WORKING HOURS CONFIGURATION ====================
+DEFAULT_WORKING_HOURS_START = os.getenv("WORKING_HOURS_START", "09:00")
+DEFAULT_WORKING_HOURS_END = os.getenv("WORKING_HOURS_END", "18:00")
+DEFAULT_LUNCH_BREAK_START = os.getenv("LUNCH_BREAK_START", "13:00")
+DEFAULT_LUNCH_BREAK_END = os.getenv("LUNCH_BREAK_END", "14:00")
+WORKING_DAYS = [0, 1, 2, 3, 4]  # Monday to Friday (0=Monday, 6=Sunday)
+
+# ==================== LEAVE POLICY CONFIGURATION ====================
+DEFAULT_ANNUAL_LEAVE_DAYS = int(os.getenv("DEFAULT_ANNUAL_LEAVE", "20"))
+DEFAULT_SICK_LEAVE_DAYS = int(os.getenv("DEFAULT_SICK_LEAVE", "10"))
+DEFAULT_PERSONAL_LEAVE_DAYS = int(os.getenv("DEFAULT_PERSONAL_LEAVE", "5"))
+LEAVE_APPROVAL_REQUIRED = os.getenv(
+    "LEAVE_APPROVAL_REQUIRED", "true").lower() == "true"
+MAX_CONSECUTIVE_LEAVE_DAYS = int(os.getenv("MAX_CONSECUTIVE_LEAVE", "10"))
+
+# ==================== FILE UPLOAD CONFIGURATION ====================
+UPLOAD_DIR = os.getenv("UPLOAD_DIR", "uploads")
+MAX_UPLOAD_SIZE_MB = int(os.getenv("MAX_UPLOAD_SIZE_MB", "10"))
+ALLOWED_IMAGE_EXTENSIONS = [".jpg", ".jpeg", ".png", ".gif", ".webp"]
+ALLOWED_DOCUMENT_EXTENSIONS = [".pdf", ".doc",
+                               ".docx", ".xls", ".xlsx", ".ppt", ".pptx"]
+
+# Profile picture settings
+PROFILE_PIC_MAX_SIZE_MB = int(os.getenv("PROFILE_PIC_MAX_SIZE", "2"))
+PROFILE_PIC_DIMENSIONS = (300, 300)
+
+# ==================== REPORT CONFIGURATION ====================
+REPORT_OUTPUT_DIR = os.getenv("REPORT_OUTPUT_DIR", "reports")
+DEFAULT_REPORT_FORMAT = os.getenv(
+    "DEFAULT_REPORT_FORMAT", "pdf")  # "pdf" or "csv"
+
+# ==================== LOGGING CONFIGURATION ====================
+LOG_LEVEL = os.getenv("LOG_LEVEL", "INFO")
+LOG_FORMAT = "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
+LOG_FILE = os.getenv("LOG_FILE", "vernika.log")
+LOG_FILE_MAX_SIZE_MB = int(os.getenv("LOG_FILE_MAX_SIZE", "10"))
+LOG_BACKUP_COUNT = int(os.getenv("LOG_BACKUP_COUNT", "5"))
+
+# ==================== LOCALIZATION ====================
+TIMEZONE = os.getenv("TIMEZONE", "Asia/Kolkata")
+DATE_FORMAT = os.getenv("DATE_FORMAT", "%Y-%m-%d")
+TIME_FORMAT = os.getenv("TIME_FORMAT", "%H:%M")
+DATETIME_FORMAT = os.getenv("DATETIME_FORMAT", "%Y-%m-%d %H:%M")
+
+# ==================== API CONFIGURATION (Future Web Support) ====================
+API_HOST = os.getenv("API_HOST", "0.0.0.0")
+API_PORT = int(os.getenv("API_PORT", "8000"))
+API_DEBUG = os.getenv("API_DEBUG", "false").lower() == "true"
+API_PREFIX = "/api/v1"
+
+# CORS settings (for future web frontend)
+CORS_ORIGINS = os.getenv("CORS_ORIGINS", "*").split(",")
+CORS_ALLOW_CREDENTIALS = os.getenv(
+    "CORS_ALLOW_CREDENTIALS", "true").lower() == "true"
+
+# ==================== FEATURE FLAGS ====================
+FEATURE_MULTI_BRANCH = os.getenv(
+    "FEATURE_MULTI_BRANCH", "false").lower() == "true"
+FEATURE_OVERTIME_TRACKING = os.getenv(
+    "FEATURE_OVERTIME_TRACKING", "true").lower() == "true"
+FEATURE_PERFORMANCE_REVIEWS = os.getenv(
+    "FEATURE_PERFORMANCE_REVIEWS", "true").lower() == "true"
+FEATURE_DOCUMENT_MANAGEMENT = os.getenv(
+    "FEATURE_DOCUMENT_MANAGEMENT", "true").lower() == "true"
+FEATURE_ANNOUNCEMENTS = os.getenv(
+    "FEATURE_ANNOUNCEMENTS", "true").lower() == "true"
+FEATURE_ATTENDANCE_GPS = os.getenv(
+    "FEATURE_ATTENDANCE_GPS", "false").lower() == "true"
+
+# ==================== DEFAULT USER ACCOUNTS ====================
+# These are for initial setup only - should be changed in production
+DEFAULT_ADMIN_USERNAME = os.getenv("DEFAULT_ADMIN_USERNAME", "admin")
+DEFAULT_ADMIN_EMAIL = os.getenv("DEFAULT_ADMIN_EMAIL", "admin@vernika.com")
+DEFAULT_ADMIN_PASSWORD = os.getenv("DEFAULT_ADMIN_PASSWORD", "admin@123")
+DEFAULT_HR_USERNAME = os.getenv("DEFAULT_HR_USERNAME", "hr")
+DEFAULT_HR_EMAIL = os.getenv("DEFAULT_HR_EMAIL", "hr@vernika.com")
+DEFAULT_HR_PASSWORD = os.getenv("DEFAULT_HR_PASSWORD", "hr@123")
+
+# ==================== ASSETS PATH ====================
+# Resolve absolute paths for assets
+BASE_DIR = Path(__file__).resolve().parent
+ASSETS_DIR = BASE_DIR / "assets"
+LOGO_DIR = ASSETS_DIR / "logo"
+PROFILE_PHOTOS_DIR = ASSETS_DIR / "profile_photos"
+DOCUMENTS_DIR = ASSETS_DIR / "documents"
+
+# Create directories if they don't exist
+for directory in [ASSETS_DIR, LOGO_DIR, PROFILE_PHOTOS_DIR, DOCUMENTS_DIR]:
+    directory.mkdir(parents=True, exist_ok=True)
+
+# ==================== HELPERS ====================
+
+
+def get_database_url() -> str:
+    """Get the database URL based on configuration"""
+    if DATABASE_TYPE == "sqlite":
+        return f"sqlite:///{DATABASE_PATH}"
+    elif DATABASE_TYPE == "postgresql":
+        return os.getenv("DATABASE_URL", "postgresql://user:pass@localhost/vernika")
+    elif DATABASE_TYPE == "mysql":
+        return os.getenv("DATABASE_URL", "mysql+pymysql://user:pass@localhost/vernika")
+    else:
+        raise ValueError(f"Unsupported database type: {DATABASE_TYPE}")
+
+
+def is_development() -> bool:
+    """Check if running in development mode"""
+    return os.getenv("ENVIRONMENT", "development").lower() == "development"
+
+
+def is_production() -> bool:
+    """Check if running in production mode"""
+    return os.getenv("ENVIRONMENT", "development").lower() == "production"
+
+
+# ==================== VERSION INFO ====================
+VERSION_INFO = {
+    "major": 1,
+    "minor": 0,
+    "patch": 0,
+    "string": APP_VERSION,
+    "full": f"{APP_NAME} v{APP_VERSION}"
+}
