@@ -1,6 +1,6 @@
 """
 Vernika HRA - Leaves Management Screen - Fixed for Flet 0.80+
-Updated to use SQLAlchemy operations
+Updated with view_mode support: admin (manage all) or employee (self only)
 """
 
 import flet as ft
@@ -10,99 +10,61 @@ from database.models import LeaveRequest, Employee, LeaveStatus, LeaveTypeConfig
 from database.operations import (
     get_all_employees, get_leave_requests, get_leave_type_configs,
     get_employee_by_id, create_leave_request, approve_leave_request,
-    reject_leave_request, get_employee_leave_balance
+    reject_leave_request, get_employee_leave_balance, get_user_by_id,
+    get_employee_by_user_id
 )
-
-
-class DatePickerField(ft.Container):
-    """Custom Date Picker Field with integrated picker"""
-
-    def __init__(self, label="Date", width=200, value=None, **kwargs):
-        super().__init__(**kwargs)
-        self.width = width
-        self.date_value = value
-
-        self.text_field = ft.TextField(
-            label=label,
-            width=width - 50,
-            value=value if value else "",
-            read_only=True,
-            hint_text="YYYY-MM-DD"
-        )
-
-        self.picker_button = ft.IconButton(
-            icon=ft.Icons.CALENDAR_MONTH,
-            on_click=self._show_picker,
-            tooltip="Select date"
-        )
-
-        self.content = ft.Row([
-            self.text_field,
-            self.picker_button
-        ], spacing=0)
-
-        # DatePicker control
-        self.date_picker = ft.DatePicker(
-            on_change=self._on_date_change,
-            first_date=datetime(1950, 1, 1),
-            last_date=datetime(2100, 12, 31),
-        )
-
-        # Add picker to page overlay when dialog opens
-        self._page = None
-
-    def _show_picker(self, e):
-        if self._page:
-            if self.date_value:
-                # Set picker date if we have a value
-                try:
-                    dt = datetime.strptime(self.date_value, '%Y-%m-%d')
-                    self.date_picker.value = dt
-                except:
-                    pass
-            self._page.overlay.append(self.date_picker)
-            self.date_picker.open = True
-            self._page.update()
-
-    def _on_date_change(self, e):
-        if e.control.value:
-            self.date_value = e.control.value.strftime('%Y-%m-%d')
-            self.text_field.value = self.date_value
-            if self._page:
-                # Remove picker from overlay
-                self._page.overlay.remove(self.date_picker)
-                self._page.update()
-
-    @property
-    def value(self):
-        return self.date_value
-
-    @value.setter
-    def value(self, val):
-        self.date_value = val
-        self.text_field.value = val if val else ""
+from components.forms import DatePickerField
 
 
 class LeavesScreen(ft.Container):
-    def __init__(self, page, user):
+    def __init__(self, page, user, view_mode="admin"):
+        """
+        LeavesScreen constructor.
+
+        Args:
+            page: Flet page object
+            user: Current user dictionary
+            view_mode: "admin" for admin view (manage all), "employee" for employee view (self only)
+        """
         super().__init__()
         self._page = page
         self.user = user
+        self.view_mode = view_mode
         self.expand = True
         self.bgcolor = "#F5F5F5"
+
+        # Get current user ID and their linked employee ID
+        self.user_id = None
+        self.employee_id = None
+        if isinstance(user, dict):
+            self.user_id = user.get('id')
+            # Try to get the linked employee
+            if self.user_id:
+                try:
+                    db = get_db_session()
+                    emp = get_employee_by_user_id(db, self.user_id)
+                    if emp:
+                        self.employee_id = int(emp.id)
+                    db.close()
+                except Exception as e:
+                    print(f"Error getting employee ID: {e}")
+
         self.content = self._build_content()
 
     def _build_content(self):
+        # Header title based on view mode
+        title = "Leave Management" if self.view_mode == "admin" else "My Time Off"
+
         header = ft.Container(
             padding=15,
-            bgcolor="#9C27B0",
+            bgcolor="#9C27B0" if self.view_mode == "admin" else "#009688",
             content=ft.Row([
                 ft.IconButton(
                     icon=ft.Icons.ARROW_BACK,
                     icon_color="WHITE",
                     on_click=self.on_back
                 ),
-                ft.Text("Leave Management", size=18,
+                ft.Text(title, size=18,
                         color="WHITE", weight=ft.FontWeight.BOLD),
                 ft.Container(expand=True),
                 ft.ElevatedButton(
@@ -114,12 +76,17 @@ class LeavesScreen(ft.Container):
             ])
         )
 
-        # Load leave requests using SQLAlchemy
+        # Load leave requests based on view mode
         requests_list = []
         try:
             session = get_db_session()
             leave_requests = get_leave_requests(session, limit=100)
+
             for lr in leave_requests:
+                # In employee mode, only show current user's requests
+                if self.view_mode == "employee" and lr.employee_id != self.employee_id:
+                    continue
+
                 # Get employee name
                 employee = get_employee_by_id(session, lr.employee_id)
                 emp_name = f"{employee.first_name} {employee.last_name}" if employee else "Unknown"
@@ -149,9 +116,10 @@ class LeavesScreen(ft.Container):
             requests_list = []
 
         if not requests_list:
+            empty_message = "No leave requests yet. Apply for leave!" if self.view_mode == "employee" else "No requests. Apply one!"
             table_content = ft.Column([
                 ft.Icon(ft.Icons.EVENT_BUSY, size=64, color="#BDBDBD"),
-                ft.Text("No requests. Apply one!", size=14, color="#757575"),
+                ft.Text(empty_message, size=14, color="#757575"),
             ], horizontal_alignment=ft.CrossAxisAlignment.CENTER, expand=True)
         else:
             rows = []
@@ -161,11 +129,42 @@ class LeavesScreen(ft.Container):
                 status_val = r.get("status", "pending")
                 color = colors.get(status_val, "#9E9E9E")
 
+                # Build action buttons - only show for admin mode
+                action_cells = []
+                if self.view_mode == "admin":
+                    action_cells = [
+                        ft.DataCell(
+                            ft.Row([
+                                ft.IconButton(
+                                    icon=ft.Icons.CHECK, icon_color="#4CAF50",
+                                    on_click=lambda e, req_id=r['id']: self._update_status(
+                                        req_id, "approved"),
+                                    tooltip="Approve", visible=status_val == "pending"
+                                ),
+                                ft.IconButton(
+                                    icon=ft.Icons.CLOSE, icon_color="#F44336",
+                                    on_click=lambda e, req_id=r['id']: self._update_status(
+                                        req_id, "rejected"),
+                                    tooltip="Reject", visible=status_val == "pending"
+                                ),
+                            ], spacing=2)
+                        ),
+                    ]
+                else:
+                    # Employee view - show status only
+                    action_cells = [
+                        ft.DataCell(ft.Text(status_val.title(),
+                                    color=color, weight=ft.FontWeight.BOLD)),
+                    ]
+
+                # In employee mode, show employee name column as empty (redundant)
+                emp_name = r['emp_name'] if self.view_mode == "admin" else "My Request"
+
                 rows.append(
                     ft.DataRow(
                         cells=[
                             ft.DataCell(ft.Text(str(r['id']))),
-                            ft.DataCell(ft.Text(r['emp_name'] or "Unknown")),
+                            ft.DataCell(ft.Text(emp_name)),
                             ft.DataCell(
                                 ft.Text(str(r['start_date']) if r['start_date'] else "-")),
                             ft.DataCell(
@@ -178,35 +177,28 @@ class LeavesScreen(ft.Container):
                                     bgcolor=color, padding=5, border_radius=4
                                 )
                             ),
-                            ft.DataCell(
-                                ft.Row([
-                                    ft.IconButton(
-                                        icon=ft.Icons.CHECK, icon_color="#4CAF50",
-                                        on_click=lambda e, req_id=r['id']: self._update_status(
-                                            req_id, "approved"),
-                                        tooltip="Approve", visible=status_val == "pending"
-                                    ),
-                                    ft.IconButton(
-                                        icon=ft.Icons.CLOSE, icon_color="#F44336",
-                                        on_click=lambda e, req_id=r['id']: self._update_status(
-                                            req_id, "rejected"),
-                                        tooltip="Reject", visible=status_val == "pending"
-                                    ),
-                                ], spacing=2)
-                            ),
-                        ]
+                        ] + action_cells,
                     )
                 )
+
+            # Build columns based on view mode
+            columns = [
+                ft.DataColumn(label=ft.Text("ID")),
+                ft.DataColumn(label=ft.Text(
+                    "Employee" if self.view_mode == "admin" else "Type")),
+                ft.DataColumn(label=ft.Text("Start")),
+                ft.DataColumn(label=ft.Text("End")),
+                ft.DataColumn(label=ft.Text("Days")),
+                ft.DataColumn(label=ft.Text("Status")),
+            ]
+
+            if self.view_mode == "admin":
+                columns.append(ft.DataColumn(label=ft.Text("Actions")))
+            else:
+                columns.append(ft.DataColumn(label=ft.Text("")))
+
             table = ft.DataTable(
-                columns=[
-                    ft.DataColumn(label=ft.Text("ID")),
-                    ft.DataColumn(label=ft.Text("Employee")),
-                    ft.DataColumn(label=ft.Text("Start")),
-                    ft.DataColumn(label=ft.Text("End")),
-                    ft.DataColumn(label=ft.Text("Days")),
-                    ft.DataColumn(label=ft.Text("Status")),
-                    ft.DataColumn(label=ft.Text("Actions"))
-                ],
+                columns=columns,
                 rows=rows, expand=True,
             )
             table_content = ft.Container(
@@ -222,7 +214,9 @@ class LeavesScreen(ft.Container):
         self._show_add_dialog()
 
     def _show_add_dialog(self):
-        # Load employees and leave types using SQLAlchemy
+        # In employee mode, only allow selecting self
+        # In admin mode, allow selecting any employee
+
         employees = []
         leave_types = []
         try:
@@ -255,8 +249,18 @@ class LeavesScreen(ft.Container):
             type_options = [ft.dropdown.Option(
                 key="", text="No leave types configured")]
 
+        # In employee mode, pre-select current user
+        default_emp_value = str(self.employee_id) if self.employee_id and self.view_mode == "employee" else (
+            emp_options[0].key if emp_options else None)
+
         emp_dropdown = ft.Dropdown(
-            width=300, options=emp_options, label="Employee *")
+            width=300,
+            options=emp_options,
+            label="Employee *",
+            value=default_emp_value,
+            # Employees can only apply for themselves
+            disabled=(self.view_mode == "employee")
+        )
         type_dropdown = ft.Dropdown(
             width=250, options=type_options, label="Leave Type *")
 
@@ -374,6 +378,13 @@ class LeavesScreen(ft.Container):
         self._page.update()
 
 
-def show_leaves(page, user):
+def show_leaves(page, user, view_mode="admin"):
+    """Helper function to show leaves screen.
+
+    Args:
+        page: Flet page object
+        user: Current user dictionary
+        view_mode: "admin" for admin view, "employee" for employee view
+    """
     page.clean()
-    page.add(LeavesScreen(page, user))
+    page.add(LeavesScreen(page, user, view_mode))

@@ -5,6 +5,7 @@ Admin dashboard with full management capabilities for all modules
 
 import flet as ft
 from database.connection import get_db_session
+from database.operations import get_dashboard_stats as get_db_stats
 from auth.role_check import check_admin_access
 
 # Color constants
@@ -150,6 +151,10 @@ class AdminScreen(ft.Container):
                             icon=ft.Icons.HISTORY,
                             label="Audit"
                         ),
+                        ft.NavigationRailDestination(
+                            icon=ft.Icons.STORAGE,
+                            label="ETL"
+                        ),
                     ],
                     on_change=self._on_nav_change,
                     extended=True,
@@ -203,6 +208,7 @@ class AdminScreen(ft.Container):
             self._create_screen_access_tab,
             self._create_settings_tab,
             self._create_audit_tab,
+            self._create_etl_tab,
         ]
         if 0 <= index < len(tab_methods):
             return tab_methods[index]()
@@ -297,7 +303,9 @@ class AdminScreen(ft.Container):
                     ft.ElevatedButton(
                         "Add New User",
                         icon=ft.Icons.ADD,
-                        on_click=lambda _: self._navigate_to_tab(1),
+                        # Open the Add User dialog directly so this button
+                        # always performs a useful action.
+                        on_click=self._show_add_user_dialog,
                         style=ft.ButtonStyle(bgcolor=PRIMARY, color="white")
                     ),
                     ft.ElevatedButton(
@@ -446,7 +454,7 @@ class AdminScreen(ft.Container):
         )
 
     def _get_dashboard_stats(self):
-        """Get dashboard statistics"""
+        """Get dashboard statistics using SQLAlchemy operations"""
         stats = {
             'total_users': 0,
             'active_users': 0,
@@ -459,65 +467,11 @@ class AdminScreen(ft.Container):
             'positions': 0,
         }
         try:
-            import sqlite3
-            from datetime import datetime
-
-            conn = sqlite3.connect('vernika.db')
-            conn.row_factory = sqlite3.Row
-            cursor = conn.cursor()
-
-            # Total users
-            cursor.execute("SELECT COUNT(*) as count FROM users")
-            result = cursor.fetchone()
-            stats['total_users'] = result[0] if result else 0
-
-            # Active users
-            cursor.execute(
-                "SELECT COUNT(*) as count FROM users WHERE status = 'active'")
-            result = cursor.fetchone()
-            stats['active_users'] = result[0] if result else 0
-
-            # Total employees
-            cursor.execute(
-                "SELECT COUNT(*) as count FROM employees WHERE is_active = 1")
-            result = cursor.fetchone()
-            stats['total_employees'] = result[0] if result else 0
-
-            # Audit logs
-            cursor.execute("SELECT COUNT(*) as count FROM audit_logs")
-            result = cursor.fetchone()
-            stats['audit_logs'] = result[0] if result else 0
-
-            # Present today
-            today = datetime.now().strftime('%Y-%m-%d')
-            cursor.execute(
-                "SELECT COUNT(*) as count FROM attendances WHERE date = ? AND status = 'present'", (today,))
-            result = cursor.fetchone()
-            stats['present_today'] = result[0] if result else 0
-
-            # On leave
-            cursor.execute("""SELECT COUNT(*) as count FROM leave_requests 
-                WHERE status = 'approved' AND start_date <= ? AND end_date >= ?""", (today, today))
-            result = cursor.fetchone()
-            stats['on_leave'] = result[0] if result else 0
-
-            # Pending tasks
-            cursor.execute(
-                "SELECT COUNT(*) as count FROM tasks WHERE status NOT IN ('completed', 'cancelled')")
-            result = cursor.fetchone()
-            stats['pending_tasks'] = result[0] if result else 0
-
-            # Departments
-            cursor.execute("SELECT COUNT(*) as count FROM departments")
-            result = cursor.fetchone()
-            stats['departments'] = result[0] if result else 0
-
-            # Positions
-            cursor.execute("SELECT COUNT(*) as count FROM positions")
-            result = cursor.fetchone()
-            stats['positions'] = result[0] if result else 0
-
-            conn.close()
+            # Use SQLAlchemy operations for database access
+            db = get_db_session()
+            db_stats = get_db_stats(db)
+            stats.update(db_stats)
+            db.close()
         except Exception as e:
             print(f"Error getting stats: {e}")
         return stats
@@ -733,6 +687,14 @@ class AdminScreen(ft.Container):
             padding=ft.padding.all(10)
         )
 
+    def _create_etl_tab(self):
+        """Create ETL tab"""
+        from screens.etl_screen import ETLScreen
+        return ft.Container(
+            content=ETLScreen(self.page, self.current_user),
+            expand=True
+        )
+
     # ============ NEW TAB METHODS FOR ALL SCREENS ============
 
     def _create_chat_tab(self):
@@ -771,7 +733,8 @@ class AdminScreen(ft.Container):
         """Create attendance management tab"""
         from screens.attendance_screen import AttendanceScreen
         return ft.Container(
-            content=AttendanceScreen(self.page, self.current_user),
+            content=AttendanceScreen(
+                self.page, self.current_user, view_mode="admin"),
             expand=True
         )
 
@@ -779,7 +742,8 @@ class AdminScreen(ft.Container):
         """Create leave management tab"""
         from screens.leaves_screen import LeavesScreen
         return ft.Container(
-            content=LeavesScreen(self.page, self.current_user),
+            content=LeavesScreen(
+                self.page, self.current_user, view_mode="admin"),
             expand=True
         )
 
@@ -861,13 +825,15 @@ class AdminScreen(ft.Container):
         """Navigate to Attendance screen"""
         from screens.attendance_screen import AttendanceScreen
         self.page.clean()
-        self.page.add(AttendanceScreen(self.page, self.current_user))
+        self.page.add(AttendanceScreen(
+            self.page, self.current_user, view_mode="admin"))
 
     def _show_leaves(self, e):
         """Navigate to Leaves screen"""
         from screens.leaves_screen import LeavesScreen
         self.page.clean()
-        self.page.add(LeavesScreen(self.page, self.current_user))
+        self.page.add(LeavesScreen(
+            self.page, self.current_user, view_mode="admin"))
 
     def _show_employees(self, e):
         """Navigate to Employees screen"""
@@ -933,33 +899,124 @@ class AdminScreen(ft.Container):
         self.page.add(LoginScreen(self.page))
 
     def _show_add_user_dialog(self, e):
-        """Show add user dialog"""
+        """Show add user dialog with actual save functionality"""
+        import bcrypt
+
+        # Get roles for dropdown
+        roles = []
+        try:
+            db = get_db_session()
+            from database.models import Role
+            roles = db.query(Role).all()
+            db.close()
+        except Exception as ex:
+            print(f"Error loading roles: {ex}")
+
+        role_options = [ft.dropdown.Option(
+            str(r.id), r.display_name) for r in roles]
+        if not role_options:
+            role_options = [
+                ft.dropdown.Option("1", "Administrator"),
+                ft.dropdown.Option("2", "Employee")
+            ]
+
+        username_field = ft.TextField(label="Username *", width=300)
+        email_field = ft.TextField(label="Email *", width=300)
+        password_field = ft.TextField(
+            label="Password *", width=300, password=True)
+        role_dropdown = ft.Dropdown(
+            label="Role *", width=300, options=role_options)
+
+        error_text = ft.Text("", color=ERROR, size=12, visible=False)
+
         def close_dialog(e):
             self.page.dialog.open = False
             self.page.update()
 
         def save_user(e):
-            self._show_message("User added successfully!")
-            self.page.dialog.open = False
-            self.page.update()
+            # Validate fields
+            username = username_field.value.strip() if username_field.value else ""
+            email = email_field.value.strip() if email_field.value else ""
+            password = password_field.value.strip() if password_field.value else ""
+
+            if not username or not email or not password:
+                error_text.value = "All fields are required!"
+                error_text.visible = True
+                self.page.update()
+                return
+
+            if '@' not in email or '.' not in email:
+                error_text.value = "Please enter a valid email!"
+                error_text.visible = True
+                self.page.update()
+                return
+
+            try:
+                db = get_db_session()
+                from database.models import User, UserStatus
+
+                # Check if username exists
+                existing = db.query(User).filter(
+                    User.username == username).first()
+                if existing:
+                    error_text.value = "Username already exists!"
+                    error_text.visible = True
+                    db.close()
+                    self.page.update()
+                    return
+
+                # Check if email exists
+                existing = db.query(User).filter(User.email == email).first()
+                if existing:
+                    error_text.value = "Email already registered!"
+                    error_text.visible = True
+                    db.close()
+                    self.page.update()
+                    return
+
+                # Hash password
+                hashed = bcrypt.hashpw(
+                    password.encode(), bcrypt.gensalt()).decode()
+
+                # Get role_id
+                role_id = int(
+                    role_dropdown.value) if role_dropdown.value else 2
+
+                # Create user
+                new_user = User(
+                    username=username,
+                    email=email,
+                    password_hash=hashed,
+                    role_id=role_id,
+                    status=UserStatus.ACTIVE
+                )
+                db.add(new_user)
+                db.commit()
+                db.close()
+
+                self._show_message(
+                    f"User '{username}' created successfully!", "success")
+                self.page.dialog.open = False
+                self.page.update()
+
+            except Exception as ex:
+                error_text.value = f"Error: {str(ex)}"
+                error_text.visible = True
+                self.page.update()
+                import traceback
+                traceback.print_exc()
 
         dlg = ft.AlertDialog(
             title=ft.Text("Add New User"),
             content=ft.Column([
-                ft.TextField(label="Username", width=300),
-                ft.TextField(label="Email", width=300),
-                ft.TextField(label="Password", password=True, width=300),
-                ft.Dropdown(
-                    label="Role",
-                    options=[
-                        ft.dropdown.Option("admin"),
-                        ft.dropdown.Option("employee")
-                    ],
-                    width=300
-                )
+                username_field,
+                email_field,
+                password_field,
+                role_dropdown,
+                error_text,
             ], tight=True),
             actions=[
-                ft.ElevatedButton("Cancel", on_click=close_dialog),
+                ft.TextButton("Cancel", on_click=close_dialog),
                 ft.ElevatedButton("Save", on_click=save_user, style=ft.ButtonStyle(
                     bgcolor=PRIMARY, color="white"))
             ]

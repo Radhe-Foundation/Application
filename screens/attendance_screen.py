@@ -1,6 +1,6 @@
 """
-Vernika HRA - Attendance Management Screen - Fixed for Flet 0.80+
-Updated to use SQLAlchemy operations
+Vernika HRA - Attendance Management Screen - Fixed with Check-Out Support
+Updated with view_mode support: admin (manage all) or employee (self only)
 """
 
 import flet as ft
@@ -9,161 +9,61 @@ from database.connection import get_db_session
 from database.models import Attendance, Employee, AttendanceStatus
 from database.operations import (
     get_all_employees, mark_attendance, get_attendance_records,
-    get_employee_by_id
+    get_employee_by_id, get_today_attendance, get_user_by_id,
+    get_employee_by_user_id
 )
-
-
-class DatePickerField(ft.Container):
-    """Custom Date Picker Field with integrated picker"""
-
-    def __init__(self, label="Date", width=200, value=None, **kwargs):
-        super().__init__(**kwargs)
-        self.width = width
-        self.date_value = value
-
-        self.text_field = ft.TextField(
-            label=label,
-            width=width - 50,
-            value=value if value else "",
-            read_only=True,
-            hint_text="YYYY-MM-DD"
-        )
-
-        self.picker_button = ft.IconButton(
-            icon=ft.Icons.CALENDAR_MONTH,
-            on_click=self._show_picker,
-            tooltip="Select date"
-        )
-
-        self.content = ft.Row([
-            self.text_field,
-            self.picker_button
-        ], spacing=0)
-
-        # DatePicker control
-        self.date_picker = ft.DatePicker(
-            on_change=self._on_date_change,
-            first_date=datetime(1950, 1, 1),
-            last_date=datetime(2100, 12, 31),
-        )
-
-        # Add picker to page overlay when dialog opens
-        self._page = None
-
-    def _show_picker(self, e):
-        if self._page:
-            if self.date_value:
-                # Set picker date if we have a value
-                try:
-                    dt = datetime.strptime(self.date_value, '%Y-%m-%d')
-                    self.date_picker.value = dt
-                except:
-                    pass
-            self._page.overlay.append(self.date_picker)
-            self.date_picker.open = True
-            self._page.update()
-
-    def _on_date_change(self, e):
-        if e.control.value:
-            self.date_value = e.control.value.strftime('%Y-%m-%d')
-            self.text_field.value = self.date_value
-            if self._page:
-                # Remove picker from overlay
-                self._page.overlay.remove(self.date_picker)
-                self._page.update()
-
-    @property
-    def value(self):
-        return self.date_value
-
-    @value.setter
-    def value(self, val):
-        self.date_value = val
-        self.text_field.value = val if val else ""
-
-
-class TimePickerField(ft.Container):
-    """Custom Time Picker Field with integrated picker"""
-
-    def __init__(self, label="Time", width=150, value=None, **kwargs):
-        super().__init__(**kwargs)
-        self.width = width
-        self.time_value = value
-
-        self.text_field = ft.TextField(
-            label=label,
-            width=width - 50,
-            value=value if value else "",
-            read_only=True,
-            hint_text="HH:MM"
-        )
-
-        self.picker_button = ft.IconButton(
-            icon=ft.Icons.ACCESS_TIME,
-            on_click=self._show_picker,
-            tooltip="Select time"
-        )
-
-        self.content = ft.Row([
-            self.text_field,
-            self.picker_button
-        ], spacing=0)
-
-        # TimePicker control
-        self.time_picker = ft.TimePicker(
-            on_change=self._on_time_change,
-        )
-
-        # Add picker to page overlay when dialog opens
-        self._page = None
-
-    def _show_picker(self, e):
-        if self._page:
-            self._page.overlay.append(self.time_picker)
-            self.time_picker.open = True
-            self._page.update()
-
-    def _on_time_change(self, e):
-        if e.control.value:
-            # time_picker.value is a datetime.time object
-            time_obj = e.control.value
-            self.time_value = time_obj.strftime('%H:%M')
-            self.text_field.value = self.time_value
-            if self._page:
-                # Remove picker from overlay
-                self._page.overlay.remove(self.time_picker)
-                self._page.update()
-
-    @property
-    def value(self):
-        return self.time_value
-
-    @value.setter
-    def value(self, val):
-        self.time_value = val
-        self.text_field.value = val if val else ""
+from components.forms import DatePickerField, TimePickerField
 
 
 class AttendanceScreen(ft.Container):
-    def __init__(self, page, user):
+    def __init__(self, page, user, view_mode="admin"):
+        """
+        AttendanceScreen constructor.
+
+        Args:
+            page: Flet page object
+            user: Current user dictionary
+            view_mode: "admin" for admin view (manage all), "employee" for employee view (self only)
+        """
         super().__init__()
         self._page = page
         self.user = user
+        self.view_mode = view_mode
         self.expand = True
         self.bgcolor = "#F5F5F5"
+
+        # Get current user ID and their linked employee ID
+        self.user_id = None
+        self.employee_id = None
+        if isinstance(user, dict):
+            self.user_id = user.get('id')
+            # Try to get the linked employee
+            if self.user_id:
+                try:
+                    db = get_db_session()
+                    emp = get_employee_by_user_id(db, self.user_id)
+                    if emp:
+                        self.employee_id = int(emp.id)
+                    db.close()
+                except Exception as e:
+                    print(f"Error getting employee ID: {e}")
+
         self.content = self._build_content()
 
     def _build_content(self):
+        # Header title based on view mode
+        title = "Attendance Management" if self.view_mode == "admin" else "My Attendance"
+
         header = ft.Container(
             padding=15,
-            bgcolor="#FF9800",
+            bgcolor="#FF9800" if self.view_mode == "admin" else "#009688",
             content=ft.Row([
                 ft.IconButton(
                     icon=ft.Icons.ARROW_BACK,
                     icon_color="WHITE",
                     on_click=self.on_back
                 ),
-                ft.Text("Attendance Management", size=18,
+                ft.Text(title, size=18,
                         color="WHITE", weight=ft.FontWeight.BOLD),
                 ft.Container(expand=True),
                 ft.ElevatedButton(
@@ -175,12 +75,21 @@ class AttendanceScreen(ft.Container):
             ])
         )
 
-        # Load attendance records using SQLAlchemy
+        # Quick Actions Panel - only for admin mode
+        quick_actions = self._build_quick_actions(
+        ) if self.view_mode == "admin" else ft.Container()
+
+        # Load attendance records based on view mode
         records = []
         try:
             session = get_db_session()
             attendances = get_attendance_records(session, limit=100)
+
             for att in attendances:
+                # In employee mode, only show current user's records
+                if self.view_mode == "employee" and att.employee_id != self.employee_id:
+                    continue
+
                 # Get employee name
                 employee = get_employee_by_id(session, att.employee_id)
                 emp_name = f"{employee.first_name} {employee.last_name}" if employee else "Unknown"
@@ -227,9 +136,10 @@ class AttendanceScreen(ft.Container):
             records = []
 
         if not records:
+            empty_message = "No attendance records yet. Check in to get started!" if self.view_mode == "employee" else "No records. Mark one!"
             table_content = ft.Column([
                 ft.Icon(ft.Icons.EVENT, size=64, color="#BDBDBD"),
-                ft.Text("No records. Mark one!", size=14, color="#757575"),
+                ft.Text(empty_message, size=14, color="#757575"),
             ], horizontal_alignment=ft.CrossAxisAlignment.CENTER, expand=True)
         else:
             rows = []
@@ -261,8 +171,19 @@ class AttendanceScreen(ft.Container):
                         ]
                     )
                 )
-            table = ft.DataTable(
-                columns=[
+
+            # Columns based on view mode - hide employee name in employee mode
+            if self.view_mode == "employee":
+                columns = [
+                    ft.DataColumn(label=ft.Text("ID")),
+                    ft.DataColumn(label=ft.Text("Date")),
+                    ft.DataColumn(label=ft.Text("Check In")),
+                    ft.DataColumn(label=ft.Text("Check Out")),
+                    ft.DataColumn(label=ft.Text("Status")),
+                    ft.DataColumn(label=ft.Text("Hours"))
+                ]
+            else:
+                columns = [
                     ft.DataColumn(label=ft.Text("ID")),
                     ft.DataColumn(label=ft.Text("Employee")),
                     ft.DataColumn(label=ft.Text("Date")),
@@ -270,13 +191,139 @@ class AttendanceScreen(ft.Container):
                     ft.DataColumn(label=ft.Text("Out")),
                     ft.DataColumn(label=ft.Text("Status")),
                     ft.DataColumn(label=ft.Text("Hours"))
-                ],
+                ]
+
+            table = ft.DataTable(
+                columns=columns,
                 rows=rows, expand=True,
             )
             table_content = ft.Container(
                 content=table, expand=True, padding=10)
 
-        return ft.Column([header, ft.Container(padding=20, content=table_content, expand=True)], expand=True)
+        return ft.Column([header, quick_actions, ft.Container(padding=20, content=table_content, expand=True)], expand=True)
+
+    def _build_quick_actions(self):
+        """Build quick check-in/check-out buttons for HR (admin mode only)"""
+        # Load employees
+        employees = []
+        try:
+            session = get_db_session()
+            employees = get_all_employees(session)
+            session.close()
+        except Exception as e:
+            print(f"Error loading employees: {e}")
+
+        emp_options = []
+        for emp in employees:
+            emp_name = f"{emp.first_name} {emp.last_name}"
+            emp_id = int(emp.id)
+            emp_options.append(ft.dropdown.Option(
+                key=str(emp_id), text=emp_name))
+
+        if not emp_options:
+            emp_options = [ft.dropdown.Option(key="1", text="Tanu singh")]
+
+        selected_emp = ft.Dropdown(
+            width=250,
+            options=emp_options,
+            label="Select Employee",
+            value=emp_options[0].key if emp_options else None
+        )
+
+        def on_check_in(e):
+            if not selected_emp.value:
+                self._show_error("Please select an employee!")
+                return
+            self._quick_attendance(selected_emp.value, "check_in")
+
+        def on_check_out(e):
+            if not selected_emp.value:
+                self._show_error("Please select an employee!")
+                return
+            self._quick_attendance(selected_emp.value, "check_out")
+
+        return ft.Container(
+            padding=15,
+            bgcolor=ft.Colors.WHITE,
+            content=ft.Row([
+                ft.Text("Quick Actions:", size=14, weight=ft.FontWeight.BOLD),
+                ft.Container(width=20),
+                selected_emp,
+                ft.Container(width=10),
+                ft.ElevatedButton(
+                    "Check In",
+                    icon=ft.Icons.LOGIN,
+                    bgcolor="#4CAF50",
+                    color="WHITE",
+                    on_click=on_check_in
+                ),
+                ft.Container(width=10),
+                ft.ElevatedButton(
+                    "Check Out",
+                    icon=ft.Icons.LOGOUT,
+                    bgcolor="#F44336",
+                    color="WHITE",
+                    on_click=on_check_out
+                ),
+            ], alignment=ft.MainAxisAlignment.START),
+            margin=ft.margin.only(bottom=10)
+        )
+
+    def _quick_attendance(self, employee_id, action):
+        """Handle quick check-in/check-out"""
+        try:
+            emp_id = int(employee_id)
+            today = date.today()
+            now = datetime.now()
+
+            session = get_db_session()
+            try:
+                # Check if attendance exists for today
+                existing = get_today_attendance(session, emp_id)
+
+                if action == "check_in":
+                    if existing:
+                        # Update check-in time
+                        existing.check_in = now
+                        session.commit()
+                        self._show_success("Check-in time updated!")
+                    else:
+                        # Create new attendance with check-in
+                        mark_attendance(
+                            session,
+                            employee_id=emp_id,
+                            date=today,
+                            status=AttendanceStatus.PRESENT,
+                            check_in=now
+                        )
+                        self._show_success("Check-in recorded!")
+
+                elif action == "check_out":
+                    if not existing:
+                        self._show_error(
+                            "No attendance record found! Please check in first.")
+                        return
+
+                    # Update check-out time
+                    existing.check_out = now
+
+                    # Calculate working hours
+                    if existing.check_in:
+                        working_hours = (
+                            now - existing.check_in).total_seconds() / 3600
+                        existing.working_hours = working_hours
+
+                    session.commit()
+                    self._show_success("Check-out recorded!")
+
+                self._refresh()
+            except Exception as ex:
+                self._show_error(f"Error: {str(ex)}")
+            finally:
+                session.close()
+
+        except Exception as ex:
+            self._show_error(f"Error: {str(ex)}")
 
     def on_back(self, e):
         from core.navigation import navigate_to_home
@@ -303,8 +350,6 @@ class AttendanceScreen(ft.Container):
             emp_options.append(ft.dropdown.Option(
                 key=str(emp_id), text=emp_name))
 
-        # No fallback - show empty if no employees
-
         status_options = [
             ft.dropdown.Option(key="present", text="Present"),
             ft.dropdown.Option(key="absent", text="Absent"),
@@ -313,8 +358,17 @@ class AttendanceScreen(ft.Container):
             ft.dropdown.Option(key="on_leave", text="On Leave"),
         ]
 
+        # In employee mode, pre-select current user and disable dropdown
+        default_emp_value = str(self.employee_id) if self.employee_id and self.view_mode == "employee" else (
+            emp_options[0].key if emp_options else None)
+
         employee = ft.Dropdown(
-            width=300, options=emp_options, label="Employee *")
+            width=300,
+            options=emp_options,
+            label="Employee *",
+            value=default_emp_value,
+            disabled=(self.view_mode == "employee")
+        )
         status = ft.Dropdown(width=150, options=status_options,
                              label="Status *", value="present")
 
@@ -481,7 +535,7 @@ class AttendanceScreen(ft.Container):
                     ft.Text("Leave times empty for absent status",
                             size=11, color="#757575"),
                     error,
-                    ft.Container(height=20),  # Extra space at bottom
+                    ft.Container(height=20),
                 ], spacing=10, scroll=ft.ScrollMode.AUTO),
                 width=500,
                 height=300,
@@ -520,6 +574,13 @@ class AttendanceScreen(ft.Container):
         self._page.update()
 
 
-def show_attendance(page, user):
+def show_attendance(page, user, view_mode="admin"):
+    """Helper function to show attendance screen.
+
+    Args:
+        page: Flet page object
+        user: Current user dictionary
+        view_mode: "admin" for admin view, "employee" for employee view
+    """
     page.clean()
-    page.add(AttendanceScreen(page, user))
+    page.add(AttendanceScreen(page, user, view_mode))

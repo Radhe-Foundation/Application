@@ -4,12 +4,11 @@ Proper user handling and navigation
 """
 
 import flet as ft
-import bcrypt
 import os
 
-from database.models import User, Role
 from core.theme import PRIMARY
-from auth.role_check import check_admin_access
+from database.connection import get_db_session
+from database.operations import authenticate_user
 
 
 class LoginScreen(ft.Container):
@@ -269,7 +268,7 @@ class LoginScreen(ft.Container):
         ], expand=True)
 
     def login(self, e):
-        """Handle login button click"""
+        """Handle login button click using unified SQLAlchemy auth (supports cloud DB)"""
         self.error_msg.visible = False
         username_val = self.username.value.strip()
         password_val = self.password.value.strip()
@@ -282,84 +281,39 @@ class LoginScreen(ft.Container):
 
         self._show_loading(True)
 
+        db = None
         try:
-            import sqlite3
-            import bcrypt
-            from datetime import datetime
-
-            # Direct SQLite authentication (more reliable)
-            conn = sqlite3.connect('vernika.db')
-            conn.row_factory = sqlite3.Row
-            cursor = conn.cursor()
-
-            # Find user by username or email
-            cursor.execute(
-                "SELECT id, username, email, password_hash, role_id, status FROM users WHERE username = ? OR email = ?",
-                (username_val, username_val)
+            # Use central SQLAlchemy-based authentication so it works with
+            # both local SQLite and cloud PostgreSQL configured in config.py
+            db = get_db_session()
+            success, user_data, message = authenticate_user(
+                db, username_or_email=username_val, password=password_val
             )
-            user = cursor.fetchone()
 
-            conn.close()
-
-            if not user:
+            if not success or not user_data:
                 self._show_loading(False)
-                self.error_msg.value = "Invalid username or password"
+                self.error_msg.value = message or "Invalid username or password"
                 self.error_msg.visible = True
                 self._page.update()
                 return
-
-            # Check if user is active (case-insensitive comparison)
-            if user['status'].lower() != 'active':
-                self._show_loading(False)
-                self.error_msg.value = "Account is deactivated. Contact administrator."
-                self.error_msg.visible = True
-                self._page.update()
-                return
-
-            # Verify password
-            stored_hash = user['password_hash']
-            if isinstance(stored_hash, str):
-                hash_bytes = stored_hash.encode('utf-8')
-            else:
-                hash_bytes = stored_hash
-
-            password_bytes = password_val.encode('utf-8')
-
-            if not bcrypt.checkpw(password_bytes, hash_bytes):
-                self._show_loading(False)
-                self.error_msg.value = "Invalid username or password"
-                self.error_msg.visible = True
-                self._page.update()
-                return
-
-            # Login successful - get role name
-            role_map = {1: 'admin', 2: 'hr_manager',
-                        3: 'manager', 4: 'employee'}
-            role_name = role_map.get(user['role_id'], 'employee')
-
-            user_data = {
-                'id': user['id'],
-                'user_id': user['id'],
-                'username': user['username'],
-                'email': user['email'],
-                'role': role_name,
-                'role_id': user['role_id'],
-                'status': user['status'],
-                'session_token': None
-            }
 
             self._show_loading(False)
             print(
-                f"Login successful for user: {user_data['username']}, role: {user_data['role']}")
+                f"Login successful for user: {user_data['username']}, role: {user_data['role']}"
+            )
             self.show_dashboard(user_data)
 
         except Exception as ex:
+            # Surface database/connection issues clearly (e.g. cloud DB problems)
             self._show_loading(False)
-            self.error_msg.value = f"Error: {str(ex)}"
+            self.error_msg.value = f"Login error: {str(ex)}"
             self.error_msg.visible = True
             self._page.update()
             import traceback
             traceback.print_exc()
+        finally:
+            if db is not None:
+                db.close()
 
     def _show_loading(self, show: bool):
         """Show/hide loading indicator"""

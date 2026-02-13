@@ -311,14 +311,14 @@ class TasksScreen(ft.Container):
                     try:
                         start_date_obj = datetime.strptime(
                             start_date.value, "%Y-%m-%d").date()
-                    except:
-                        pass
+                    except (ValueError, TypeError) as e:
+                        print(f"Warning: Invalid start date format: {e}")
                 if due_date.value:
                     try:
                         due_date_obj = datetime.strptime(
                             due_date.value, "%Y-%m-%d").date()
-                    except:
-                        pass
+                    except (ValueError, TypeError) as e:
+                        print(f"Warning: Invalid due date format: {e}")
 
                 # Get priority and status enums
                 priority_enum = TaskPriority.MEDIUM
@@ -498,14 +498,14 @@ class TasksScreen(ft.Container):
                     try:
                         start_date_obj = datetime.strptime(
                             start_date.value, "%Y-%m-%d").date()
-                    except:
-                        pass
+                    except (ValueError, TypeError) as e:
+                        print(f"Warning: Invalid start date format: {e}")
                 if due_date.value:
                     try:
                         due_date_obj = datetime.strptime(
                             due_date.value, "%Y-%m-%d").date()
-                    except:
-                        pass
+                    except (ValueError, TypeError) as e:
+                        print(f"Warning: Invalid due date format: {e}")
 
                 # Get priority and status enums
                 priority_enum = TaskPriority.MEDIUM
