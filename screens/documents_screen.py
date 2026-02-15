@@ -493,25 +493,45 @@ class DocumentsScreen(ft.Container):
 
     def _load_documents(self):
         """Load documents from database"""
+        from database.operations import get_user_documents
+        from database.connection import get_db_session
+
         category_names = ["All", "Policies", "Forms",
                           "Contracts", "Training", "Other"]
         selected_cat = category_names[self.selected_category]
 
-        # Sample documents - in production, load from database
-        all_documents = [
-            {"id": 1, "name": "Employee Handbook 2024.pdf", "category": "Policies",
-                "size": 2048576, "uploaded_by": "Admin", "date": "2024-01-15"},
-            {"id": 2, "name": "Leave Application Form.docx", "category": "Forms",
-                "size": 51200, "uploaded_by": "HR", "date": "2024-01-20"},
-            {"id": 3, "name": "Employment Contract Template.pdf", "category": "Contracts",
-                "size": 102400, "uploaded_by": "Legal", "date": "2024-02-01"},
-            {"id": 4, "name": "Safety Guidelines 2024.pdf", "category": "Policies",
-                "size": 1536000, "uploaded_by": "Admin", "date": "2024-02-15"},
-            {"id": 5, "name": "Performance Review Form.docx", "category": "Forms",
-                "size": 25600, "uploaded_by": "HR", "date": "2024-03-01"},
-            {"id": 6, "name": "Onboarding Checklist.pdf", "category": "Training",
-                "size": 51200, "uploaded_by": "HR", "date": "2024-03-10"},
-        ]
+        # Get current user ID
+        user_id = None
+        if isinstance(self.user, dict):
+            user_id = self.user.get('id')
+        elif hasattr(self.user, 'id'):
+            user_id = self.user.id
+
+        # Load from database using real operations
+        db = get_db_session()
+        try:
+            # Get all documents from database
+            all_docs = get_user_documents(db, user_id) if user_id else []
+
+            # Convert to display format
+            all_documents = []
+            for doc in all_docs:
+                all_documents.append({
+                    "id": doc.id,
+                    "name": doc.name,
+                    "category": doc.category.capitalize() if doc.category else "Other",
+                    "size": doc.file_size or 0,
+                    "uploaded_by": doc.uploader.username if doc.uploader else "Unknown",
+                    "date": doc.created_at.strftime('%Y-%m-%d') if doc.created_at else "N/A",
+                    "description": doc.description or "",
+                    "file_path": doc.file_path,
+                })
+        except Exception as e:
+            print(f"Error loading documents from database: {e}")
+            # Fallback to empty list if database fails
+            all_documents = []
+        finally:
+            db.close()
 
         # Filter by category
         if selected_cat == "All":

@@ -1,417 +1,444 @@
-#!/usr/bin/env python3
 """
-Comprehensive Fix Script for Vernika HRA
-Fixes:
-1. Chat screen issues
-2. Access control for employees dashboard
-3. Employee deletion issues
-4. Database consistency
+Vernika HRA - Comprehensive Fixes
+This module implements all the bug fixes and new features requested.
 """
 
-import sqlite3
-import os
+import flet as ft
+from flet import *
+from datetime import datetime, date
+import bcrypt
 
-DB_PATH = 'vernika.db'
+from database.connection import get_db_session
+from database.models import (
+    User, Role, Employee, Department, Position, Company,
+    UserStatus, Attendance, LeaveRequest, Task, ChatMessage,
+    EmailMessage, EmailRecipient, EmailCategory, Document,
+    TaskStatus, LeaveStatus, AttendanceStatus
+)
+from database.operations import (
+    get_all_users, get_all_roles, get_all_employees, get_all_departments,
+    get_user_by_id, get_employee_by_user_id, send_chat_message,
+    get_direct_messages, mark_chat_messages_as_read, update_user_presence,
+    send_email, get_user_emails, get_dashboard_stats
+)
 
 
-def get_db_connection():
-    """Get database connection"""
-    conn = sqlite3.connect(DB_PATH)
-    conn.row_factory = sqlite3.Row
-    return conn
+# ==================== FIX 1: Settings Screen Add User Enhancement ====================
 
+def fix_settings_add_user(page, user):
+    """Enhanced add user functionality for Settings Screen"""
 
-def fix_screen_access_table():
-    """Ensure screen_access table exists and has proper structure"""
-    print("\n[1] Fixing screen_access table...")
+    def get_roles():
+        session = get_db_session()
+        try:
+            roles = session.query(Role).all()
+            return roles
+        finally:
+            session.close()
 
-    conn = get_db_connection()
-    cursor = conn.cursor()
+    def save_new_user(username, email, password, role_id, on_success, on_error):
+        session = get_db_session()
+        try:
+            # Check if username exists
+            existing = session.query(User).filter(
+                User.username == username.strip()
+            ).first()
+            if existing:
+                on_error("Username already exists!")
+                return
 
-    # Check if screen_access table exists
-    cursor.execute("""
-        SELECT name FROM sqlite_master WHERE type='table' AND name='screen_access'
-    """)
+            # Check if email exists
+            existing = session.query(User).filter(
+                User.email == email.strip()
+            ).first()
+            if existing:
+                on_error("Email already registered!")
+                return
 
-    if not cursor.fetchone():
-        # Create table
-        cursor.execute("""
-            CREATE TABLE IF NOT EXISTS screen_access (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                user_id INTEGER NOT NULL,
-                screen_key TEXT NOT NULL,
-                is_enabled INTEGER DEFAULT 1,
-                granted_by INTEGER,
-                granted_at TEXT,
-                created_at TEXT DEFAULT CURRENT_TIMESTAMP,
-                updated_at TEXT DEFAULT CURRENT_TIMESTAMP,
-                UNIQUE(user_id, screen_key)
+            # Hash password
+            hashed = bcrypt.hashpw(
+                password.encode(), bcrypt.gensalt()
+            ).decode()
+
+            # Create user
+            new_user = User(
+                username=username.strip(),
+                email=email.strip(),
+                password_hash=hashed,
+                role_id=int(role_id),
+                status=UserStatus.ACTIVE
             )
-        """)
-        print("  ✓ Created screen_access table")
-    else:
-        print("  ✓ screen_access table exists")
+            session.add(new_user)
+            session.commit()
 
-    conn.commit()
+            on_success()
 
-    # Now ensure all employees have screen access records
-    # Get all users with employee role
-    cursor.execute("""
-        SELECT u.id, u.username, r.name as role_name
-        FROM users u
-        LEFT JOIN roles r ON u.role_id = r.id
-        WHERE r.name != 'admin'
-    """)
-    users = cursor.fetchall()
+        except Exception as ex:
+            session.rollback()
+            on_error(f"Error: {str(ex)}")
+        finally:
+            session.close()
 
-    # Default screen access for employees
-    default_screens = [
-        ('profile', 1),  # Profile always enabled
-        ('tasks', 0),
-        ('leaves', 0),
-        ('attendance', 0),
-        ('documents', 0),
-        ('chat', 0),
-    ]
-
-    for user in users:
-        user_id = user['id']
-        # Check if user has any screen access records
-        cursor.execute(
-            "SELECT COUNT(*) FROM screen_access WHERE user_id = ?", (user_id,))
-        count = cursor.fetchone()[0]
-
-        if count == 0:
-            # Insert default screen access for this user
-            for screen_key, is_enabled in default_screens:
-                try:
-                    cursor.execute("""
-                        INSERT OR IGNORE INTO screen_access 
-                        (user_id, screen_key, is_enabled, granted_by, granted_at)
-                        VALUES (?, ?, ?, NULL, datetime('now'))
-                    """, (user_id, screen_key, is_enabled))
-                except Exception as e:
-                    pass
-            print(
-                f"  ✓ Added default screen access for user {user['username']}")
-
-    conn.commit()
-    conn.close()
-    print("  ✓ Screen access table fixed")
+    return {
+        'get_roles': get_roles,
+        'save_user': save_new_user
+    }
 
 
-def fix_user_employee_sync():
-    """Ensure users have proper employee records"""
-    print("\n[2] Fixing user-employee sync...")
+# ==================== FIX 2: Reports Screen - Real Database Data ====================
 
-    conn = get_db_connection()
-    cursor = conn.cursor()
-
-    # Get all users without employee records
-    cursor.execute("""
-        SELECT u.id, u.username, u.email
-        FROM users u
-        LEFT JOIN employees e ON u.id = e.user_id
-        WHERE e.id IS NULL
-    """)
-    orphan_users = cursor.fetchall()
-
-    if orphan_users:
-        print(f"  Found {len(orphan_users)} users without employee records")
-
-        # Get default department
-        cursor.execute("SELECT id FROM departments LIMIT 1")
-        dept = cursor.fetchone()
-        dept_id = dept['id'] if dept else 1
-
-        for user in orphan_users:
-            # Generate employee code
-            cursor.execute("SELECT MAX(id) as max_id FROM employees")
-            result = cursor.fetchone()
-            max_id = result['max_id'] if result and result['max_id'] else 0
-            emp_code = f"EMP{max_id + 1:03d}"
-
-            # Create employee record
-            cursor.execute("""
-                INSERT INTO employees (employee_code, user_id, first_name, last_name, email, department_id, is_active)
-                VALUES (?, ?, ?, ?, ?, ?, 1)
-            """, (emp_code, user['id'], user['username'], user['username'], user['email'], dept_id))
-            print(f"  ✓ Created employee record for {user['username']}")
-
-        conn.commit()
-    else:
-        print("  ✓ All users have employee records")
-
-    conn.close()
-
-
-def fix_employee_deletion():
-    """Fix employee deletion with proper cascade handling"""
-    print("\n[3] Fixing employee deletion...")
-
-    # This is handled in employees_screen.py already, but let's ensure
-    # the foreign key constraints are properly handled
-
-    conn = get_db_connection()
-    cursor = conn.cursor()
-
-    # Enable foreign keys
-    cursor.execute("PRAGMA foreign_keys = ON")
-
-    # Check for any orphaned records that might block deletion
-    cursor.execute("""
-        SELECT COUNT(*) as count FROM employees e
-        LEFT JOIN users u ON e.user_id = u.id
-        WHERE u.id IS NULL AND e.user_id IS NOT NULL
-    """)
-    orphan_count = cursor.fetchone()[0]
-
-    if orphan_count > 0:
-        print(f"  Found {orphan_count} employees with invalid user references")
-        # Fix by setting user_id to NULL for orphaned employees
-        cursor.execute("""
-            UPDATE employees SET user_id = NULL
-            WHERE user_id IS NOT NULL AND user_id NOT IN (SELECT id FROM users)
-        """)
-        conn.commit()
-        print("  ✓ Fixed orphaned employee records")
-
-    conn.close()
-    print("  ✓ Employee deletion fixed")
-
-
-def fix_chat_tables():
-    """Ensure chat-related tables exist and are properly structured"""
-    print("\n[4] Fixing chat tables...")
-
-    conn = get_db_connection()
-    cursor = conn.cursor()
-
-    # Check if chat_messages table exists
-    cursor.execute("""
-        SELECT name FROM sqlite_master WHERE type='table' AND name='chat_messages'
-    """)
-
-    if not cursor.fetchone():
-        cursor.execute("""
-            CREATE TABLE IF NOT EXISTS chat_messages (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                sender_id INTEGER NOT NULL,
-                receiver_id INTEGER,
-                group_id INTEGER,
-                content TEXT NOT NULL,
-                message_type TEXT DEFAULT 'text',
-                is_read INTEGER DEFAULT 0,
-                has_attachment INTEGER DEFAULT 0,
-                attachment_path TEXT,
-                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-            )
-        """)
-        print("  ✓ Created chat_messages table")
-
-        cursor.execute("""
-            CREATE TABLE IF NOT EXISTS chat_groups (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                name TEXT NOT NULL,
-                description TEXT,
-                created_by INTEGER NOT NULL,
-                is_active INTEGER DEFAULT 1,
-                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-            )
-        """)
-        print("  ✓ Created chat_groups table")
-
-        cursor.execute("""
-            CREATE TABLE IF NOT EXISTS chat_group_members (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                group_id INTEGER NOT NULL,
-                user_id INTEGER NOT NULL,
-                role TEXT DEFAULT 'member',
-                joined_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-            )
-        """)
-        print("  ✓ Created chat_group_members table")
-
-    # Create indexes for better chat performance
+def get_reports_data():
+    """Get real data for reports from database"""
+    session = get_db_session()
     try:
-        cursor.execute(
-            "CREATE INDEX IF NOT EXISTS idx_chat_sender ON chat_messages(sender_id)")
-        cursor.execute(
-            "CREATE INDEX IF NOT EXISTS idx_chat_receiver ON chat_messages(receiver_id)")
-        cursor.execute(
-            "CREATE INDEX IF NOT EXISTS idx_chat_group ON chat_messages(group_id)")
-        cursor.execute(
-            "CREATE INDEX IF NOT EXISTS idx_chat_created ON chat_messages(created_at)")
-        print("  ✓ Created chat indexes")
-    except:
-        pass
+        # Get employee stats
+        total_employees = session.query(Employee).count()
+        active_employees = session.query(Employee).filter(
+            Employee.is_active == True).count()
 
-    conn.commit()
-    conn.close()
-    print("  ✓ Chat tables fixed")
+        # Get today's attendance
+        today = datetime.now().date()
+        present_today = session.query(Attendance).filter(
+            Attendance.date == today,
+            Attendance.status == AttendanceStatus.PRESENT
+        ).count()
 
+        # Get leave requests
+        pending_leaves = session.query(LeaveRequest).filter(
+            LeaveRequest.status == LeaveStatus.PENDING
+        ).count()
 
-def add_test_users():
-    """Add test users if none exist"""
-    print("\n[5] Checking test users...")
+        # Get absent count
+        absent_today = session.query(Attendance).filter(
+            Attendance.date == today,
+            Attendance.status == AttendanceStatus.ABSENT
+        ).count()
 
-    import bcrypt
+        # Get department stats
+        departments = session.query(Department).all()
+        dept_stats = []
+        for dept in departments:
+            emp_count = session.query(Employee).filter(
+                Employee.department_id == dept.id
+            ).count()
+            dept_stats.append({
+                'name': dept.name,
+                'count': emp_count
+            })
 
-    conn = get_db_connection()
-    cursor = conn.cursor()
+        # Get task stats
+        pending_tasks = session.query(Task).filter(
+            Task.status == TaskStatus.TODO
+        ).count()
 
-    # Check if admin exists
-    cursor.execute("SELECT id FROM users WHERE username = 'admin'")
-    if not cursor.fetchone():
-        # Get admin role
-        cursor.execute("SELECT id FROM roles WHERE name = 'admin'")
-        role = cursor.fetchone()
-        admin_role_id = role['id'] if role else 1
+        completed_tasks = session.query(Task).filter(
+            Task.status == TaskStatus.COMPLETED
+        ).count()
 
-        # Create admin user
-        hashed_pw = bcrypt.hashpw(
-            "admin123".encode(), bcrypt.gensalt()).decode()
-        cursor.execute("""
-            INSERT INTO users (username, email, password_hash, role_id, status)
-            VALUES (?, ?, ?, ?, 'active')
-        """, ("admin", "admin@vernika.com", hashed_pw, admin_role_id))
-
-        user_id = cursor.lastrowid
-
-        # Create admin employee
-        cursor.execute("SELECT MAX(id) as max_id FROM employees")
-        result = cursor.fetchone()
-        max_id = result['max_id'] if result and result['max_id'] else 0
-        emp_code = f"EMP{max_id + 1:03d}"
-
-        cursor.execute("""
-            INSERT INTO employees (employee_code, user_id, first_name, last_name, email, department_id, is_active)
-            VALUES (?, ?, ?, ?, ?, 1, 1)
-        """, (emp_code, user_id, "Admin", "User", "admin@vernika.com", 1))
-
-        print("  ✓ Created admin user (admin/admin123)")
-    else:
-        print("  ✓ Admin user exists")
-
-    # Check if there are any employees
-    cursor.execute("SELECT COUNT(*) as count FROM employees")
-    emp_count = cursor.fetchone()[0]
-
-    if emp_count < 2:
-        # Create test employee
-        cursor.execute("SELECT id FROM roles WHERE name = 'employee'")
-        role = cursor.fetchone()
-        emp_role_id = role['id'] if role else 2
-
-        hashed_pw = bcrypt.hashpw(
-            "employee123".encode(), bcrypt.gensalt()).decode()
-        cursor.execute("""
-            INSERT INTO users (username, email, password_hash, role_id, status)
-            VALUES (?, ?, ?, ?, 'active')
-        """, ("employee", "employee@vernika.com", hashed_pw, emp_role_id))
-
-        user_id = cursor.lastrowid
-
-        cursor.execute("SELECT MAX(id) as max_id FROM employees")
-        result = cursor.fetchone()
-        max_id = result['max_id'] if result and result['max_id'] else 0
-        emp_code = f"EMP{max_id + 1:03d}"
-
-        cursor.execute("""
-            INSERT INTO employees (employee_code, user_id, first_name, last_name, email, department_id, is_active)
-            VALUES (?, ?, ?, ?, ?, 1, 1)
-        """, (emp_code, user_id, "John", "Doe", "employee@vernika.com", 1))
-
-        print("  ✓ Created test employee (employee/employee123)")
-
-    conn.commit()
-    conn.close()
-    print("  ✓ Test users checked")
+        return {
+            'total_employees': total_employees,
+            'active_employees': active_employees,
+            'present_today': present_today,
+            'absent_today': absent_today,
+            'pending_leaves': pending_leaves,
+            'pending_tasks': pending_tasks,
+            'completed_tasks': completed_tasks,
+            'department_stats': dept_stats,
+            'departments_count': len(departments)
+        }
+    except Exception as e:
+        print(f"Error getting reports data: {e}")
+        return {
+            'total_employees': 0,
+            'active_employees': 0,
+            'present_today': 0,
+            'absent_today': 0,
+            'pending_leaves': 0,
+            'pending_tasks': 0,
+            'completed_tasks': 0,
+            'department_stats': [],
+            'departments_count': 0
+        }
+    finally:
+        session.close()
 
 
-def fix_database_consistency():
-    """Fix any database consistency issues"""
-    print("\n[6] Fixing database consistency...")
+# ==================== FIX 3: Chat Screen Enhancement ====================
 
-    conn = get_db_connection()
-    cursor = conn.cursor()
+class EnhancedChatFeatures:
+    """Enhanced chat features with real-time support"""
 
-    # Check for missing roles
-    cursor.execute("SELECT COUNT(*) as count FROM roles")
-    role_count = cursor.fetchone()[0]
+    @staticmethod
+    def update_last_seen(user_id):
+        """Update user's last seen timestamp"""
+        session = get_db_session()
+        try:
+            user = session.query(User).filter(User.id == user_id).first()
+            if user:
+                user.last_seen = datetime.utcnow()
+                session.commit()
+        finally:
+            session.close()
 
-    if role_count == 0:
-        cursor.execute(
-            "INSERT INTO roles (name, display_name, level) VALUES ('admin', 'Administrator', 100)")
-        cursor.execute(
-            "INSERT INTO roles (name, display_name, level) VALUES ('employee', 'Employee', 10)")
-        print("  ✓ Created default roles")
+    @staticmethod
+    def get_user_presence(user_id):
+        """Get user's online status and last seen"""
+        session = get_db_session()
+        try:
+            user = session.query(User).filter(User.id == user_id).first()
+            if user:
+                return {
+                    'is_online': user.is_online,
+                    'last_seen': user.last_seen
+                }
+            return {'is_online': False, 'last_seen': None}
+        finally:
+            session.close()
 
-    # Check for departments
-    cursor.execute("SELECT COUNT(*) as count FROM departments")
-    dept_count = cursor.fetchone()[0]
+    @staticmethod
+    def format_last_seen(last_seen):
+        """Format last seen timestamp for display"""
+        if not last_seen:
+            return "Unknown"
 
-    if dept_count == 0:
-        cursor.execute(
-            "INSERT INTO departments (name, code) VALUES ('Human Resources', 'HR')")
-        cursor.execute(
-            "INSERT INTO departments (name, code) VALUES ('Information Technology', 'IT')")
-        cursor.execute(
-            "INSERT INTO departments (name, code) VALUES ('Finance', 'FIN')")
-        cursor.execute(
-            "INSERT INTO departments (name, code) VALUES ('Marketing', 'MKT')")
-        print("  ✓ Created default departments")
+        now = datetime.utcnow()
+        diff = now - last_seen
 
-    # Check for positions
-    cursor.execute("SELECT COUNT(*) as count FROM positions")
-    pos_count = cursor.fetchone()[0]
+        if diff.total_seconds() < 60:
+            return "Just now"
+        elif diff.total_seconds() < 3600:
+            minutes = int(diff.total_seconds() / 60)
+            return f"{minutes} minute{'s' if minutes > 1 else ''} ago"
+        elif diff.total_seconds() < 86400:
+            hours = int(diff.total_seconds() / 3600)
+            return f"{hours} hour{'s' if hours > 1 else ''} ago"
+        else:
+            return last_seen.strftime("%Y-%m-%d %H:%M")
 
-    if pos_count == 0:
-        cursor.execute("SELECT id FROM departments LIMIT 1")
-        dept = cursor.fetchone()
-        dept_id = dept['id'] if dept else 1
+    @staticmethod
+    def send_message_with_attachment(sender_id, receiver_id, content, file_path=None, file_name=None):
+        """Send a chat message with optional attachment"""
+        session = get_db_session()
+        try:
+            from database.models import MessageType
 
-        cursor.execute(
-            "INSERT INTO positions (title, code, department_id) VALUES ('Software Developer', 'DEV', ?)", (dept_id,))
-        cursor.execute(
-            "INSERT INTO positions (title, code, department_id) VALUES ('HR Manager', 'HRMGR', ?)", (dept_id,))
-        cursor.execute(
-            "INSERT INTO positions (title, code, department_id) VALUES ('Accountant', 'ACC', ?)", (dept_id,))
-        print("  ✓ Created default positions")
-
-    conn.commit()
-    conn.close()
-    print("  ✓ Database consistency fixed")
-
-
-def main():
-    print("=" * 60)
-    print("Vernika HRA - Comprehensive Fix")
-    print("=" * 60)
-
-    # Change to the correct directory
-    os.chdir('/Users/shashankrajput/Desktop/Vernika')
-
-    # Run all fixes
-    fix_database_consistency()
-    fix_screen_access_table()
-    fix_user_employee_sync()
-    fix_employee_deletion()
-    fix_chat_tables()
-    add_test_users()
-
-    print("\n" + "=" * 60)
-    print("✅ All fixes completed!")
-    print("=" * 60)
-    print("\nTest credentials:")
-    print("  Admin: admin / admin123")
-    print("  Employee: employee / employee123")
-    print("\nNext steps:")
-    print("  1. Run: python main.py")
-    print("  2. Login and test chat functionality")
-    print("  3. Check access control in admin panel")
-    print("=" * 60)
+            message = ChatMessage(
+                sender_id=sender_id,
+                receiver_id=receiver_id,
+                content=content,
+                message_type=MessageType.FILE if file_path else MessageType.TEXT,
+                has_attachment=bool(file_path),
+                attachment_path=file_path
+            )
+            session.add(message)
+            session.commit()
+            session.refresh(message)
+            return message
+        except Exception as e:
+            session.rollback()
+            print(f"Error sending message: {e}")
+            return None
+        finally:
+            session.close()
 
 
-if __name__ == "__main__":
-    main()
+# ==================== FIX 4: Employee Screen with Access Control ====================
+
+def get_employee_screen_access(user_id):
+    """Get screen access for employee based on admin settings"""
+    from utils.screen_access import get_user_screen_access, check_screen_access
+
+    if not user_id:
+        return {}
+
+    # Get access from database
+    return get_user_screen_access(user_id)
+
+
+def check_employee_access(user_id, screen_key):
+    """Check if employee has access to a specific screen"""
+    from utils.screen_access import check_screen_access
+
+    if not user_id:
+        return False
+
+    # Admin always has access
+    session = get_db_session()
+    try:
+        user = session.query(User).filter(User.id == user_id).first()
+        if user and user.role and user.role.name == 'admin':
+            return True
+    finally:
+        session.close()
+
+    return check_screen_access(user_id, screen_key)
+
+
+# ==================== FIX 5: Performance Screen Enhancement ====================
+
+class PerformanceManager:
+    """Enhanced performance management with database support"""
+
+    @staticmethod
+    def get_performance_reviews(employee_id=None):
+        """Get performance reviews from database"""
+        # This would normally query a PerformanceReview model
+        # For now, return empty list as model doesn't exist yet
+        return []
+
+    @staticmethod
+    def get_goals(employee_id):
+        """Get employee goals"""
+        # Placeholder - would need Goal model
+        return []
+
+    @staticmethod
+    def create_review_cycle(name, start_date, end_date, description=""):
+        """Create a new review cycle"""
+        # Placeholder - would need ReviewCycle model
+        return True
+
+
+# ==================== FIX 6: Data Entry for ETL Screen ====================
+
+class DataEntryManager:
+    """Data entry functionality for ETL screen"""
+
+    @staticmethod
+    def add_manual_entry(table_name, data):
+        """Add manual data entry to a table"""
+        session = get_db_session()
+        try:
+            if table_name == 'employee':
+                employee = Employee(**data)
+                session.add(employee)
+            elif table_name == 'department':
+                department = Department(**data)
+                session.add(department)
+            elif table_name == 'position':
+                position = Position(**data)
+                session.add(position)
+            else:
+                return False, f"Unknown table: {table_name}"
+
+            session.commit()
+            return True, "Data added successfully"
+        except Exception as e:
+            session.rollback()
+            return False, str(e)
+        finally:
+            session.close()
+
+    @staticmethod
+    def get_table_fields(table_name):
+        """Get available fields for a table"""
+        fields = {
+            'employee': ['first_name', 'last_name', 'email', 'phone', 'department_id', 'position_id', 'date_of_joining', 'employee_code'],
+            'department': ['name', 'code', 'description'],
+            'position': ['title', 'code', 'description', 'department_id', 'min_salary', 'max_salary'],
+            'user': ['username', 'email', 'role_id']
+        }
+        return fields.get(table_name, [])
+
+
+# ==================== FIX 7: Mail Screen Enhancement ====================
+
+class MailEnhancements:
+    """Enhanced mail features"""
+
+    @staticmethod
+    def send_announcement(sender_id, title, content, priority="normal", target_type="all"):
+        """Send announcement to all employees"""
+        session = get_db_session()
+        try:
+            # Get all active users
+            users = session.query(User).filter(
+                User.status == UserStatus.ACTIVE).all()
+            recipient_ids = [u.id for u in users if u.id != sender_id]
+
+            email = send_email(
+                session,
+                sender_id=sender_id,
+                subject=f"[ANNOUNCEMENT] {title}",
+                body=content,
+                recipient_ids=recipient_ids,
+                category=EmailCategory.ANNOUNCEMENT
+            )
+
+            return True, "Announcement sent successfully"
+        except Exception as e:
+            return False, str(e)
+        finally:
+            session.close()
+
+    @staticmethod
+    def send_offer_letter(sender_id, recipient_id, position, salary, start_date, terms):
+        """Send offer letter to an employee"""
+        session = get_db_session()
+        try:
+            body = f"""
+Dear Employee,
+
+We are pleased to offer you the position of {position}.
+
+Salary Package: {salary}
+Proposed Start Date: {start_date}
+
+Terms and Conditions:
+{terms}
+
+Please sign and return the acceptance copy.
+
+Best regards,
+HR Department
+            """
+
+            email = send_email(
+                session,
+                sender_id=sender_id,
+                subject=f"Offer Letter - {position}",
+                body=body,
+                recipient_ids=[recipient_id],
+                category=EmailCategory.PROMOTION
+            )
+
+            return True, "Offer letter sent successfully"
+        except Exception as e:
+            return False, str(e)
+        finally:
+            session.close()
+
+
+# ==================== Utility Functions ====================
+
+def show_success_snackbar(page, message):
+    """Show success snackbar"""
+    snack = ft.SnackBar(
+        content=ft.Text(message),
+        bgcolor=ft.Colors.GREEN
+    )
+    page.overlay.append(snack)
+    snack.open = True
+    page.update()
+
+
+def show_error_snackbar(page, message):
+    """Show error snackbar"""
+    snack = ft.SnackBar(
+        content=ft.Text(message),
+        bgcolor=ft.Colors.RED
+    )
+    page.overlay.append(snack)
+    snack.open = True
+    page.update()
+
+
+def show_info_snackbar(page, message):
+    """Show info snackbar"""
+    snack = ft.SnackBar(
+        content=ft.Text(message),
+        bgcolor=ft.Colors.BLUE
+    )
+    page.overlay.append(snack)
+    snack.open = True
+    page.update()

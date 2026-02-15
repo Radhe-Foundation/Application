@@ -1,244 +1,52 @@
 """
-Vernika HRA - Database Fix Script
-Comprehensive database fixes including:
-- Foreign key constraints
-- Proper indexes
-- Relationship fixes
-- Data ordering for exports
+Database Fixes (SQLAlchemy-backed)
+
+This script creates recommended indexes and performs non-destructive
+schema fixes using SQLAlchemy's engine. It avoids direct sqlite3 usage
+and works with the configured `DATABASE_URL` (Postgres/Supabase).
 """
 
-import sqlite3
-import os
-
-DB_PATH = 'vernika.db'
-
-
-def backup_database():
-    """Create a backup of the database before making changes"""
-    if os.path.exists(DB_PATH):
-        backup_path = f"{DB_PATH}.backup"
-        import shutil
-        shutil.copy(DB_PATH, backup_path)
-        print(f"✓ Database backed up to {backup_path}")
-        return True
-    return False
-
-
-def get_connection():
-    """Get database connection with row factory"""
-    conn = sqlite3.connect(DB_PATH)
-    conn.row_factory = sqlite3.Row
-    return conn
-
-
-def add_missing_columns():
-    """Add missing columns to tables"""
-    conn = get_connection()
-    cursor = conn.cursor()
-
-    # Add created_at and updated_at to departments if missing
-    cursor.execute("PRAGMA table_info(departments)")
-    dept_cols = [row['name'] for row in cursor.fetchall()]
-
-    if 'created_at' not in dept_cols:
-        cursor.execute(
-            "ALTER TABLE departments ADD COLUMN created_at DATETIME")
-        print("✓ Added created_at to departments")
-
-    if 'updated_at' not in dept_cols:
-        cursor.execute(
-            "ALTER TABLE departments ADD COLUMN updated_at DATETIME")
-        print("✓ Added updated_at to departments")
-
-    # Add missing columns to employees
-    cursor.execute("PRAGMA table_info(employees)")
-    emp_cols = [row['name'] for row in cursor.fetchall()]
-
-    if 'profile_photo' not in emp_cols:
-        cursor.execute("ALTER TABLE employees ADD COLUMN profile_photo TEXT")
-        print("✓ Added profile_photo to employees")
-
-    if 'created_at' not in emp_cols:
-        cursor.execute("ALTER TABLE employees ADD COLUMN created_at DATETIME")
-        print("✓ Added created_at to employees")
-
-    if 'updated_at' not in emp_cols:
-        cursor.execute("ALTER TABLE employees ADD COLUMN updated_at DATETIME")
-        print("✓ Added updated_at to employees")
-
-    # Add missing columns to positions
-    cursor.execute("PRAGMA table_info(positions)")
-    pos_cols = [row['name'] for row in cursor.fetchall()]
-
-    if 'created_at' not in pos_cols:
-        cursor.execute("ALTER TABLE positions ADD COLUMN created_at DATETIME")
-        print("✓ Added created_at to positions")
-
-    if 'updated_at' not in pos_cols:
-        cursor.execute("ALTER TABLE positions ADD COLUMN updated_at DATETIME")
-        print("✓ Added updated_at to positions")
-
-    # Add missing columns to tasks
-    cursor.execute("PRAGMA table_info(tasks)")
-    task_cols = [row['name'] for row in cursor.fetchall()]
-
-    if 'created_at' not in task_cols:
-        cursor.execute("ALTER TABLE tasks ADD COLUMN created_at DATETIME")
-        print("✓ Added created_at to tasks")
-
-    if 'updated_at' not in task_cols:
-        cursor.execute("ALTER TABLE tasks ADD COLUMN updated_at DATETIME")
-        print("✓ Added updated_at to tasks")
-
-    conn.commit()
-    conn.close()
+from database.connection import get_engine
+from sqlalchemy import text
 
 
 def add_indexes():
-    """Add indexes for better query performance"""
-    conn = get_connection()
-    cursor = conn.cursor()
-
+    engine = get_engine()
     indexes = [
-        # Employees indexes
         ("idx_employees_code", "employees", "employee_code"),
         ("idx_employees_email", "employees", "email"),
         ("idx_employees_dept", "employees", "department_id"),
         ("idx_employees_pos", "employees", "position_id"),
         ("idx_employees_status", "employees", "is_active"),
         ("idx_employees_created", "employees", "created_at"),
-
-        # Users indexes
         ("idx_users_username", "users", "username"),
         ("idx_users_email", "users", "email"),
         ("idx_users_role", "users", "role_id"),
-
-        # Attendance indexes (critical for date queries)
         ("idx_attendance_emp_date", "attendances", "employee_id, date"),
         ("idx_attendance_date", "attendances", "date"),
         ("idx_attendance_status", "attendances", "status"),
-
-        # Leave requests indexes
         ("idx_leaves_employee", "leave_requests", "employee_id"),
         ("idx_leaves_status", "leave_requests", "status"),
-        ("idx_leaves_dates", "leave_requests", "start_date, end_date"),
-
-        # Tasks indexes
         ("idx_tasks_assignee", "tasks", "assigned_to_id"),
         ("idx_tasks_status", "tasks", "status"),
         ("idx_tasks_priority", "tasks", "priority"),
         ("idx_tasks_due", "tasks", "due_date"),
-        ("idx_tasks_created", "tasks", "created_at"),
-
-        # Departments indexes
         ("idx_depts_code", "departments", "code"),
         ("idx_depts_parent", "departments", "parent_dept_id"),
-
-        # Positions indexes
-        ("idx_positions_code", "positions", "code"),
-        ("idx_positions_dept", "positions", "department_id"),
     ]
 
-    for idx_name, table_name, columns in indexes:
-        try:
-            # Check if index exists
-            cursor.execute(
-                f"SELECT name FROM sqlite_master WHERE type='index' AND name=?", (idx_name,))
-            if cursor.fetchone():
-                print(f"⏭ Index {idx_name} already exists")
-                continue
-
-            # Create index
-            cursor.execute(
-                f"CREATE INDEX {idx_name} ON {table_name}({columns})")
-            print(f"✓ Created index {idx_name} on {table_name}({columns})")
-        except Exception as e:
-            print(f"✗ Error creating index {idx_name}: {e}")
-
-    conn.commit()
-    conn.close()
+    with engine.begin() as conn:
+        for idx_name, table_name, cols in indexes:
+            try:
+                conn.execute(
+                    text(f"CREATE INDEX IF NOT EXISTS {idx_name} ON {table_name}({cols})"))
+                print(f"✓ Created index {idx_name} on {table_name}({cols})")
+            except Exception as e:
+                print(f"✗ Error creating index {idx_name}: {e}")
 
 
-def fix_foreign_keys():
-    """Enable foreign keys and add missing constraints"""
-    conn = get_connection()
-    cursor = conn.cursor()
-
-    # Enable foreign keys
-    cursor.execute("PRAGMA foreign_keys=ON")
-
-    # Add missing foreign key constraints via triggers (SQLite doesn't support ALTER TABLE ADD CONSTRAINT)
-    # We'll use triggers instead
-
-    # Trigger for employees -> users
-    cursor.execute("""
-        CREATE TRIGGER IF NOT EXISTS fki_employees_user_id
-        BEFORE INSERT ON employees
-        FOR EACH ROW
-        BEGIN
-            SELECT CASE
-                WHEN NEW.user_id IS NOT NULL
-                AND NOT EXISTS (SELECT id FROM users WHERE id = NEW.user_id)
-                THEN RAISE(ABORT, 'Foreign key violation: user_id')
-            END;
-        END
-    """)
-    print("✓ Created trigger for employees -> users")
-
-    # Trigger for employees -> departments
-    cursor.execute("""
-        CREATE TRIGGER IF NOT EXISTS fki_employees_department_id
-        BEFORE INSERT ON employees
-        FOR EACH ROW
-        BEGIN
-            SELECT CASE
-                WHEN NEW.department_id IS NOT NULL
-                AND NOT EXISTS (SELECT id FROM departments WHERE id = NEW.department_id)
-                THEN RAISE(ABORT, 'Foreign key violation: department_id')
-            END;
-        END
-    """)
-    print("✓ Created trigger for employees -> departments")
-
-    # Trigger for employees -> positions
-    cursor.execute("""
-        CREATE TRIGGER IF NOT EXISTS fki_employees_position_id
-        BEFORE INSERT ON employees
-        FOR EACH ROW
-        BEGIN
-            SELECT CASE
-                WHEN NEW.position_id IS NOT NULL
-                AND NOT EXISTS (SELECT id FROM positions WHERE id = NEW.position_id)
-                THEN RAISE(ABORT, 'Foreign key violation: position_id')
-            END;
-        END
-    """)
-    print("✓ Created trigger for employees -> positions")
-
-    # Trigger for positions -> departments
-    cursor.execute("""
-        CREATE TRIGGER IF NOT EXISTS fki_positions_department_id
-        BEFORE INSERT ON positions
-        FOR EACH ROW
-        BEGIN
-            SELECT CASE
-                WHEN NEW.department_id IS NOT NULL
-                AND NOT EXISTS (SELECT id FROM departments WHERE id = NEW.department_id)
-                THEN RAISE(ABORT, 'Foreign key violation: department_id')
-            END;
-        END
-    """)
-    print("✓ Created trigger for positions -> departments")
-
-    conn.commit()
-    conn.close()
-
-
-def update_query_ordering():
-    """
-    Update all queries to use proper ordering for consistent Excel exports.
-    This ensures data is always sorted the same way.
-    """
+if __name__ == '__main__':
+    add_indexes()
 
     # Define the standard ordering for each table
     ORDERING = {

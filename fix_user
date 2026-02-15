@@ -1,59 +1,79 @@
 #!/usr/bin/env python3
-"""Fix user passwords and clean up database"""
+"""Fix user passwords and clean up database using SQLAlchemy
 
-import sqlite3
-import bcrypt
+This script uses the application's SQLAlchemy session and operations
+to avoid direct sqlite3 usage. It is safe to run against PostgreSQL
+backends (Supabase) as long as `DATABASE_URL` in `config.py` is set.
+"""
+
 from datetime import datetime
+import bcrypt
 
-conn = sqlite3.connect('vernika.db')
-cursor = conn.cursor()
+from database.connection import get_db_session
+from database.operations import (
+    get_user_by_username,
+    create_user,
+    update_user_status,
+    delete_user,
+)
 
-print("=== Vernika User Password Fix ===\n")
 
-# Define the correct users with their roles and passwords
-users_to_fix = [
-    {'username': 'rajat', 'email': 'rajatsinghtomar15@gmail.com', 'password': 'admin123', 'role_id': 1},
-    {'username': 'tanu', 'email': 'tanusinghchauhan1999@gmail.com', 'password': 'tanu123', 'role_id': 2},
-]
+def fix_users():
+    db = get_db_session()
+    try:
+        print("=== Vernika User Password Fix (SQLAlchemy) ===\n")
 
-for user in users_to_fix:
-    # Check if user exists
-    cursor.execute("SELECT id, username FROM users WHERE username = ?", (user['username'],))
-    existing = cursor.fetchone()
-    
-    if existing:
-        # Update password with bcrypt hash
-        hashed = bcrypt.hashpw(user['password'].encode(), bcrypt.gensalt()).decode()
-        cursor.execute(
-            "UPDATE users SET password_hash = ?, status = 'active' WHERE username = ?",
-            (hashed, user['username'])
-        )
-        print(f"✅ Updated password for: {user['username']} ({user['password']})")
-    else:
-        # Create user with proper hash
-        hashed = bcrypt.hashpw(user['password'].encode(), bcrypt.gensalt()).decode()
-        cursor.execute(
-            "INSERT INTO users (username, email, password_hash, role_id, status, created_at) VALUES (?, ?, ?, ?, ?, ?)",
-            (user['username'], user['email'], hashed, user['role_id'], 'active', datetime.now().isoformat())
-        )
-        print(f"✅ Created user: {user['username']} ({user['password']})")
+        users_to_fix = [
+            {'username': 'rajat', 'email': 'rajatsinghtomar15@gmail.com',
+                'password': 'admin123', 'role_id': 1},
+            {'username': 'tanu', 'email': 'tanusinghchauhan1999@gmail.com',
+                'password': 'tanu123', 'role_id': 2},
+        ]
 
-conn.commit()
+        for user in users_to_fix:
+            existing = get_user_by_username(db, user['username'])
+            hashed = bcrypt.hashpw(
+                user['password'].encode(), bcrypt.gensalt()).decode()
 
-# Remove test users (john_doe, jane_smith, mike_wilson, manager)
-test_users = ['john_doe', 'jane_smith', 'mike_wilson', 'manager']
-for username in test_users:
-    cursor.execute("DELETE FROM users WHERE username = ?", (username,))
-    print(f"🗑️  Removed test user: {username}")
+            if existing:
+                existing.password_hash = hashed
+                existing.status = 'active'
+                db.commit()
+                print(
+                    f"✅ Updated password for: {user['username']} ({user['password']})")
+            else:
+                create_user(db, user['username'], user['email'],
+                            user['password'], user['role_id'])
+                print(
+                    f"✅ Created user: {user['username']} ({user['password']})")
 
-conn.commit()
+        # Remove test users (john_doe, jane_smith, mike_wilson, manager)
+        test_users = ['john_doe', 'jane_smith', 'mike_wilson', 'manager']
+        for username in test_users:
+            u = get_user_by_username(db, username)
+            if u:
+                delete_user(db, u.id)
+                print(f"🗑️  Removed test user: {username}")
 
-# Show final users
-print("\n=== Final Users in Database ===")
-cursor.execute("SELECT id, username, email, role_id, status FROM users ORDER BY id")
-for u in cursor.fetchall():
-    role_name = {1: 'Admin', 2: 'HR Manager', 3: 'Manager', 4: 'Employee'}.get(u[3], 'Unknown')
-    print(f"  ID:{u[0]} {u[1]} ({role_name}) - {u[4]}")
+        # Show final users
+        print("\n=== Final Users in Database ===")
+        users = db.query.__self__.query.get_bind()
+        # Fallback: simple listing via raw query
+        rows = db.execute(
+            "SELECT id, username, email, role_id, status FROM users ORDER BY id").fetchall()
+        for u in rows:
+            role_name = {1: 'Admin', 2: 'HR Manager',
+                         3: 'Manager', 4: 'Employee'}.get(u[3], 'Unknown')
+            print(f"  ID:{u[0]} {u[1]} ({role_name}) - {u[4]}")
 
-conn.close()
-print("\n=== Done! ===")
+    except Exception as e:
+        print(f"❌ Error: {e}")
+    finally:
+        try:
+            db.close()
+        except:
+            pass
+
+
+if __name__ == '__main__':
+    fix_users()

@@ -1,13 +1,12 @@
 """
 Vernika HRA - Positions Screen
-Industry-Level Human Resource Management System
-
-This module provides the positions/roles management screen.
-Fixed for Flet 0.25+
+PostgreSQL/SQLAlchemy based positions management
 """
 
 import flet as ft
-import sqlite3
+from sqlalchemy.orm import Session, joinedload
+from database.connection import get_db_session
+from database.models import Position, Department
 
 
 # Theme colors
@@ -27,25 +26,12 @@ class PositionsScreen(ft.Container):
     """
 
     def __init__(self, page, user):
-        """
-        Initialize positions screen.
-
-        Args:
-            page: Flet page object
-            user: Current user object
-        """
         super().__init__()
         self._page = page
         self._user = user
         self.expand = True
         self.bgcolor = BACKGROUND
         self.content = self._build_content()
-
-    def _get_db(self):
-        """Get database connection"""
-        conn = sqlite3.connect('vernika.db')
-        conn.row_factory = sqlite3.Row
-        return conn
 
     def _build_content(self):
         """Build the UI"""
@@ -92,23 +78,35 @@ class PositionsScreen(ft.Container):
         """Show add position dialog"""
         self._show_add_dialog()
 
-    def _build_positions_list(self):
-        """Build positions list"""
+    def _get_positions(self):
+        """Get all positions from PostgreSQL with eager loading"""
+        db = get_db_session()
         try:
-            conn = self._get_db()
-            cursor = conn.cursor()
-            cursor.execute("""
-                SELECT p.id, p.title, p.code, p.description, p.min_salary, p.max_salary,
-                       p.is_active, d.name as department_name
-                FROM positions p
-                LEFT JOIN departments d ON p.department_id = d.id
-                ORDER BY p.id
-            """)
-            positions = cursor.fetchall()
-            conn.close()
+            positions = db.query(Position).options(joinedload(
+                Position.department)).order_by(Position.id).all()
+            return positions
         except Exception as e:
             print(f"Error loading positions: {e}")
-            positions = []
+            return []
+        finally:
+            db.close()
+
+    def _get_departments(self):
+        """Get list of departments from PostgreSQL"""
+        db = get_db_session()
+        try:
+            departments = db.query(Department).filter(
+                Department.is_active == True).order_by(Department.name).all()
+            return departments
+        except Exception as e:
+            print(f"Error loading departments: {e}")
+            return []
+        finally:
+            db.close()
+
+    def _build_positions_list(self):
+        """Build positions list"""
+        positions = self._get_positions()
 
         if not positions:
             return ft.Container(
@@ -129,18 +127,18 @@ class PositionsScreen(ft.Container):
 
         rows = []
         for p in positions:
-            status_color = SUCCESS if p['is_active'] else ERROR
-            status_text = "Active" if p['is_active'] else "Inactive"
-            salary_range = f"Rs.{p['min_salary'] or 0:,.0f} - Rs.{p['max_salary'] or 0:,.0f}" if p['min_salary'] or p['max_salary'] else "Not set"
+            status_color = SUCCESS if p.is_active else ERROR
+            status_text = "Active" if p.is_active else "Inactive"
+            salary_range = f"Rs.{p.min_salary or 0:,.0f} - Rs.{p.max_salary or 0:,.0f}" if p.min_salary or p.max_salary else "Not set"
 
             rows.append(
                 ft.DataRow(
                     cells=[
-                        ft.DataCell(ft.Text(str(p['id']))),
-                        ft.DataCell(ft.Text(p['code'] or "")),
-                        ft.DataCell(ft.Text(p['title'] or "")),
+                        ft.DataCell(ft.Text(str(p.id))),
+                        ft.DataCell(ft.Text(p.code or "")),
+                        ft.DataCell(ft.Text(p.title or "")),
                         ft.DataCell(
-                            ft.Text(p['department_name'] or "No Department")),
+                            ft.Text(p.department.name if p.department else "No Department")),
                         ft.DataCell(ft.Text(salary_range)),
                         ft.DataCell(
                             ft.Container(
@@ -155,14 +153,14 @@ class PositionsScreen(ft.Container):
                                 ft.IconButton(
                                     icon=ft.Icons.EDIT,
                                     icon_color="#1976D2",
-                                    on_click=lambda e, pos_id=p['id']: self._show_edit_dialog(
+                                    on_click=lambda e, pos_id=p.id: self._show_edit_dialog(
                                         pos_id),
                                     tooltip="Edit"
                                 ),
                                 ft.IconButton(
                                     icon=ft.Icons.DELETE,
                                     icon_color=ERROR,
-                                    on_click=lambda e, pos_id=p['id']: self._show_delete_dialog(
+                                    on_click=lambda e, pos_id=p.id: self._show_delete_dialog(
                                         pos_id),
                                     tooltip="Delete"
                                 ),
@@ -188,25 +186,12 @@ class PositionsScreen(ft.Container):
 
         return ft.Container(content=table, expand=True)
 
-    def _get_departments(self):
-        """Get list of departments for dropdown"""
-        try:
-            conn = self._get_db()
-            cursor = conn.cursor()
-            cursor.execute("SELECT id, name FROM departments ORDER BY name")
-            departments = cursor.fetchall()
-            conn.close()
-            return departments
-        except Exception as e:
-            print(f"Error loading departments: {e}")
-            return []
-
     def _show_add_dialog(self):
         """Show add position dialog"""
         departments = self._get_departments()
 
         dept_options = [ft.dropdown.Option(
-            key=str(d['id']), text=d['name']) for d in departments]
+            key=str(d.id), text=d.name) for d in departments]
 
         title = ft.TextField(label="Title *", width=300)
         code = ft.TextField(label="Code *", width=150)
@@ -227,29 +212,33 @@ class PositionsScreen(ft.Container):
                 self._page.update()
                 return
 
+            db = get_db_session()
             try:
                 min_sal = float(min_salary.value) if min_salary.value else 0
                 max_sal = float(max_salary.value) if max_salary.value else 0
 
-                conn = self._get_db()
-                cursor = conn.cursor()
-                cursor.execute(
-                    "SELECT id FROM positions WHERE code=?", (code.value.upper(),))
-                if cursor.fetchone():
+                # Check if code exists
+                existing = db.query(Position).filter(
+                    Position.code == code.value.upper()).first()
+                if existing:
                     error.value = "Code already exists!"
                     error.visible = True
-                    conn.close()
                     self._page.update()
                     return
 
-                cursor.execute("""INSERT INTO positions 
-                    (title, code, description, department_id, min_salary, max_salary, is_active) 
-                    VALUES (?, ?, ?, ?, ?, ?, ?)""",
-                               (title.value, code.value.upper(), description.value or None,
-                                int(department.value) if department.value else None,
-                                min_sal, max_sal, True))
-                conn.commit()
-                conn.close()
+                # Create new position
+                new_position = Position(
+                    title=title.value,
+                    code=code.value.upper(),
+                    description=description.value or None,
+                    department_id=int(
+                        department.value) if department.value else None,
+                    min_salary=min_sal,
+                    max_salary=max_sal,
+                    is_active=True
+                )
+                db.add(new_position)
+                db.commit()
 
                 self._close_dialog()
                 self._show_success("Position added successfully!")
@@ -258,8 +247,9 @@ class PositionsScreen(ft.Container):
                 error.value = str(ex)
                 error.visible = True
                 self._page.update()
+            finally:
+                db.close()
 
-        # Build form content with scroll support
         tab_content = ft.Column([
             ft.Text("Position Details", size=14,
                     weight=ft.FontWeight.BOLD, color=PRIMARY),
@@ -270,7 +260,7 @@ class PositionsScreen(ft.Container):
                     weight=ft.FontWeight.BOLD, color=SUCCESS),
             ft.Row([department, min_salary, max_salary], spacing=10),
             error,
-            ft.Container(height=20),  # Extra space at bottom
+            ft.Container(height=20),
         ], spacing=10, scroll=ft.ScrollMode.AUTO)
 
         dialog = ft.AlertDialog(
@@ -295,11 +285,14 @@ class PositionsScreen(ft.Container):
 
     def _show_edit_dialog(self, pos_id):
         """Show edit position dialog"""
-        conn = self._get_db()
-        cursor = conn.cursor()
-        cursor.execute("SELECT * FROM positions WHERE id=?", (pos_id,))
-        p = cursor.fetchone()
-        conn.close()
+        db = get_db_session()
+        try:
+            p = db.query(Position).filter(Position.id == pos_id).first()
+        except Exception as e:
+            self._show_error(f"Error: {e}")
+            return
+        finally:
+            db.close()
 
         if not p:
             self._show_error("Position not found!")
@@ -308,42 +301,44 @@ class PositionsScreen(ft.Container):
         departments = self._get_departments()
 
         dept_options = [ft.dropdown.Option(
-            key=str(d['id']), text=d['name']) for d in departments]
+            key=str(d.id), text=d.name) for d in departments]
 
-        title = ft.TextField(label="Title", width=300, value=p['title'] or "")
+        title = ft.TextField(label="Title", width=300, value=p.title or "")
         code = ft.TextField(label="Code", width=150,
-                            value=p['code'] or "", disabled=True)
-        description = ft.TextField(label="Description", width=450, value=p['description'] or "",
+                            value=p.code or "", disabled=True)
+        description = ft.TextField(label="Description", width=450, value=p.description or "",
                                    multiline=True, min_lines=2)
         department = ft.Dropdown(width=250, options=dept_options, label="Department",
-                                 value=str(p['department_id']) if p['department_id'] else None)
+                                 value=str(p.department_id) if p.department_id else None)
         min_salary = ft.TextField(
-            label="Min Salary (Rs.)", width=150, value=str(p['min_salary'] or 0))
+            label="Min Salary (Rs.)", width=150, value=str(p.min_salary or 0))
         max_salary = ft.TextField(
-            label="Max Salary (Rs.)", width=150, value=str(p['max_salary'] or 0))
-        status_switch = ft.Switch(label="Active", value=bool(p['is_active']))
+            label="Max Salary (Rs.)", width=150, value=str(p.max_salary or 0))
+        status_switch = ft.Switch(label="Active", value=bool(p.is_active))
 
         def update(e):
+            db = get_db_session()
             try:
                 min_sal = float(min_salary.value) if min_salary.value else 0
                 max_sal = float(max_salary.value) if max_salary.value else 0
 
-                conn = self._get_db()
-                cursor = conn.cursor()
-                cursor.execute("""UPDATE positions SET 
-                    title=?, description=?, department_id=?, min_salary=?, max_salary=?, is_active=? 
-                    WHERE id=?""",
-                               (title.value, description.value or None,
-                                int(department.value) if department.value else None,
-                                min_sal, max_sal, status_switch.value, pos_id))
-                conn.commit()
-                conn.close()
+                db.query(Position).filter(Position.id == pos_id).update({
+                    Position.title: title.value,
+                    Position.description: description.value or None,
+                    Position.department_id: int(department.value) if department.value else None,
+                    Position.min_salary: min_sal,
+                    Position.max_salary: max_sal,
+                    Position.is_active: status_switch.value
+                })
+                db.commit()
 
                 self._close_dialog()
                 self._show_success("Position updated successfully!")
                 self._refresh()
             except Exception as ex:
                 self._show_error(str(ex))
+            finally:
+                db.close()
 
         tab_content = ft.Column([
             ft.Text("Position Details", size=14,
@@ -356,7 +351,7 @@ class PositionsScreen(ft.Container):
             ft.Row([department, min_salary, max_salary], spacing=10),
             ft.Divider(),
             status_switch,
-            ft.Container(height=20),  # Extra space at bottom
+            ft.Container(height=20),
         ], spacing=10, scroll=ft.ScrollMode.AUTO)
 
         dialog = ft.AlertDialog(
@@ -381,34 +376,37 @@ class PositionsScreen(ft.Container):
 
     def _show_delete_dialog(self, pos_id):
         """Show delete confirmation dialog"""
-        conn = self._get_db()
-        cursor = conn.cursor()
-        cursor.execute("SELECT title FROM positions WHERE id=?", (pos_id,))
-        p = cursor.fetchone()
-        conn.close()
+        db = get_db_session()
+        try:
+            p = db.query(Position).filter(Position.id == pos_id).first()
+        except Exception as e:
+            self._show_error(f"Error: {e}")
+            return
+        finally:
+            db.close()
 
         if not p:
             self._show_error("Position not found!")
             return
 
         def confirm(e):
+            db = get_db_session()
             try:
-                conn = self._get_db()
-                cursor = conn.cursor()
-                cursor.execute("DELETE FROM positions WHERE id=?", (pos_id,))
-                conn.commit()
-                conn.close()
+                db.query(Position).filter(Position.id == pos_id).delete()
+                db.commit()
 
                 self._close_dialog()
                 self._show_success("Position deleted!")
                 self._refresh()
             except Exception as ex:
                 self._show_error(str(ex))
+            finally:
+                db.close()
 
         dialog = ft.AlertDialog(
             modal=True,
             title=ft.Text("Delete Position?", color=ERROR),
-            content=ft.Text(f"Delete '{p['title']}'?"),
+            content=ft.Text(f"Delete '{p.title}'?"),
             actions=[
                 ft.TextButton(
                     "Cancel", on_click=lambda e: self._close_dialog()),

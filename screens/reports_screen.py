@@ -3,6 +3,7 @@ Vernika HRA - Reports Screen
 Industry-Level Human Resource Management System
 
 This module provides the reports and analytics screen.
+Features real data from database.
 """
 
 from typing import Optional, List, Dict, Any
@@ -13,13 +14,16 @@ from flet import (
 )
 from core.theme import theme
 from core.colors_compat import colors
-from database.connection import get_session
+from database.connection import get_db_session
+from database.operations import get_dashboard_stats
+from database.models import Employee, Department, Attendance, LeaveRequest, Task, User, UserStatus
+from database.models import AttendanceStatus, LeaveStatus, TaskStatus
 from datetime import datetime, timedelta
 
 
 class ReportsScreen(Container):
     """
-    Screen for reports and analytics.
+    Screen for reports and analytics with real database data.
     """
 
     def __init__(self, page: ft.Page, **kwargs):
@@ -40,6 +44,9 @@ class ReportsScreen(Container):
             "Performance Overview",
         ]
 
+        # Real data from database
+        self.stats_data = self._load_stats_from_db()
+
         self.spacing = 20
         self.expand = True
 
@@ -50,6 +57,77 @@ class ReportsScreen(Container):
     def page(self) -> ft.Page:
         """Get current page"""
         return self._page
+
+    def _load_stats_from_db(self):
+        """Load statistics from database"""
+        db = get_db_session()
+        try:
+            # Get employee stats
+            total_employees = db.query(Employee).count()
+            active_employees = db.query(Employee).filter(
+                Employee.is_active == True).count()
+
+            # Get today's attendance
+            today = datetime.now().date()
+            present_today = db.query(Attendance).filter(
+                Attendance.date == today,
+                Attendance.status == AttendanceStatus.PRESENT
+            ).count()
+
+            absent_today = db.query(Attendance).filter(
+                Attendance.date == today,
+                Attendance.status == AttendanceStatus.ABSENT
+            ).count()
+
+            # Get leave requests
+            pending_leaves = db.query(LeaveRequest).filter(
+                LeaveRequest.status == LeaveStatus.PENDING
+            ).count()
+
+            # Get task stats
+            pending_tasks = db.query(Task).filter(
+                Task.status == TaskStatus.TODO
+            ).count()
+
+            # Get total users
+            total_users = db.query(User).count()
+            active_users = db.query(User).filter(
+                User.status == UserStatus.ACTIVE).count()
+
+            # Get departments count
+            departments_count = db.query(Department).count()
+
+            # Get recent reports (mock - would need AuditLog model)
+            recent_reports = []
+
+            return {
+                'total_employees': total_employees,
+                'active_employees': active_employees,
+                'present_today': present_today,
+                'absent_today': absent_today,
+                'pending_leaves': pending_leaves,
+                'pending_tasks': pending_tasks,
+                'total_users': total_users,
+                'active_users': active_users,
+                'departments': departments_count,
+                'recent_reports': recent_reports
+            }
+        except Exception as e:
+            print(f"Error loading stats: {e}")
+            return {
+                'total_employees': 0,
+                'active_employees': 0,
+                'present_today': 0,
+                'absent_today': 0,
+                'pending_leaves': 0,
+                'pending_tasks': 0,
+                'total_users': 0,
+                'active_users': 0,
+                'departments': 0,
+                'recent_reports': []
+            }
+        finally:
+            db.close()
 
     def show_success(self, message: str):
         """Show success message"""
@@ -190,17 +268,35 @@ class ReportsScreen(Container):
         )
 
     def _build_dashboard_stats(self) -> Row:
-        """Build dashboard statistics cards"""
+        """Build dashboard statistics cards with real data"""
+        stats = self.stats_data
+
         return Row(
             controls=[
                 self._create_stat_card(
-                    "Total Employees", "156", ft.Icons.PERSON, colors.BLUE),
+                    "Total Employees",
+                    str(stats.get('total_employees', 0)),
+                    ft.Icons.PERSON,
+                    colors.BLUE
+                ),
                 self._create_stat_card(
-                    "Present Today", "142", ft.Icons.CHECK, colors.GREEN),
+                    "Present Today",
+                    str(stats.get('present_today', 0)),
+                    ft.Icons.CHECK,
+                    colors.GREEN
+                ),
                 self._create_stat_card(
-                    "On Leave", "8", ft.Icons.TIMELAPSE, colors.ORANGE),
+                    "On Leave",
+                    str(stats.get('pending_leaves', 0)),
+                    ft.Icons.TIMELAPSE,
+                    colors.ORANGE
+                ),
                 self._create_stat_card(
-                    "Absent", "6", ft.Icons.CLOSE, colors.RED),
+                    "Absent",
+                    str(stats.get('absent_today', 0)),
+                    ft.Icons.CLOSE,
+                    colors.RED
+                ),
             ],
             spacing=15,
         )
@@ -276,7 +372,46 @@ class ReportsScreen(Container):
         )
 
     def _build_department_card(self) -> Card:
-        """Build department placeholder card"""
+        """Build department card with real data"""
+        # Get department data from database
+        db = get_db_session()
+        dept_data = []
+        try:
+            departments = db.query(Department).all()
+            total_employees = db.query(Employee).count()
+
+            for dept in departments:
+                emp_count = db.query(Employee).filter(
+                    Employee.department_id == dept.id
+                ).count()
+                percentage = (emp_count / total_employees *
+                              100) if total_employees > 0 else 0
+                dept_data.append({
+                    'name': dept.name,
+                    'count': emp_count,
+                    'percentage': percentage
+                })
+        except Exception as e:
+            print(f"Error loading department data: {e}")
+            dept_data = []
+        finally:
+            db.close()
+
+        # Build department rows
+        dept_rows = []
+        for dept in dept_data:
+            dept_rows.append(
+                Row([
+                    Icon(ft.Icons.BUSINESS, color=colors.BLUE, size=16),
+                    Text(
+                        f"{dept['name']}: {dept['count']} ({dept['percentage']:.1f}%)", size=12)
+                ], spacing=5)
+            )
+
+        if not dept_rows:
+            dept_rows = [
+                Text("No department data", size=12, color=colors.GREY)]
+
         return Card(
             content=Container(
                 padding=15,
@@ -286,16 +421,7 @@ class ReportsScreen(Container):
                              weight=ft.FontWeight.BOLD),
                         Container(
                             content=Column(
-                                controls=[
-                                    Row([Icon(ft.Icons.SETTINGS, color=colors.BLUE), Text(
-                                        "Engineering: 40%")], spacing=5),
-                                    Row([Icon(ft.Icons.TRENDING_UP, color=colors.GREEN), Text(
-                                        "Sales: 25%")], spacing=5),
-                                    Row([Icon(ft.Icons.CAMPAIGN, color=colors.ORANGE), Text(
-                                        "Marketing: 20%")], spacing=5),
-                                    Row([Icon(ft.Icons.PEOPLE, color=colors.PURPLE), Text(
-                                        "HR: 15%")], spacing=5),
-                                ],
+                                controls=dept_rows,
                             ),
                             height=200,
                         ),
@@ -307,7 +433,46 @@ class ReportsScreen(Container):
         )
 
     def _build_leave_card(self) -> Card:
-        """Build leave placeholder card"""
+        """Build leave card with real data"""
+        db = get_db_session()
+        leave_data = []
+        try:
+            from database.models import LeaveTypeConfig, LeaveBalance
+
+            # Get leave type configs
+            leave_types = db.query(LeaveTypeConfig).all()
+
+            for lt in leave_types:
+                leave_data.append({
+                    'name': lt.display_name,
+                    'max_days': lt.max_days_per_year,
+                    'is_paid': lt.is_paid
+                })
+        except Exception as e:
+            print(f"Error loading leave data: {e}")
+            leave_data = [
+                {'name': 'Annual Leave', 'max_days': 20, 'is_paid': True},
+                {'name': 'Sick Leave', 'max_days': 10, 'is_paid': True},
+                {'name': 'Personal Leave', 'max_days': 5, 'is_paid': True},
+            ]
+        finally:
+            db.close()
+
+        # Build leave rows
+        leave_rows = []
+        colors_list = [colors.BLUE, colors.GREEN, colors.ORANGE, colors.PURPLE]
+        for i, leave in enumerate(leave_data):
+            icon_color = colors_list[i % len(colors_list)]
+            leave_rows.append(
+                Row([
+                    Icon(ft.Icons.BEACH_ACCESS, color=icon_color, size=16),
+                    Text(f"{leave['name']}: {leave['max_days']} days", size=12)
+                ], spacing=5)
+            )
+
+        if not leave_rows:
+            leave_rows = [Text("No leave data", size=12, color=colors.GREY)]
+
         return Card(
             content=Container(
                 padding=15,
@@ -316,16 +481,7 @@ class ReportsScreen(Container):
                         Text("Leave Types", size=16, weight=ft.FontWeight.BOLD),
                         Container(
                             content=Column(
-                                controls=[
-                                    Row([Icon(ft.Icons.BEACH_ACCESS, color=colors.BLUE), Text(
-                                        "Annual Leave: 45 days")], spacing=5),
-                                    Row([Icon(ft.Icons.HEALTH_AND_SAFETY, color=colors.GREEN), Text(
-                                        "Sick Leave: 30 days")], spacing=5),
-                                    Row([Icon(ft.Icons.PERSON, color=colors.ORANGE), Text(
-                                        "Personal: 15 days")], spacing=5),
-                                    Row([Icon(ft.Icons.MORE_VERT, color=colors.RED), Text(
-                                        "Other: 8 days")], spacing=5),
-                                ],
+                                controls=leave_rows,
                             ),
                             height=200,
                         ),

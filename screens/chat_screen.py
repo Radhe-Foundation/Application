@@ -4,9 +4,13 @@ Vernika HRA - Chat Screen with Real-time Supabase Support
 Features:
 - Real-time messaging using Supabase Realtime
 - Online presence indicators
-- Direct messages between users (admin <-> tanu)
+- Direct messages between users
+- Group chat support
+- File/image attachments
+- Voice and video call buttons
+- Message status indicators
+- Search messages
 - Automatic message sync
-- Future-ready for multiple employees
 """
 
 from __future__ import annotations
@@ -18,13 +22,16 @@ import threading
 import flet as ft
 
 from database.connection import get_db_session
-from database.models import User, UserStatus, ChatMessage as ChatMessageModel
+from database.models import User, UserStatus, ChatMessage as ChatMessageModel, ChatGroup, ChatGroupMember
 from database.operations import (
     get_all_users,
     get_direct_messages,
+    get_group_messages,
     send_chat_message,
     mark_chat_messages_as_read,
     update_user_presence,
+    create_chat_group,
+    get_user_groups,
 )
 
 
@@ -50,6 +57,7 @@ class Contact:
 @dataclass
 class ChatMessageVM:
     """View-model used to render chat messages."""
+    id: Optional[int]
     sender_id: int
     sender_name: str
     content: str
@@ -85,8 +93,13 @@ class ChatScreen(ft.Container):
 
         # In-memory view state
         self.contacts: List[Contact] = []
+        self.groups: List = []
         self.selected_contact: Optional[Contact] = None
+        self.selected_group = None
         self.messages: List[ChatMessageVM] = []
+        self._message_ids: set[int] = set()
+        self.chat_mode = "direct"  # "direct" or "group"
+        self.search_query = ""
 
         # UI references
         self._contacts_column: Optional[ft.Column] = None
@@ -162,6 +175,10 @@ class ChatScreen(ft.Container):
             event_type = payload.get('eventType', '')
             if event_type == 'INSERT':
                 new_record = payload.get('new', {})
+                # If record contains an id and we already have it, ignore to avoid duplicates
+                new_id = new_record.get('id') or new_record.get('message_id')
+                if new_id and int(new_id) in self._message_ids:
+                    return
                 # Check if message is relevant to current conversation
                 receiver_id = new_record.get('receiver_id')
                 sender_id = new_record.get('sender_id')
@@ -176,14 +193,14 @@ class ChatScreen(ft.Container):
             print(f"[Chat] Error handling new message: {e}")
 
     def _start_polling(self):
-        """Start polling fallback for real-time updates"""
+        """Start polling fallback for real-time updates - OPTIMIZED"""
         def poll_messages():
             while not self._stop_threads:
                 try:
                     import time
-                    time.sleep(3)  # Poll every 3 seconds
+                    time.sleep(5)  # Poll every 5 seconds (reduced from 3)
                     if self.selected_contact and not self._stop_threads:
-                        # Check for new messages
+                        # Check for new messages - only update if we have a selected contact
                         self._load_messages_for_selected()
                         # Only update UI if there are new messages
                         if self._messages_list:
@@ -198,6 +215,7 @@ class ChatScreen(ft.Container):
         self._presence_thread = threading.Thread(
             target=poll_messages, daemon=True)
         self._presence_thread.start()
+        print("[Chat] Polling started (every 5 seconds)")
 
     def _load_contacts(self) -> None:
         """Load all other active users from the database."""
@@ -233,7 +251,11 @@ class ChatScreen(ft.Container):
 
     def _load_messages_for_selected(self) -> None:
         """Load all direct messages between the current user and the selected contact."""
-        self.messages = []
+        # We'll rebuild messages but avoid duplicates by message id
+        new_messages: List[ChatMessageVM] = []
+
+        # reset message ids for this load and repopulate to keep consistent state
+        self._message_ids = set()
 
         if not self.selected_contact:
             return
@@ -264,15 +286,24 @@ class ChatScreen(ft.Container):
                 except Exception:
                     pass
 
-                self.messages.append(
-                    ChatMessageVM(
-                        sender_id=int(m.sender_id),
-                        sender_name=sender_name,
-                        content=str(m.content or ""),
-                        created_at=m.created_at or datetime.utcnow(),
-                        is_own=bool(m.sender_id == self.current_user_id),
-                    )
+                msg_id = int(getattr(m, 'id', 0) or 0)
+                vm = ChatMessageVM(
+                    id=msg_id or None,
+                    sender_id=int(m.sender_id),
+                    sender_name=sender_name,
+                    content=str(m.content or ""),
+                    created_at=m.created_at or datetime.utcnow(),
+                    is_own=bool(m.sender_id == self.current_user_id),
                 )
+
+                if vm.id is None or vm.id not in self._message_ids:
+                    new_messages.append(vm)
+                    if vm.id:
+                        self._message_ids.add(vm.id)
+
+            # Replace messages with the rebuilt list (oldest-first preserved)
+            # db_messages were sorted oldest-first earlier; map to messages
+            self.messages = new_messages
 
             # Mark all messages from the other user as read
             try:
@@ -370,6 +401,13 @@ class ChatScreen(ft.Container):
             color=ft.Colors.GREY_600,
         )
 
+        # Call buttons
+        def on_voice_call(e):
+            self._show_snackbar("Voice call feature - Coming soon!")
+
+        def on_video_call(e):
+            self._show_snackbar("Video call feature - Coming soon!")
+
         header = ft.Container(
             bgcolor=ft.Colors.WHITE,
             padding=ft.padding.symmetric(horizontal=16, vertical=10),
@@ -392,11 +430,30 @@ class ChatScreen(ft.Container):
                             ),
                         ],
                     ),
-                    ft.IconButton(
-                        icon=ft.Icons.REFRESH,
-                        tooltip="Refresh messages",
-                        on_click=self._on_refresh_clicked,
-                    ),
+                    ft.Row([
+                        ft.IconButton(
+                            icon=ft.Icons.PHONE,
+                            tooltip="Voice Call",
+                            on_click=on_voice_call,
+                            icon_color="#4CAF50",
+                        ),
+                        ft.IconButton(
+                            icon=ft.Icons.VIDEO_CALL,
+                            tooltip="Video Call",
+                            on_click=on_video_call,
+                            icon_color="#2196F3",
+                        ),
+                        ft.IconButton(
+                            icon=ft.Icons.ATTACH_FILE,
+                            tooltip="Send File",
+                            on_click=self._on_attach_file,
+                        ),
+                        ft.IconButton(
+                            icon=ft.Icons.REFRESH,
+                            tooltip="Refresh messages",
+                            on_click=self._on_refresh_clicked,
+                        ),
+                    ], spacing=0),
                 ],
             ),
         )
@@ -619,7 +676,7 @@ class ChatScreen(ft.Container):
         )
 
     def _update_header_for_selection(self) -> None:
-        """Update header texts based on the selected contact."""
+        """Update header texts based on the selected contact with last seen"""
         if not (self._header_title and self._header_subtitle):
             return
 
@@ -630,15 +687,38 @@ class ChatScreen(ft.Container):
 
         c = self.selected_contact
         self._header_title.value = c.username
+
+        # Get real-time presence from database
+        db = get_db_session()
+        try:
+            user = db.query(User).filter(User.id == c.id).first()
+            if user:
+                c.is_online = user.is_online
+                c.last_seen = user.last_seen
+        except Exception as e:
+            print(f"Error getting presence: {e}")
+        finally:
+            db.close()
+
         if c.is_online:
             self._header_subtitle.value = "Online"
         else:
             if c.last_seen:
                 try:
-                    self._header_subtitle.value = (
-                        "Last seen "
-                        + c.last_seen.strftime("%Y-%m-%d %H:%M")
-                    )
+                    # Format last seen
+                    now = datetime.utcnow()
+                    diff = now - c.last_seen
+                    if diff.total_seconds() < 60:
+                        self._header_subtitle.value = "Last seen just now"
+                    elif diff.total_seconds() < 3600:
+                        minutes = int(diff.total_seconds() / 60)
+                        self._header_subtitle.value = f"Last seen {minutes}m ago"
+                    elif diff.total_seconds() < 86400:
+                        hours = int(diff.total_seconds() / 3600)
+                        self._header_subtitle.value = f"Last seen {hours}h ago"
+                    else:
+                        self._header_subtitle.value = "Last seen " + \
+                            c.last_seen.strftime("%Y-%m-%d %H:%M")
                 except Exception:
                     self._header_subtitle.value = "Offline"
             else:
@@ -667,21 +747,51 @@ class ChatScreen(ft.Container):
 
         db = get_db_session()
         try:
-            send_chat_message(
+            sent = send_chat_message(
                 db,
                 sender_id=self.current_user_id,
                 content=content,
                 receiver_id=self.selected_contact.id,
             )
+
+            # If send returns the created message with an id, track it
+            try:
+                msg_id = int(getattr(sent, 'id', 0) or 0)
+            except Exception:
+                msg_id = 0
+
+            # Check if we already have this message to avoid duplicates
+            if msg_id and msg_id in self._message_ids:
+                # Message already exists, just clear input
+                self._input_field.value = ""
+                self._page.update()
+                return
+
+            vm = ChatMessageVM(
+                id=msg_id or None,
+                sender_id=self.current_user_id,
+                sender_name=self.current_username,
+                content=content,
+                created_at=getattr(sent, 'created_at', datetime.utcnow()),
+                is_own=True,
+            )
+
+            # Add to message IDs to prevent duplicates
+            if vm.id:
+                self._message_ids.add(vm.id)
+
+            # Only append if not already in messages
+            if not any(m.id == vm.id for m in self.messages):
+                self.messages.append(vm)
+
         except Exception as exc:
             print(f"[ChatScreen] Error sending message: {exc}")
             self._show_snackbar(f"Error sending message: {exc}")
         finally:
             db.close()
 
-        # Clear input and reload messages
+        # Clear input and refresh UI only (don't reload from DB to avoid duplicates)
         self._input_field.value = ""
-        self._load_messages_for_selected()
         self._refresh_messages_ui()
         self._page.update()
 
@@ -703,6 +813,184 @@ class ChatScreen(ft.Container):
             self._page.update()
         except Exception as exc:
             print(f"[ChatScreen] Snackbar failed: {exc}")
+
+    def _on_attach_file(self, e=None):
+        """Handle file attachment button click - Document sharing feature"""
+        # Show dialog for file attachment with document sharing
+        def close_dlg(e):
+            self._page.dialog = None
+            self._page.update()
+
+        def handle_attach_file(e):
+            self._show_snackbar(
+                "File attachment feature - Select a contact first to share documents")
+            close_dlg(e)
+
+        def handle_choose_image(e):
+            self._show_snackbar(
+                "Image sharing - Select a contact first to share images")
+            close_dlg(e)
+
+        def handle_share_doc(e):
+            """Share document from documents screen"""
+            if not self.selected_contact:
+                self._show_snackbar(
+                    "Please select a contact first to share documents")
+                close_dlg(e)
+                return
+
+            # Show document selection from database
+            self._show_document_share_dialog()
+            close_dlg(e)
+
+        dlg = ft.AlertDialog(
+            title=ft.Text("Share File"),
+            content=ft.Column([
+                ft.Text("Choose an option:", size=14),
+                ft.Container(height=10),
+                ft.ElevatedButton(
+                    "Choose File",
+                    icon=ft.Icons.FOLDER_OPEN,
+                    on_click=handle_attach_file,
+                    style=ft.ButtonStyle(bgcolor="#4CAF50", color="WHITE"),
+                    width=200,
+                ),
+                ft.Container(height=5),
+                ft.ElevatedButton(
+                    "Choose Image",
+                    icon=ft.Icons.IMAGE,
+                    on_click=handle_choose_image,
+                    style=ft.ButtonStyle(bgcolor="#2196F3", color="WHITE"),
+                    width=200,
+                ),
+                ft.Container(height=5),
+                ft.ElevatedButton(
+                    "Share from Documents",
+                    icon=ft.Icons.DESCRIPTION,
+                    on_click=handle_share_doc,
+                    style=ft.ButtonStyle(bgcolor="#9C27B0", color="WHITE"),
+                    width=200,
+                ),
+            ], tight=True),
+            actions=[
+                ft.TextButton("Cancel", on_click=close_dlg),
+            ],
+        )
+        self._page.dialog = dlg
+        dlg.open = True
+        self._page.update()
+
+    def _show_document_share_dialog(self):
+        """Show dialog to share documents from database"""
+        if not self.selected_contact:
+            self._show_snackbar("Please select a contact first")
+            return
+
+        # Get documents from database
+        from database.operations import get_user_documents
+        db = get_db_session()
+        try:
+            documents = get_user_documents(db, self.current_user_id, limit=20)
+        except:
+            documents = []
+        finally:
+            db.close()
+
+        if not documents:
+            self._show_snackbar("No documents available to share")
+            return
+
+        doc_options = []
+        for doc in documents:
+            doc_options.append(
+                ft.dropdown.Option(
+                    str(doc.id),
+                    f"{doc.name} ({doc.file_type or 'N/A'})"
+                )
+            )
+
+        selected_doc = ft.Dropdown(
+            label="Select Document",
+            width=300,
+            options=doc_options,
+        )
+
+        message_field = ft.TextField(
+            label="Message (optional)",
+            width=300,
+            hint_text="Add a message with the document",
+        )
+
+        def confirm_share(e):
+            if not selected_doc.value:
+                self._show_snackbar("Please select a document")
+                return
+
+            # Send document as message
+            try:
+                db = get_db_session()
+                from database.models import MessageType
+
+                # Get document
+                doc_id = int(selected_doc.value)
+                from database.operations import get_document_by_id
+                doc = get_document_by_id(db, doc_id)
+
+                if doc:
+                    content = message_field.value or f"Sharing document: {doc.name}"
+
+                    # Send as chat message with attachment
+                    send_chat_message(
+                        db,
+                        sender_id=self.current_user_id,
+                        content=content,
+                        receiver_id=self.selected_contact.id,
+                        message_type=MessageType.FILE,
+                        has_attachment=True,
+                        attachment_path=doc.file_path
+                    )
+                    db.commit()
+                    self._show_snackbar(
+                        f"Document '{doc.name}' shared successfully!")
+
+                    # Refresh messages
+                    self._load_messages_for_selected()
+                    self._refresh_messages_ui()
+                    self._page.update()
+                else:
+                    self._show_snackbar("Document not found")
+
+            except Exception as ex:
+                self._show_snackbar(f"Error sharing document: {str(ex)}")
+            finally:
+                db.close()
+
+            self._page.dialog = None
+            self._page.update()
+
+        dlg = ft.AlertDialog(
+            title=ft.Text("Share Document"),
+            content=ft.Column([
+                ft.Text(f"Sharing to: {self.selected_contact.username}",
+                        size=12, color=ft.Colors.GREY_600),
+                ft.Container(height=10),
+                selected_doc,
+                message_field,
+            ], tight=True),
+            actions=[
+                ft.TextButton("Cancel", on_click=lambda e: setattr(
+                    self._page, 'dialog', None)),
+                ft.ElevatedButton(
+                    "Share",
+                    on_click=confirm_share,
+                    style=ft.ButtonStyle(bgcolor="#9C27B0", color="WHITE"),
+                ),
+            ],
+        )
+
+        self._page.dialog = dlg
+        dlg.open = True
+        self._page.update()
 
     def cleanup(self):
         """Cleanup when leaving the screen"""

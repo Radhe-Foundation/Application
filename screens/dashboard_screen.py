@@ -29,6 +29,11 @@ class DashboardScreen(ft.Container):
         self.bgcolor = BACKGROUND
         self.content = self._build_content()
 
+    def refresh(self):
+        """Refresh the dashboard content including stats"""
+        self.content = self._build_content()
+        self._page.update()
+
     def _get_db(self):
         """Get database session"""
         return get_db_session()
@@ -37,10 +42,36 @@ class DashboardScreen(ft.Container):
         """Build the dashboard content"""
         # Get user info
         username = "User"
+        user_id = None
+        user_role = "employee"
+
         if isinstance(self.user, dict):
             username = self.user.get('username', 'User')
+            user_id = self.user.get('id')
+            user_role = self.user.get('role', 'employee').lower()
         elif hasattr(self.user, 'username'):
             username = self.user.username
+            if hasattr(self.user, 'id'):
+                user_id = self.user.id
+            if hasattr(self.user, 'role'):
+                user_role = self.user.role.lower() if isinstance(
+                    self.user.role, str) else 'employee'
+
+        # Get screen access for this user
+        from utils.screen_access import get_user_screen_access, get_user_button_access
+
+        screen_access = {}
+        button_access = {}
+
+        if user_id:
+            try:
+                screen_access = get_user_screen_access(user_id)
+                button_access = get_user_button_access(user_id)
+            except Exception as e:
+                print(f"Error getting access: {e}")
+
+        # For admin, show all; for employees, filter by access
+        is_admin = user_role == 'admin'
 
         # Get stats
         stats = self._get_dashboard_stats()
@@ -85,36 +116,86 @@ class DashboardScreen(ft.Container):
             ], spacing=20),
         )
 
-        # Quick actions grid
+        # Quick actions grid - filter based on access
+        quick_actions_controls = []
+
+        # Always show Profile
+        quick_actions_controls.append(
+            self._create_action_card("My Profile", ft.Icons.PERSON, "View profile",
+                                     PRIMARY, self._go_to_profile)
+        )
+
+        # Show Attendance if user has access
+        if is_admin or screen_access.get('attendance', False):
+            quick_actions_controls.append(
+                self._create_action_card("Attendance", ft.Icons.EVENT, "Mark attendance",
+                                         WARNING, self._go_to_attendance)
+            )
+
+        # Show Leave if user has access
+        if is_admin or screen_access.get('leaves', False):
+            quick_actions_controls.append(
+                self._create_action_card("Leave", ft.Icons.CALENDAR_MONTH, "Apply leave",
+                                         SECONDARY, self._go_to_leaves)
+            )
+
+        # Show Tasks if user has access
+        if is_admin or screen_access.get('tasks', False):
+            quick_actions_controls.append(
+                self._create_action_card("Tasks", ft.Icons.TASK, "View tasks",
+                                         INFO, self._go_to_tasks)
+            )
+
+        # Row 2 - only for admins or employees with specific access
+        quick_actions_row2 = []
+
+        if is_admin or screen_access.get('employees', False):
+            quick_actions_row2.append(
+                self._create_action_card("Employees", ft.Icons.BADGE, "Manage employees",
+                                         SUCCESS, self._go_to_employees)
+            )
+
+        if is_admin or screen_access.get('departments', False):
+            quick_actions_row2.append(
+                self._create_action_card("Departments", ft.Icons.BUSINESS, "Manage departments",
+                                         "#009688", self._go_to_departments)
+            )
+
+        if is_admin or screen_access.get('positions', False):
+            quick_actions_row2.append(
+                self._create_action_card("Positions", ft.Icons.WORK, "Manage positions",
+                                         "#673AB7", self._go_to_positions)
+            )
+
+        if is_admin or screen_access.get('chat', False):
+            quick_actions_row2.append(
+                self._create_action_card("Chat", ft.Icons.CHAT, "Team chat",
+                                         "#FF5722", self._go_to_chat)
+            )
+
         quick_actions = ft.Container(
             padding=ft.padding.symmetric(horizontal=20, vertical=10),
             content=ft.Column([
                 ft.Text("Quick Actions", size=16,
                         weight=ft.FontWeight.BOLD, color="#333"),
                 ft.Container(height=10),
-                ft.Row([
-                    self._create_action_card("My Profile", ft.Icons.PERSON, "View profile",
-                                             PRIMARY, self._go_to_profile),
-                    self._create_action_card("Attendance", ft.Icons.EVENT, "Mark attendance",
-                                             WARNING, self._go_to_attendance),
-                    self._create_action_card("Leave", ft.Icons.CALENDAR_MONTH, "Apply leave",
-                                             SECONDARY, self._go_to_leaves),
-                    self._create_action_card("Tasks", ft.Icons.TASK, "View tasks",
-                                             INFO, self._go_to_tasks),
-                ], spacing=15),
-                ft.Container(height=15),
-                ft.Row([
-                    self._create_action_card("Employees", ft.Icons.BADGE, "Manage employees",
-                                             SUCCESS, self._go_to_employees),
-                    self._create_action_card("Departments", ft.Icons.BUSINESS, "Manage departments",
-                                             "#009688", self._go_to_departments),
-                    self._create_action_card("Positions", ft.Icons.WORK, "Manage positions",
-                                             "#673AB7", self._go_to_positions),
-                    self._create_action_card("Chat", ft.Icons.CHAT, "Team chat",
-                                             "#FF5722", self._go_to_chat),
-                ], spacing=15),
+                ft.Row(quick_actions_controls, spacing=15),
             ], spacing=0),
         )
+
+        # Add row 2 if there are items - rebuild quick_actions with both rows
+        if quick_actions_row2:
+            quick_actions = ft.Container(
+                padding=ft.padding.symmetric(horizontal=20, vertical=10),
+                content=ft.Column([
+                    ft.Text("Quick Actions", size=16,
+                            weight=ft.FontWeight.BOLD, color="#333"),
+                    ft.Container(height=10),
+                    ft.Row(quick_actions_controls, spacing=15),
+                    ft.Container(height=15),
+                    ft.Row(quick_actions_row2, spacing=15),
+                ], spacing=0),
+            )
 
         # Admin section (for admin users)
         admin_section = ft.Container()
@@ -279,19 +360,7 @@ class DashboardScreen(ft.Container):
         except Exception as e:
             print(f"Error getting recent activities: {e}")
 
-        # If no activities, return sample data
-        if not activities:
-            activities = [
-                {'text': "New employee joined",
-                    'icon': ft.Icons.PERSON_ADD, 'time': "Recently"},
-                {'text': "Leave request submitted",
-                    'icon': ft.Icons.CALENDAR_MONTH, 'time': "Recently"},
-                {'text': "Task completed",
-                    'icon': ft.Icons.TASK_ALT, 'time': "Recently"},
-                {'text': "Attendance marked",
-                    'icon': ft.Icons.CHECK, 'time': "Recently"},
-            ]
-
+        # Return empty list if no activities (no fallback data)
         return activities[:4]
 
     def _format_time_ago(self, dt):

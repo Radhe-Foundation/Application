@@ -1,15 +1,16 @@
 """
 Vernika HRA - ETL & Data Entry Screen
-Excel import/export and Power BI integration interface
-Fixed version with proper file handling
+PostgreSQL based Excel import/export and Power BI integration interface
 """
 
 import flet as ft
 from datetime import datetime
-import sqlite3
 import json
 import os
 from typing import Dict, List, Optional, Any
+from sqlalchemy import inspect, text
+from database.connection import get_db_session
+from database.models import ETLJob, ETLJobStatus
 from core.theme import theme
 from core.colors_compat import colors
 
@@ -59,49 +60,55 @@ class ETLScreen(ft.Container):
         snack.open = True
         self.page.update()
 
-    def _get_db(self):
-        """Get database connection"""
-        conn = sqlite3.connect('vernika.db')
-        conn.row_factory = sqlite3.Row
-        return conn
-
     def _get_all_tables(self) -> List[str]:
-        """Get all table names"""
-        conn = self._get_db()
-        cursor = conn.cursor()
+        """Get all table names from PostgreSQL"""
+        db = get_db_session()
         try:
-            cursor.execute(
-                "SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%' ORDER BY name"
-            )
-            tables = [row['name'] for row in cursor.fetchall()]
+            inspector = inspect(db.bind)
+            tables = inspector.get_table_names()
             return tables
         except Exception as e:
             print(f"Error getting tables: {e}")
             return []
         finally:
-            conn.close()
+            db.close()
 
     def _get_etl_jobs(self) -> List[Dict]:
-        """Get recent ETL jobs"""
-        conn = self._get_db()
-        cursor = conn.cursor()
+        """Get recent ETL jobs from PostgreSQL"""
+        db = get_db_session()
         try:
-            cursor.execute("""
-                SELECT id, job_name, job_type, status, 
-                       COALESCE(success_rows, 0) as success_rows,
-                       COALESCE(failed_rows, 0) as failed_rows,
-                       created_at
-                FROM etl_jobs 
-                ORDER BY created_at DESC 
-                LIMIT 20
-            """)
-            jobs = [dict(row) for row in cursor.fetchall()]
-            return jobs
+            jobs = db.query(ETLJob).order_by(
+                ETLJob.created_at.desc()).limit(20).all()
+            result = []
+            for job in jobs:
+                result.append({
+                    "id": f"JOB-{job.id:03d}",
+                    "job_name": job.job_name,
+                    "job_type": job.job_type.value if hasattr(job.job_type, 'value') else str(job.job_type),
+                    "status": job.status.value if hasattr(job.status, 'value') else str(job.status),
+                    "success_rows": job.success_rows or 0,
+                    "failed_rows": job.failed_rows or 0,
+                    "created_at": job.created_at.strftime('%Y-%m-%d %H:%M') if job.created_at else ''
+                })
+            return result
         except Exception as e:
             print(f"Error getting ETL jobs: {e}")
             return []
         finally:
-            conn.close()
+            db.close()
+
+    def _get_table_columns(self, table_name: str) -> List[str]:
+        """Get column names for a table"""
+        db = get_db_session()
+        try:
+            inspector = inspect(db.bind)
+            columns = inspector.get_columns(table_name)
+            return [col['name'] for col in columns]
+        except Exception as e:
+            print(f"Error getting columns: {e}")
+            return []
+        finally:
+            db.close()
 
     def _build_content(self):
         """Build the main UI content"""
@@ -109,6 +116,7 @@ class ETLScreen(ft.Container):
             controls=[
                 self._build_header(),
                 ft.Divider(height=10),
+                self._build_data_entry_section(),
                 self._build_import_section(),
                 self._build_export_section(),
                 self._build_powerbi_section(),
@@ -133,7 +141,7 @@ class ETLScreen(ft.Container):
                             color=theme.primary,
                         ),
                         ft.Text(
-                            "Import/export data and integrate with Power BI",
+                            "Import/export data, manual entry, and Power BI integration",
                             size=12,
                             color=colors.SECONDARY,
                         ),
@@ -141,6 +149,191 @@ class ETLScreen(ft.Container):
                 ),
             ],
         )
+
+    def _build_data_entry_section(self) -> ft.Card:
+        """Build manual data entry section"""
+        # Get available tables for data entry
+        tables = [
+            ("employees", "Employee"),
+            ("departments", "Department"),
+            ("positions", "Position"),
+            ("users", "User"),
+        ]
+
+        # Create table selection buttons
+        table_buttons = []
+        for table_key, table_name in tables:
+            table_buttons.append(
+                ft.ElevatedButton(
+                    table_name,
+                    icon=ft.Icons.ADD,
+                    on_click=lambda e, t=table_key, n=table_name: self._show_data_entry_dialog(
+                        t, n),
+                    style=ft.ButtonStyle(
+                        bgcolor=colors.SUCCESS,
+                        color="white",
+                    ),
+                    height=40,
+                )
+            )
+
+        return ft.Card(
+            content=ft.Container(
+                padding=15,
+                content=ft.Column(
+                    controls=[
+                        ft.Row(
+                            controls=[
+                                ft.Icon(ft.Icons.EDIT, size=24,
+                                        color=colors.SUCCESS),
+                                ft.Text(
+                                    "Manual Data Entry",
+                                    size=16,
+                                    weight=ft.FontWeight.BOLD,
+                                    color=theme.primary,
+                                ),
+                            ],
+                        ),
+                        ft.Divider(height=10),
+                        ft.Text("Click a button to add new records manually:",
+                                size=12, color=colors.SECONDARY),
+                        ft.Container(height=10),
+                        ft.Row(table_buttons, wrap=True, spacing=10),
+                        ft.Container(height=10),
+                        ft.Text("Note: User creation requires password and role selection",
+                                size=10, color=colors.GREY),
+                    ],
+                    spacing=10,
+                ),
+            )
+        )
+
+    def _show_data_entry_dialog(self, table_name: str, table_label: str):
+        """Show dialog for manual data entry"""
+        fields = {}
+
+        if table_name == "employees":
+            fields = {
+                'employee_code': ft.TextField(label="Employee Code *", width=250),
+                'first_name': ft.TextField(label="First Name *", width=250),
+                'last_name': ft.TextField(label="Last Name *", width=250),
+                'email': ft.TextField(label="Email", width=250),
+                'phone': ft.TextField(label="Phone", width=250),
+            }
+        elif table_name == "departments":
+            fields = {
+                'name': ft.TextField(label="Department Name *", width=250),
+                'code': ft.TextField(label="Code *", width=250),
+                'description': ft.TextField(label="Description", width=250),
+            }
+        elif table_name == "positions":
+            fields = {
+                'title': ft.TextField(label="Position Title *", width=250),
+                'code': ft.TextField(label="Code *", width=250),
+                'description': ft.TextField(label="Description", width=250),
+            }
+        elif table_name == "users":
+            fields = {
+                'username': ft.TextField(label="Username *", width=250),
+                'email': ft.TextField(label="Email *", width=250),
+                'password': ft.TextField(label="Password *", width=250, password=True),
+            }
+
+        def close_dlg(e):
+            self._close_dialog()
+
+        def save_entry(e):
+            data = {}
+            for key, field in fields.items():
+                if field.value:
+                    data[key] = field.value.strip()
+
+            # Validate required fields
+            if table_name == "employees":
+                if not data.get('employee_code') or not data.get('first_name'):
+                    self.show_error(
+                        "Employee Code and First Name are required!")
+                    return
+            elif table_name == "departments":
+                if not data.get('name') or not data.get('code'):
+                    self.show_error("Name and Code are required!")
+                    return
+            elif table_name == "positions":
+                if not data.get('title') or not data.get('code'):
+                    self.show_error("Title and Code are required!")
+                    return
+            elif table_name == "users":
+                if not data.get('username') or not data.get('email') or not data.get('password'):
+                    self.show_error(
+                        "Username, Email and Password are required!")
+                    return
+
+            # Save to database
+            db = get_db_session()
+            try:
+                if table_name == "employees":
+                    from database.models import Employee
+                    emp = Employee(**data)
+                    db.add(emp)
+                elif table_name == "departments":
+                    from database.models import Department
+                    dept = Department(**data)
+                    db.add(dept)
+                elif table_name == "positions":
+                    from database.models import Position
+                    pos = Position(**data)
+                    db.add(pos)
+                elif table_name == "users":
+                    import bcrypt
+                    from database.models import User, UserStatus
+                    user = User(
+                        username=data['username'],
+                        email=data['email'],
+                        password_hash=bcrypt.hashpw(
+                            data['password'].encode(), bcrypt.gensalt()).decode(),
+                        role_id=2,  # Default to employee role
+                        status=UserStatus.ACTIVE
+                    )
+                    db.add(user)
+
+                db.commit()
+                self.show_success(f"{table_label} added successfully!")
+                self._close_dialog()
+            except Exception as ex:
+                db.rollback()
+                self.show_error(f"Error: {str(ex)}")
+            finally:
+                db.close()
+
+        # Build form fields list
+        field_list = list(fields.values())
+
+        dialog = ft.AlertDialog(
+            title=ft.Text(f"Add New {table_label}"),
+            content=ft.Container(
+                content=ft.Column(
+                    controls=field_list,
+                    spacing=10,
+                    scroll=ft.ScrollMode.AUTO,
+                ),
+                width=350,
+                height=400,
+            ),
+            actions=[
+                ft.TextButton("Cancel", on_click=close_dlg),
+                ft.ElevatedButton(
+                    "Save",
+                    on_click=save_entry,
+                    style=ft.ButtonStyle(
+                        bgcolor=colors.SUCCESS, color="white"),
+                ),
+            ],
+            actions_alignment=ft.MainAxisAlignment.END,
+        )
+
+        self.page.dialog = dialog
+        dialog.open = True
+        self.page.update()
 
     def _build_import_section(self) -> ft.Card:
         """Build data import section"""
@@ -249,27 +442,6 @@ class ETLScreen(ft.Container):
 
     def _show_file_dialog(self, input_field: ft.TextField):
         """Show file selection dialog"""
-        # Create file type dropdown
-        file_type = ft.Dropdown(
-            width=200,
-            options=[
-                ft.dropdown.Option("xlsx", "Excel Files (*.xlsx)"),
-                ft.dropdown.Option("xls", "Excel 97-2003 (*.xls)"),
-                ft.dropdown.Option("csv", "CSV Files (*.csv)"),
-            ],
-            label="File Type",
-            value="xlsx",
-        )
-
-        # Sample file paths for quick access
-        sample_paths = [
-            "/Users/",
-            "/Users/Shared/",
-            "/Downloads/",
-            "~/Downloads/",
-            "./data/",
-        ]
-
         def confirm_selection(e):
             """Confirm file selection"""
             if input_field.value:
@@ -351,7 +523,7 @@ class ETLScreen(ft.Container):
                                     "Departments", "departments"),
                                 self._create_export_button("Tasks", "tasks"),
                                 self._create_export_button(
-                                    "Attendance", "attendance"),
+                                    "Attendance", "attendances"),
                             ],
                             spacing=10,
                             wrap=True,
@@ -568,11 +740,7 @@ class ETLScreen(ft.Container):
             self.excel_columns = [str(c).strip() for c in df.columns.tolist()]
 
             # Get DB columns
-            conn = self._get_db()
-            cursor = conn.cursor()
-            cursor.execute(f"PRAGMA table_info({self.selected_table})")
-            db_columns = [row['name'] for row in cursor.fetchall()]
-            conn.close()
+            db_columns = self._get_table_columns(self.selected_table)
 
             # Simple matching
             self.column_mapping = {}
@@ -603,59 +771,60 @@ class ETLScreen(ft.Container):
 
         try:
             import pandas as pd
-            from datetime import datetime
 
             df = pd.read_excel(file_path, engine='openpyxl')
             df.columns = [str(c).strip() for c in df.columns]
 
-            conn = self._get_db()
-            cursor = conn.cursor()
+            db = get_db_session()
 
             success_count = 0
             failed_count = 0
 
             # Get DB columns
-            cursor.execute(f"PRAGMA table_info({self.selected_table})")
-            db_cols_info = {row['name']: row for row in cursor.fetchall()}
+            db_columns = self._get_table_columns(self.selected_table)
 
             # Map columns
             valid_mapping = {}
             for excel_col in df.columns:
                 excel_norm = excel_col.lower().replace(' ', '_')
-                for db_col in db_cols_info:
+                for db_col in db_columns:
                     if excel_norm == db_col.lower():
                         valid_mapping[excel_col] = db_col
                         break
 
             if not valid_mapping:
                 self.show_error("No matching columns found")
-                conn.close()
+                db.close()
                 return
 
-            db_columns = list(valid_mapping.values())
-            placeholders = ", ".join(["?"] * len(db_columns))
-            insert_sql = f"INSERT OR REPLACE INTO {self.selected_table} ({', '.join(db_columns)}) VALUES ({placeholders})"
+            # Get the model class for the table
+            table_name = self.selected_table
 
+            # Insert rows using raw SQL
             for idx, row in df.iterrows():
                 try:
-                    values = []
-                    for db_col in db_columns:
-                        excel_col = [
-                            k for k, v in valid_mapping.items() if v == db_col][0]
+                    values = {}
+                    for excel_col, db_col in valid_mapping.items():
                         val = row[excel_col]
                         if hasattr(val, 'isoformat'):
-                            values.append(val.strftime('%Y-%m-%d'))
-                        elif str(val) == 'nan':
-                            values.append(None)
+                            values[db_col] = val.strftime('%Y-%m-%d')
+                        elif pd.isna(val):
+                            values[db_col] = None
                         else:
-                            values.append(val)
-                    cursor.execute(insert_sql, values)
+                            values[db_col] = val
+
+                    # Build insert statement
+                    columns_str = ', '.join(values.keys())
+                    placeholders = ', '.join([f':{k}' for k in values.keys()])
+                    sql = f"INSERT INTO {table_name} ({columns_str}) VALUES ({placeholders})"
+
+                    db.execute(text(sql), values)
                     success_count += 1
                 except Exception as row_error:
                     failed_count += 1
 
-            conn.commit()
-            conn.close()
+            db.commit()
+            db.close()
 
             # Log the job
             self._log_etl_job("import", success_count, failed_count)
@@ -669,27 +838,25 @@ class ETLScreen(ft.Container):
 
     def _log_etl_job(self, job_type: str, success_rows: int, failed_rows: int):
         """Log ETL job to database"""
-        conn = self._get_db()
-        cursor = conn.cursor()
+        db = get_db_session()
         try:
-            cursor.execute("""
-                INSERT INTO etl_jobs (job_name, job_type, target_table, source_file, status, success_rows, failed_rows, created_at)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-            """, (
-                f"Data {job_type.title()}",
-                job_type,
-                self.selected_table,
-                self.selected_file_path,
-                "completed",
-                success_rows,
-                failed_rows,
-                datetime.now().isoformat()
-            ))
-            conn.commit()
+            from database.models import ETLJobType
+            job = ETLJob(
+                job_name=f"Data {job_type.title()}",
+                job_type=ETLJobType.IMPORT if job_type == "import" else ETLJobType.EXPORT,
+                target_table=self.selected_table if job_type == "import" else None,
+                source_table=self.selected_table if job_type == "export" else None,
+                source_file=self.selected_file_path if job_type == "import" else None,
+                status=ETLJobStatus.COMPLETED,
+                success_rows=success_rows,
+                failed_rows=failed_rows
+            )
+            db.add(job)
+            db.commit()
         except Exception as e:
             print(f"Error logging ETL job: {e}")
         finally:
-            conn.close()
+            db.close()
 
     def _export_table(self, table_name: str):
         """Export table to Excel"""
@@ -705,38 +872,17 @@ class ETLScreen(ft.Container):
             output_dir, f"{table_name}_export_{timestamp}.xlsx")
 
         try:
-            conn = self._get_db()
-            df = pd.read_sql_query(f"SELECT * FROM {table_name}", conn)
-            conn.close()
+            db = get_db_session()
+            df = pd.read_sql_query(f"SELECT * FROM {table_name}", db.bind)
+            db.close()
 
             df.to_excel(output_path, index=False, engine='openpyxl')
 
             self.show_success(f"Exported {len(df)} rows to {output_path}")
-            self._log_export_job(table_name)
+            self._log_etl_job("export", len(df), 0)
 
         except Exception as ex:
             self.show_error(f"Export failed: {ex}")
-
-    def _log_export_job(self, table_name: str):
-        """Log export job"""
-        conn = self._get_db()
-        cursor = conn.cursor()
-        try:
-            cursor.execute("""
-                INSERT INTO etl_jobs (job_name, job_type, source_table, status, created_at)
-                VALUES (?, ?, ?, ?, ?)
-            """, (
-                f"Export - {table_name.title()}",
-                "export",
-                table_name,
-                "completed",
-                datetime.now().isoformat()
-            ))
-            conn.commit()
-        except Exception as e:
-            print(f"Error logging export job: {e}")
-        finally:
-            conn.close()
 
     def _trigger_refresh(self, refresh_type: str):
         """Trigger Power BI refresh (simulated)"""

@@ -1,0 +1,53 @@
+Table Row Count Comparison
+============================================================
+Table                         SQLite   Supabase       Diff
+------------------------------------------------------------
+announcements                      3          3          0
+attendances                        2          3          1
+audit_logs                         0          0          0
+call_logs                 ERROR: no such table: call_logs
+chat_group_members                 6          2         -4
+chat_groups                        2          2          0
+chat_messages                      3         12          9
+companies                          1          1          0
+data_import_logs                   0          0          0
+departments                       10          5         -5
+documents                          0          0          0
+email_messages                     0          0          0
+email_recipients                   0          0          0
+employees                          7          2         -5
+etl_jobs                           6          0         -6
+excel_templates                    0          0          0
+leave_balances                     0          0          0
+leave_requests                     2          3          1
+leave_type_configs                 3          3          0
+meeting_participants               0          0          0
+meetings                           0          0          0
+messages                           0          0          0
+positions                         21          5        -16
+powerbi_refresh_logs               0          0          0
+projects                  ERROR: no such table: projects
+roles                              2          2          0
+screen_access                     31          0        -31
+task_comments                      2          0         -2
+tasks                              1          0         -1
+teams                              8          0         -8
+time_off_requests                  0          0          0
+user_permissions                   0          0          0
+users                              7          3         -4
+
+============================================================
+Tables needing attention: 13
+  - attendances: 2 (SQLite) vs 3 (Supabase)
+  - chat_group_members: 6 (SQLite) vs 2 (Supabase)
+  - chat_messages: 3 (SQLite) vs 12 (Supabase)
+  - departments: 10 (SQLite) vs 5 (Supabase)
+  - employees: 7 (SQLite) vs 2 (Supabase)
+  - etl_jobs: 6 (SQLite) vs 0 (Supabase)
+  - leave_requests: 2 (SQLite) vs 3 (Supabase)
+  - positions: 21 (SQLite) vs 5 (Supabase)
+  - screen_access: 31 (SQLite) vs 0 (Supabase)
+  - task_comments: 2 (SQLite) vs 0 (Supabase)
+  - tasks: 1 (SQLite) vs 0 (Supabase)
+  - teams: 8 (SQLite) vs 0 (Supabase)
+  - users: 7 (SQLite) vs 3 (Supabase)

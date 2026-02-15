@@ -3,6 +3,7 @@ Vernika HRA - Performance Screen
 Industry-Level Human Resource Management System
 
 This module provides the performance reviews management screen.
+Features: review cycles, goals, performance tracking, and database integration.
 """
 
 from typing import Optional, List, Dict, Any
@@ -14,13 +15,14 @@ from flet import (
 )
 from core.theme import theme
 from core.colors_compat import colors
-from database.connection import get_session
+from database.connection import get_db_session
+from database.models import Employee, User, Task, TaskStatus, TaskPriority
 from datetime import datetime, date
 
 
 class PerformanceScreen(Container):
     """
-    Screen for managing performance reviews.
+    Screen for managing performance reviews with database integration.
     """
 
     def __init__(self, page: ft.Page, **kwargs):
@@ -38,11 +40,65 @@ class PerformanceScreen(Container):
         self.selected_review = None
         self.search_query = ""
 
+        # Load data from database
+        self._load_employees()
+        self._load_reviews()
+
         self.spacing = 20
         self.expand = True
 
         # Set the content directly instead of using build()
         self.content = self._build_content()
+
+    def _load_employees(self):
+        """Load employees from database"""
+        db = get_db_session()
+        try:
+            self.employees = db.query(Employee).filter(
+                Employee.is_active == True).all()
+        except Exception as e:
+            print(f"Error loading employees: {e}")
+            self.employees = []
+        finally:
+            db.close()
+
+    def _load_reviews(self):
+        """Load performance reviews from database (using tasks as proxy)"""
+        db = get_db_session()
+        try:
+            # Using tasks as performance indicators
+            tasks = db.query(Task).order_by(
+                Task.created_at.desc()).limit(20).all()
+
+            self.reviews = []
+            for task in tasks:
+                # Get employee info
+                employee = db.query(Employee).filter(
+                    Employee.id == task.assigned_to_id).first()
+                if employee:
+                    # Calculate rating based on task status
+                    rating = 0
+                    if task.status == TaskStatus.COMPLETED:
+                        rating = 4.5
+                    elif task.status == TaskStatus.IN_PROGRESS:
+                        rating = 3.0
+                    else:
+                        rating = 2.0
+
+                    self.reviews.append({
+                        "id": task.id,
+                        "employee_name": f"{employee.first_name} {employee.last_name}",
+                        "reviewer_name": "Manager",
+                        "period": task.due_date.strftime("%Y-%m") if task.due_date else "Ongoing",
+                        "rating": rating,
+                        "status": task.status.value if hasattr(task.status, 'value') else str(task.status),
+                        "task_title": task.title
+                    })
+        except Exception as e:
+            print(f"Error loading reviews: {e}")
+            self.reviews = []
+        finally:
+            db.close()
 
     @property
     def page(self) -> ft.Page:

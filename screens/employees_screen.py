@@ -13,7 +13,6 @@ from database.connection import get_db_session
 from database.models import Employee, User, Department, Position, Role
 from database.operations import get_all_employees, get_employee_by_id
 from components.forms import DatePickerField
-import sqlite3  # For backward compatibility references only
 
 
 class EmployeesScreen(ft.Container):
@@ -80,11 +79,14 @@ class EmployeesScreen(ft.Container):
         self._show_add_dialog()
 
     def _build_employee_list(self):
+        """Build employee list with PostgreSQL"""
+        from utils.screen_access import get_user_screen_access
+        from sqlalchemy.orm import joinedload
+
         db = None
         try:
             db = get_db_session()
             # Query employees with eager loading of relationships using SQLAlchemy
-            from sqlalchemy.orm import joinedload
             employees = db.query(Employee).options(
                 joinedload(Employee.department),
                 joinedload(Employee.position)
@@ -125,6 +127,18 @@ class EmployeesScreen(ft.Container):
             dept_name = emp.department.name if emp.department else "General"
             pos_title = emp.position.title if emp.position else "-"
 
+            # Get user_id for access control
+            user_id = emp.user_id if emp.user_id else None
+
+            # Get screen access count
+            access_count = 0
+            if user_id:
+                try:
+                    access = get_user_screen_access(user_id)
+                    access_count = sum(1 for v in access.values() if v)
+                except:
+                    pass
+
             rows.append(
                 ft.DataRow(
                     cells=[
@@ -145,11 +159,26 @@ class EmployeesScreen(ft.Container):
                             )
                         ),
                         ft.DataCell(
+                            # Access indicator with count
                             ft.Container(
-                                ft.Text(emp_type, size=10, color="WHITE"),
-                                bgcolor=type_color,
-                                padding=padding.all(4),
-                                border_radius=4
+                                content=ft.Row([
+                                    ft.Container(
+                                        bgcolor="#4CAF50" if access_count > 3 else "#FF9800" if access_count > 0 else "#9E9E9E",
+                                        padding=padding.symmetric(
+                                            horizontal=6, vertical=2),
+                                        border_radius=10,
+                                        content=ft.Text(
+                                            f"{access_count}", size=10, color="WHITE"),
+                                    ),
+                                    ft.IconButton(
+                                        icon=ft.Icons.SECURITY,
+                                        icon_color="#009688",
+                                        on_click=lambda e, emp_id=emp_id, user_id=user_id: self._manage_access_dialog(
+                                            emp_id, user_id) if user_id else self._show_error("No user account linked"),
+                                        tooltip="Manage Screen Access",
+                                        scale=0.8,
+                                    ),
+                                ], spacing=2),
                             )
                         ),
                         ft.DataCell(
@@ -197,7 +226,7 @@ class EmployeesScreen(ft.Container):
                 ft.DataColumn(label=ft.Text("Department")),
                 ft.DataColumn(label=ft.Text("Position")),
                 ft.DataColumn(label=ft.Text("Status")),
-                ft.DataColumn(label=ft.Text("Type")),
+                ft.DataColumn(label=ft.Text("Access")),
                 ft.DataColumn(label=ft.Text("Actions")),
             ],
             rows=rows,
@@ -602,45 +631,51 @@ class EmployeesScreen(ft.Container):
         self._page.update()
 
     def _show_edit_dialog(self, emp_id: int):
-        conn = None
+        """Show edit dialog using PostgreSQL"""
+        from sqlalchemy.orm import joinedload
+
+        db = None
         try:
-            conn = sqlite3.connect('vernika.db')
-            conn.row_factory = sqlite3.Row
-            cursor = conn.cursor()
-            cursor.execute("SELECT * FROM employees WHERE id=?", (emp_id,))
-            emp = cursor.fetchone()
-            cursor.execute("SELECT id, name FROM departments")
-            departments = cursor.fetchall()
-            cursor.execute("SELECT id, title FROM positions")
-            positions = cursor.fetchall()
-            cursor.execute("SELECT id, name FROM roles")
-            roles = cursor.fetchall()
+            db = get_db_session()
+            # Query employee with relationships
+            emp = db.query(Employee).options(
+                joinedload(Employee.department),
+                joinedload(Employee.position)
+            ).filter(Employee.id == emp_id).first()
+
+            if not emp:
+                self._show_error("Employee not found!")
+                return
+
+            departments = db.query(Department).all()
+            positions = db.query(Position).all()
+            roles = db.query(Role).all()
         except Exception as e:
             self._show_error(f"Error: {e}")
             return
         finally:
-            if conn:
-                conn.close()
+            if db:
+                db.close()
 
         if not emp:
             self._show_error("Employee not found!")
             return
 
-        # Edit form fields
+        # Edit form fields - use attribute access for SQLAlchemy objects
         first_name = ft.TextField(
-            label="First Name *", width=200, value=emp['first_name'] or "")
+            label="First Name *", width=200, value=emp.first_name or "")
         last_name = ft.TextField(
-            label="Last Name *", width=200, value=emp['last_name'] or "")
+            label="Last Name *", width=200, value=emp.last_name or "")
         email = ft.TextField(label="Email *", width=420,
-                             value=emp['email'] or "")
+                             value=emp.email or "")
         phone = ft.TextField(label="Phone", width=200,
-                             value=emp['phone'] or "")
+                             value=emp.phone or "")
 
         # Date pickers with values
         dob_picker = DatePickerField(label="Date of Birth", width=200)
         dob_picker._page = self._page
-        if emp['date_of_birth']:
-            dob_picker.value = str(emp['date_of_birth'])
+        if emp.date_of_birth:
+            dob_picker.value = str(emp.date_of_birth)
 
         gender = ft.Dropdown(
             width=200,
@@ -650,26 +685,26 @@ class EmployeesScreen(ft.Container):
                 ft.dropdown.Option("OTHER", "Other"),
             ],
             label="Gender",
-            value=(emp['gender'].upper() if emp['gender']
-                   else "MALE") if emp['gender'] else "MALE"
+            value=(emp.gender.upper() if emp.gender
+                   else "MALE") if emp.gender else "MALE"
         )
         address = ft.TextField(label="Address", width=420,
-                               value=emp['address'] or "", multiline=True)
-        city = ft.TextField(label="City", width=200, value=emp['city'] or "")
+                               value=emp.address or "", multiline=True)
+        city = ft.TextField(label="City", width=200, value=emp.city or "")
         state = ft.TextField(label="State", width=200,
-                             value=emp['state'] or "")
+                             value=emp.state or "")
         pincode = ft.TextField(label="Pincode", width=100,
-                               value=emp['pincode'] or "")
+                               value=emp.pincode or "")
 
         dept_options = [ft.dropdown.Option(
-            key=str(d['id']), text=d['name']) for d in departments]
+            key=str(d.id), text=d.name) for d in departments]
         dept_dropdown = ft.Dropdown(width=200, options=dept_options, label="Department",
-                                    value=str(emp['department_id']) if emp['department_id'] else None)
+                                    value=str(emp.department_id) if emp.department_id else None)
 
         pos_options = [ft.dropdown.Option(
-            key=str(p['id']), text=p['title']) for p in positions]
+            key=str(p.id), text=p.title) for p in positions]
         pos_dropdown = ft.Dropdown(width=200, options=pos_options, label="Position",
-                                   value=str(emp['position_id']) if emp['position_id'] else None)
+                                   value=str(emp.position_id) if emp.position_id else None)
 
         employment_type = ft.Dropdown(
             width=200,
@@ -680,7 +715,7 @@ class EmployeesScreen(ft.Container):
                 ft.dropdown.Option("intern", "Intern"),
             ],
             label="Employment Type",
-            value=emp['employment_type'] or "full_time"
+            value=emp.employment_type or "full_time"
         )
 
         employment_status = ft.Dropdown(
@@ -691,83 +726,100 @@ class EmployeesScreen(ft.Container):
                 ft.dropdown.Option("inactive", "Inactive"),
             ],
             label="Employment Status",
-            value=emp['employment_status'] or "active"
+            value=emp.employment_status or "active"
         )
 
         # Date picker for Date of Joining
         date_of_joining_picker = DatePickerField(
             label="Date of Joining", width=200)
         date_of_joining_picker._page = self._page
-        if emp['date_of_joining']:
-            date_of_joining_picker.value = str(emp['date_of_joining'])
+        if emp.date_of_joining:
+            date_of_joining_picker.value = str(emp.date_of_joining)
 
         bank_name = ft.TextField(
-            label="Bank Name", width=250, value=emp['bank_name'] or "")
+            label="Bank Name", width=250, value=emp.bank_name or "")
         account_number = ft.TextField(
-            label="Account Number", width=200, value=emp['account_number'] or "")
+            label="Account Number", width=200, value=emp.account_number or "")
         ifsc_code = ft.TextField(
-            label="IFSC Code", width=150, value=emp['ifsc_code'] or "")
+            label="IFSC Code", width=150, value=emp.ifsc_code or "")
         branch_name = ft.TextField(
-            label="Branch", width=200, value=emp['branch_name'] or "")
+            label="Branch", width=200, value=emp.branch_name or "")
 
         basic_salary = ft.TextField(
-            label="Basic Salary", width=150, value=str(emp['basic_salary'] or 0))
+            label="Basic Salary", width=150, value=str(emp.basic_salary or 0))
         allowance = ft.TextField(
-            label="Allowances", width=150, value=str(emp['allowance'] or 0))
+            label="Allowances", width=150, value=str(emp.allowance or 0))
         deduction = ft.TextField(
-            label="Deductions", width=150, value=str(emp['deduction'] or 0))
+            label="Deductions", width=150, value=str(emp.deduction or 0))
 
-        status_switch = ft.Switch(label="Active", value=bool(emp['is_active']))
+        status_switch = ft.Switch(label="Active", value=bool(emp.is_active))
 
         def update_employee(e):
-            conn = None
+            """Update employee using PostgreSQL"""
+            db = None
             try:
-                conn = sqlite3.connect('vernika.db')
-                cursor = conn.cursor()
+                db = get_db_session()
 
-                dob_value = emp['date_of_birth']
-                try:
-                    if dob_picker.value:
-                        dob_value = dob_picker.value
-                except (AttributeError, ValueError) as e:
-                    print(f"Warning: Could not parse DOB value: {e}")
+                # Get employee from PostgreSQL
+                emp_to_update = db.query(Employee).filter(
+                    Employee.id == emp_id).first()
+                if not emp_to_update:
+                    self._show_error("Employee not found!")
+                    return
 
-                doj_value = emp['date_of_joining']
-                try:
-                    if date_of_joining_picker.value:
-                        doj_value = date_of_joining_picker.value
-                except (AttributeError, ValueError) as e:
-                    print(f"Warning: Could not parse DOJ value: {e}")
+                # Update employee fields
+                emp_to_update.first_name = first_name.value.strip() if first_name.value else ""
+                emp_to_update.last_name = last_name.value.strip() if last_name.value else ""
+                emp_to_update.email = email.value.strip() if email.value else ""
+                emp_to_update.phone = phone.value.strip() if phone.value else None
 
-                cursor.execute("""UPDATE employees SET
-                    first_name=?, last_name=?, email=?, phone=?,
-                    date_of_birth=?, gender=?, address=?, city=?, state=?, pincode=?,
-                    bank_name=?, account_number=?, ifsc_code=?, branch_name=?,
-                    basic_salary=?, allowance=?, deduction=?,
-                    department_id=?, position_id=?, employment_type=?, employment_status=?,
-                    date_of_joining=?, is_active=? WHERE id=?""",
-                               (first_name.value, last_name.value, email.value, phone.value or None,
-                                dob_value, gender.value, address.value or None, city.value or None,
-                                state.value or None, pincode.value or None,
-                                bank_name.value or None, account_number.value or None,
-                                ifsc_code.value or None, branch_name.value or None,
-                                float(
-                                    basic_salary.value) if basic_salary.value else 0,
-                                float(allowance.value) if allowance.value else 0,
-                                float(deduction.value) if deduction.value else 0,
-                                int(dept_dropdown.value) if dept_dropdown.value else None,
-                                int(pos_dropdown.value) if pos_dropdown.value else None,
-                                employment_type.value, employment_status.value,
-                                doj_value, status_switch.value, emp_id))
-                conn.commit()
+                # Handle dates
+                if dob_picker.value:
+                    emp_to_update.date_of_birth = dob_picker.value
+                if date_of_joining_picker.value:
+                    emp_to_update.date_of_joining = date_of_joining_picker.value
+
+                emp_to_update.gender = gender.value
+                emp_to_update.address = address.value.strip() if address.value else None
+                emp_to_update.city = city.value.strip() if city.value else None
+                emp_to_update.state = state.value.strip() if state.value else None
+                emp_to_update.pincode = pincode.value.strip() if pincode.value else None
+
+                # Bank details
+                emp_to_update.bank_name = bank_name.value.strip() if bank_name.value else None
+                emp_to_update.account_number = account_number.value.strip(
+                ) if account_number.value else None
+                emp_to_update.ifsc_code = ifsc_code.value.strip() if ifsc_code.value else None
+                emp_to_update.branch_name = branch_name.value.strip() if branch_name.value else None
+
+                # Salary
+                emp_to_update.basic_salary = float(
+                    basic_salary.value) if basic_salary.value else 0
+                emp_to_update.allowance = float(
+                    allowance.value) if allowance.value else 0
+                emp_to_update.deduction = float(
+                    deduction.value) if deduction.value else 0
+
+                # Employment details
+                emp_to_update.department_id = int(
+                    dept_dropdown.value) if dept_dropdown.value else None
+                emp_to_update.position_id = int(
+                    pos_dropdown.value) if pos_dropdown.value else None
+                emp_to_update.employment_type = employment_type.value
+                emp_to_update.employment_status = employment_status.value
+                emp_to_update.is_active = status_switch.value
+
+                db.commit()
                 self._close_dialog()
                 self._show_success("Employee updated successfully!")
                 self._refresh()
             except Exception as ex:
                 self._show_error(f"Error: {str(ex)}")
+                if db:
+                    db.rollback()
             finally:
-                if conn:
-                    conn.close()
+                if db:
+                    db.close()
 
         tab_content = ft.Column([
             ft.Text("Personal Information", size=14,
@@ -818,36 +870,52 @@ class EmployeesScreen(ft.Container):
         self._page.update()
 
     def _show_details_dialog(self, emp_id: int):
-        """Show full employee details"""
-        conn = None
+        """Show full employee details using PostgreSQL"""
+        from sqlalchemy.orm import joinedload
+
+        db = None
         try:
-            conn = sqlite3.connect('vernika.db')
-            conn.row_factory = sqlite3.Row
-            cursor = conn.cursor()
-            cursor.execute("""
-                SELECT e.*, d.name as dept_name, p.title as position_title,
-                       r.name as role_name, u.username
-                FROM employees e
-                LEFT JOIN departments d ON e.department_id = d.id
-                LEFT JOIN positions p ON e.position_id = p.id
-                LEFT JOIN users u ON e.user_id = u.id
-                LEFT JOIN roles r ON u.role_id = r.id
-                WHERE e.id=?
-            """, (emp_id,))
-            emp = cursor.fetchone()
+            db = get_db_session()
+            # Query employee with relationships
+            emp = db.query(Employee).options(
+                joinedload(Employee.department),
+                joinedload(Employee.position)
+            ).filter(Employee.id == emp_id).first()
+
+            if not emp:
+                self._show_error("Employee not found!")
+                return
+
+            # Get related user for username
+            user = None
+            if emp.user_id:
+                user = db.query(User).filter(User.id == emp.user_id).first()
+
+            # Get role name
+            role_name = "Employee"
+            if user and user.role_id:
+                role = db.query(Role).filter(Role.id == user.role_id).first()
+                if role:
+                    role_name = role.name
+
         except Exception as e:
             self._show_error(f"Error: {e}")
             return
         finally:
-            if conn:
-                conn.close()
+            if db:
+                db.close()
 
         if not emp:
             self._show_error("Employee not found!")
             return
 
-        total_salary = (emp['basic_salary'] or 0) + \
-            (emp['allowance'] or 0) - (emp['deduction'] or 0)
+        total_salary = (emp.basic_salary or 0) + \
+            (emp.allowance or 0) - (emp.deduction or 0)
+
+        # Get department and position names
+        dept_name = emp.department.name if emp.department else "General"
+        pos_title = emp.position.title if emp.position else "Employee"
+        username = user.username if user else "-"
 
         def create_detail_row(label, value):
             return ft.Row([
@@ -861,18 +929,18 @@ class EmployeesScreen(ft.Container):
                 ft.Column([
                     ft.Row([
                         ft.Column([
-                            ft.Text(f"{emp['first_name'] or ''} {emp['last_name'] or ''}",
+                            ft.Text(f"{emp.first_name or ''} {emp.last_name or ''}",
                                     size=20, weight=ft.FontWeight.BOLD, color="#2E86AB"),
                             ft.Text(
-                                f"Employee Code: {emp['employee_code'] or 'N/A'}", size=12, color="#757575"),
+                                f"Employee Code: {emp.employee_code or 'N/A'}", size=12, color="#757575"),
                         ]),
                         ft.Container(expand=True),
                         ft.Container(
-                            bgcolor="#4CAF50" if emp['is_active'] else "#F44336",
+                            bgcolor="#4CAF50" if emp.is_active else "#F44336",
                             padding=padding.all(10),
                             border_radius=8,
                             content=ft.Text(
-                                (emp['employment_status'] or 'Active').replace(
+                                (emp.employment_status or 'Active').replace(
                                     '_', ' ').title(),
                                 color="WHITE", weight=ft.FontWeight.BOLD
                             )
@@ -881,45 +949,46 @@ class EmployeesScreen(ft.Container):
                     ft.Divider(),
                     ft.Text("Personal Details", size=14,
                             weight=ft.FontWeight.BOLD, color="#2E86AB"),
-                    create_detail_row("Email:", emp['email']),
-                    create_detail_row("Phone:", emp['phone']),
-                    create_detail_row("Date of Birth:", emp['date_of_birth']),
+                    create_detail_row("Email:", emp.email),
+                    create_detail_row("Phone:", emp.phone),
+                    create_detail_row("Date of Birth:", emp.date_of_birth),
                     create_detail_row(
-                        "Gender:", emp['gender'].title() if emp['gender'] else "-"),
-                    create_detail_row("Address:", emp['address']),
-                    create_detail_row("City:", emp['city']),
+                        "Gender:", emp.gender.title() if emp.gender else "-"),
+                    create_detail_row("Address:", emp.address),
+                    create_detail_row("City:", emp.city),
                     ft.Divider(),
                     ft.Text("Employment Details", size=14,
                             weight=ft.FontWeight.BOLD, color="#2E86AB"),
-                    create_detail_row("Department:", emp['dept_name']),
-                    create_detail_row("Position:", emp['position_title']),
+                    create_detail_row("Department:", dept_name),
+                    create_detail_row("Position:", pos_title),
                     create_detail_row(
-                        "Employment Type:", (emp['employment_type'] or 'Full-time').replace('_', ' ').title()),
+                        "Employment Type:", (emp.employment_type or 'Full-time').replace('_', ' ').title()),
                     create_detail_row("Date of Joining:",
-                                      emp['date_of_joining']),
-                    create_detail_row("Username:", emp['username']),
+                                      emp.date_of_joining),
+                    create_detail_row("Username:", username),
+                    create_detail_row("Role:", role_name),
                     ft.Divider(),
                     ft.Text("Emergency Contact", size=14,
                             weight=ft.FontWeight.BOLD, color="#D32F2F"),
-                    create_detail_row("Name:", emp['emergency_contact_name']),
-                    create_detail_row("Phone:", emp['emergency_phone']),
+                    create_detail_row("Name:", emp.emergency_contact_name),
+                    create_detail_row("Phone:", emp.emergency_phone),
                     create_detail_row(
-                        "Relationship:", emp['emergency_relation']),
+                        "Relationship:", emp.emergency_relation),
                     ft.Divider(),
                     ft.Text("Bank Details", size=14,
                             weight=ft.FontWeight.BOLD, color="#4CAF50"),
-                    create_detail_row("Bank:", emp['bank_name']),
-                    create_detail_row("Account:", emp['account_number']),
-                    create_detail_row("IFSC:", emp['ifsc_code']),
+                    create_detail_row("Bank:", emp.bank_name),
+                    create_detail_row("Account:", emp.account_number),
+                    create_detail_row("IFSC:", emp.ifsc_code),
                     ft.Divider(),
                     ft.Text("Salary Information", size=14,
                             weight=ft.FontWeight.BOLD, color="#FF9800"),
                     create_detail_row(
-                        "Basic:", f"Rs.{emp['basic_salary'] or 0:,.2f}"),
+                        "Basic:", f"Rs.{emp.basic_salary or 0:,.2f}"),
                     create_detail_row(
-                        "Allowances:", f"Rs.{emp['allowance'] or 0:,.2f}"),
+                        "Allowances:", f"Rs.{emp.allowance or 0:,.2f}"),
                     create_detail_row(
-                        "Deductions:", f"Rs.{emp['deduction'] or 0:,.2f}"),
+                        "Deductions:", f"Rs.{emp.deduction or 0:,.2f}"),
                     ft.Row([
                         ft.Text("Total:", size=12, color="#757575", width=150),
                         ft.Text(f"Rs.{total_salary:,.2f}", size=16,
@@ -932,7 +1001,7 @@ class EmployeesScreen(ft.Container):
 
         dialog = ft.AlertDialog(
             modal=True,
-            title=ft.Text(f"Employee Details - {emp['employee_code']}"),
+            title=ft.Text(f"Employee Details - {emp.employee_code}"),
             content=ft.Container(content=details, height=500, width=550),
             actions=[
                 ft.ElevatedButton("ID Card", on_click=lambda e: self._generate_id_card_dialog(emp_id),
@@ -951,30 +1020,31 @@ class EmployeesScreen(ft.Container):
         self._page.update()
 
     def _generate_id_card_dialog(self, emp_id: int):
-        """Generate ID Card dialog"""
-        conn = None
+        """Generate ID Card dialog using PostgreSQL"""
+        from sqlalchemy.orm import joinedload
+
+        db = None
         try:
-            conn = sqlite3.connect('vernika.db')
-            conn.row_factory = sqlite3.Row
-            cursor = conn.cursor()
-            cursor.execute("""
-                SELECT e.*, d.name as dept_name, p.title as position_title
-                FROM employees e
-                LEFT JOIN departments d ON e.department_id = d.id
-                LEFT JOIN positions p ON e.position_id = p.id
-                WHERE e.id=?
-            """, (emp_id,))
-            emp = cursor.fetchone()
+            db = get_db_session()
+            # Query employee with relationships
+            emp = db.query(Employee).options(
+                joinedload(Employee.department),
+                joinedload(Employee.position)
+            ).filter(Employee.id == emp_id).first()
         except Exception as e:
             self._show_error(f"Error: {e}")
             return
         finally:
-            if conn:
-                conn.close()
+            if db:
+                db.close()
 
         if not emp:
             self._show_error("Employee not found!")
             return
+
+        # Get department and position names
+        dept_name = emp.department.name if emp.department else "General"
+        pos_title = emp.position.title if emp.position else "Employee"
 
         id_card = ft.Container(
             width=380,
@@ -1011,16 +1081,16 @@ class EmployeesScreen(ft.Container):
                             ], alignment=ft.MainAxisAlignment.CENTER, horizontal_alignment=ft.CrossAxisAlignment.CENTER)
                         ),
                         ft.Column([
-                            ft.Text(f"{emp['first_name'] or ''} {emp['last_name'] or ''}",
+                            ft.Text(f"{emp.first_name or ''} {emp.last_name or ''}",
                                     size=15, weight=ft.FontWeight.BOLD, color="#333"),
                             ft.Text(
-                                f"{emp['position_title'] or 'Employee'}", size=11, color="#666"),
+                                f"{pos_title}", size=11, color="#666"),
                             ft.Text(
-                                f"Dept: {emp['dept_name'] or 'General'}", size=10, color="#888"),
-                            ft.Text(f"ID: {emp['employee_code'] or 'N/A'}",
+                                f"Dept: {dept_name}", size=10, color="#888"),
+                            ft.Text(f"ID: {emp.employee_code or 'N/A'}",
                                     size=11, weight=ft.FontWeight.BOLD, color="#2E86AB"),
                             ft.Text(
-                                f"DOB: {emp['date_of_birth'] or '-'}", size=10, color="#666"),
+                                f"DOB: {emp.date_of_birth or '-'}", size=10, color="#666"),
                         ], spacing=3),
                     ], spacing=15)
                 ),
@@ -1030,10 +1100,10 @@ class EmployeesScreen(ft.Container):
                     padding=padding.all(8),
                     content=ft.Row([
                         ft.Icon(ft.Icons.EMAIL, size=14, color="#666"),
-                        ft.Text(emp['email'] or '-', size=10, color="#666"),
+                        ft.Text(emp.email or '-', size=10, color="#666"),
                         ft.Container(expand=True),
                         ft.Icon(ft.Icons.PHONE, size=14, color="#666"),
-                        ft.Text(emp['phone'] or '-', size=10, color="#666"),
+                        ft.Text(emp.phone or '-', size=10, color="#666"),
                     ], spacing=5)
                 )
             ], spacing=0)
@@ -1089,31 +1159,149 @@ class EmployeesScreen(ft.Container):
             toggle_icon.icon = ft.Icons.VISIBILITY_OFF
         self._page.update()
 
-    def _generate_offer_letter_dialog(self, emp_id: int):
-        """Generate Offer Letter dialog"""
-        conn = None
+    def _manage_access_dialog(self, emp_id: int, user_id: int):
+        """Show dialog to manage screen access for an employee"""
+        from utils.screen_access import (
+            SCREEN_ACCESS_CONFIG,
+            get_user_screen_access,
+            set_screen_access,
+            reset_to_defaults
+        )
+
+        # Get current access
+        current_access = get_user_screen_access(user_id)
+
+        # Get employee name
+        emp_name = f"Employee #{emp_id}"
+        db = None
         try:
-            conn = sqlite3.connect('vernika.db')
-            conn.row_factory = sqlite3.Row
-            cursor = conn.cursor()
-            cursor.execute("""
-                SELECT e.*, d.name as dept_name, p.title as position_title
-                FROM employees e 
-                LEFT JOIN departments d ON e.department_id = d.id
-                LEFT JOIN positions p ON e.position_id = p.id
-                WHERE e.id=?
-            """, (emp_id,))
-            emp = cursor.fetchone()
+            db = get_db_session()
+            emp = db.query(Employee).filter(Employee.id == emp_id).first()
+            if emp:
+                emp_name = f"{emp.first_name or ''} {emp.last_name or ''}".strip(
+                ) or emp_name
+        except Exception as e:
+            print(f"Error getting employee name: {e}")
+        finally:
+            if db:
+                db.close()
+
+        # Create access cards
+        access_controls = {}
+
+        for screen_key, config in SCREEN_ACCESS_CONFIG.items():
+            is_enabled = current_access.get(screen_key, False)
+
+            switch = ft.Switch(
+                value=is_enabled,
+                active_color="#2E86AB",
+                disabled=(screen_key == 'profile'),  # Profile always enabled
+            )
+
+            def make_handler(uk, sk, sw, conf):
+                def handler(e):
+                    admin_id = self.user.get('id') if isinstance(
+                        self.user, dict) else None
+                    set_screen_access(uk, sk, sw.value, granted_by=admin_id)
+                    self._show_success(f"Updated {conf['name']} access")
+                return handler
+
+            switch.on_change = make_handler(
+                user_id, screen_key, switch, config)
+            access_controls[screen_key] = switch
+
+        # Build content
+        content = ft.Column([
+            ft.Row([
+                ft.Icon(ft.Icons.SECURITY, size=24, color="#2E86AB"),
+                ft.Text(f"Screen Access for {emp_name}",
+                        size=18, weight=ft.FontWeight.BOLD),
+            ]),
+            ft.Container(height=10),
+            ft.Text("Manage which screens this employee can access:",
+                    size=12, color="#757575"),
+            ft.Divider(),
+            ft.Container(height=10),
+        ])
+
+        for screen_key, config in SCREEN_ACCESS_CONFIG.items():
+            content.controls.append(
+                ft.Container(
+                    content=ft.Row([
+                        ft.Column([
+                            ft.Text(config["name"], size=14,
+                                    weight=ft.FontWeight.BOLD),
+                            ft.Text(config["description"],
+                                    size=11, color="#757575"),
+                        ], expand=True),
+                        access_controls[screen_key],
+                    ], alignment=ft.MainAxisAlignment.SPACE_BETWEEN),
+                    padding=10,
+                    bgcolor="#F5F5F5" if screen_key != "profile" else "#E3F2FD",
+                    border_radius=8,
+                    margin=5,
+                )
+            )
+
+        content.controls.extend([
+            ft.Container(height=20),
+            ft.Row([
+                ft.Container(expand=True),
+                ft.ElevatedButton(
+                    "Reset to Defaults",
+                    icon=ft.Icons.RESTART_ALT,
+                    on_click=lambda e: (reset_to_defaults(
+                        user_id), self._close_dialog(), self._refresh()),
+                    style=ft.ButtonStyle(bgcolor="#FFC107", color="white"),
+                ),
+            ]),
+        ])
+
+        dialog = ft.AlertDialog(
+            title=ft.Text("Manage Screen Access"),
+            content=ft.Container(
+                content=ft.Column([
+                    content
+                ], scroll=ft.ScrollMode.AUTO),
+                width=500,
+                height=450,
+            ),
+            actions=[
+                ft.TextButton(
+                    "Close", on_click=lambda e: self._close_dialog()),
+            ]
+        )
+
+        self._page.dialog = dialog
+        dialog.open = True
+        self._page.update()
+
+    def _generate_offer_letter_dialog(self, emp_id: int):
+        """Generate Offer Letter dialog using PostgreSQL"""
+        from sqlalchemy.orm import joinedload
+
+        db = None
+        try:
+            db = get_db_session()
+            # Query employee with relationships
+            emp = db.query(Employee).options(
+                joinedload(Employee.department),
+                joinedload(Employee.position)
+            ).filter(Employee.id == emp_id).first()
         except Exception as e:
             self._show_error(f"Error: {e}")
             return
         finally:
-            if conn:
-                conn.close()
+            if db:
+                db.close()
 
         if not emp:
             self._show_error("Employee not found!")
             return
+
+        # Get department and position names
+        dept_name = emp.department.name if emp.department else "General"
+        pos_title = emp.position.title if emp.position else "Employee"
 
         offer_letter = ft.Container(
             width=600,
@@ -1136,27 +1324,27 @@ class EmployeesScreen(ft.Container):
                             f"Date: {datetime.now().strftime('%Y-%m-%d')}", size=11),
                         ft.Container(height=10),
                         ft.Text(
-                            f"Dear {emp['first_name'] or ''} {emp['last_name'] or ''},", size=12),
+                            f"Dear {emp.first_name or ''} {emp.last_name or ''},", size=12),
                         ft.Container(height=10),
                         ft.Text(
                             "We are pleased to offer you the position of", size=11),
-                        ft.Text(f"{emp['position_title'] or 'Employee'}", size=14,
+                        ft.Text(f"{pos_title}", size=14,
                                 weight=ft.FontWeight.BOLD, color="#2E86AB"),
                         ft.Text(
-                            f"in the {emp['dept_name'] or 'General'} Department.", size=11),
+                            f"in the {dept_name} Department.", size=11),
                         ft.Container(height=15),
                         ft.Text("Terms of Employment:", size=12,
                                 weight=ft.FontWeight.BOLD),
                         ft.Text(
-                            f"• Employment Type: {(emp['employment_type'] or 'Full-time').replace('_', ' ').title()}", size=11),
+                            f"• Employment Type: {(emp.employment_type or 'Full-time').replace('_', ' ').title()}", size=11),
                         ft.Text(
-                            f"• Basic Salary: Rs.{emp['basic_salary'] or 0:,.2f}/-", size=11),
+                            f"• Basic Salary: Rs.{emp.basic_salary or 0:,.2f}/-", size=11),
                         ft.Text(
-                            f"• Allowances: Rs.{emp['allowance'] or 0:,.2f}/-", size=11),
+                            f"• Allowances: Rs.{emp.allowance or 0:,.2f}/-", size=11),
                         ft.Text(
-                            f"• Deductions: Rs.{emp['deduction'] or 0:,.2f}/-", size=11),
+                            f"• Deductions: Rs.{emp.deduction or 0:,.2f}/-", size=11),
                         ft.Text(
-                            f"• Date of Joining: {emp['date_of_joining'] or 'To be decided'}", size=11),
+                            f"• Date of Joining: {emp.date_of_joining or 'To be decided'}", size=11),
                         ft.Container(height=15),
                         ft.Text(
                             "This offer is subject to verification of your documents and references.", size=10, color="#666"),
@@ -1185,34 +1373,35 @@ class EmployeesScreen(ft.Container):
         self._page.update()
 
     def _generate_salary_slip_dialog(self, emp_id: int):
-        """Generate Salary Slip dialog"""
-        conn = None
+        """Generate Salary Slip dialog using PostgreSQL"""
+        from sqlalchemy.orm import joinedload
+
+        db = None
         try:
-            conn = sqlite3.connect('vernika.db')
-            conn.row_factory = sqlite3.Row
-            cursor = conn.cursor()
-            cursor.execute("""
-                SELECT e.*, d.name as dept_name, p.title as position_title
-                FROM employees e 
-                LEFT JOIN departments d ON e.department_id = d.id
-                LEFT JOIN positions p ON e.position_id = p.id
-                WHERE e.id=?
-            """, (emp_id,))
-            emp = cursor.fetchone()
+            db = get_db_session()
+            # Query employee with relationships
+            emp = db.query(Employee).options(
+                joinedload(Employee.department),
+                joinedload(Employee.position)
+            ).filter(Employee.id == emp_id).first()
         except Exception as e:
             self._show_error(f"Error: {e}")
             return
         finally:
-            if conn:
-                conn.close()
+            if db:
+                db.close()
 
         if not emp:
             self._show_error("Employee not found!")
             return
 
-        basic = emp['basic_salary'] or 0
-        allowance = emp['allowance'] or 0
-        deduction = emp['deduction'] or 0
+        # Get department and position names
+        dept_name = emp.department.name if emp.department else "General"
+        pos_title = emp.position.title if emp.position else "Employee"
+
+        basic = emp.basic_salary or 0
+        allowance = emp.allowance or 0
+        deduction = emp.deduction or 0
         net_salary = basic + allowance - deduction
 
         salary_slip = ft.Container(
@@ -1235,7 +1424,7 @@ class EmployeesScreen(ft.Container):
                     content=ft.Column([
                         ft.Row([
                             ft.Text("Employee:", size=11, color="#666"),
-                            ft.Text(f"{emp['first_name'] or ''} {emp['last_name'] or ''}",
+                            ft.Text(f"{emp.first_name or ''} {emp.last_name or ''}",
                                     size=12, weight=ft.FontWeight.BOLD),
                             ft.Container(expand=True),
                             ft.Text(
@@ -1244,18 +1433,18 @@ class EmployeesScreen(ft.Container):
                         ft.Divider(),
                         ft.Row([
                             ft.Text("Department:", size=11, color="#666"),
-                            ft.Text(emp['dept_name'] or '-', size=11),
+                            ft.Text(dept_name or '-', size=11),
                             ft.Container(expand=True),
                             ft.Text("Position:", size=11, color="#666"),
-                            ft.Text(emp['position_title'] or '-', size=11),
+                            ft.Text(pos_title or '-', size=11),
                         ]),
                         ft.Row([
                             ft.Text("Emp Code:", size=11, color="#666"),
-                            ft.Text(emp['employee_code'] or '-', size=11),
+                            ft.Text(emp.employee_code or '-', size=11),
                             ft.Container(expand=True),
                             ft.Text(" DOJ:", size=11, color="#666"),
                             ft.Text(
-                                str(emp['date_of_joining']) if emp['date_of_joining'] else '-', size=11),
+                                str(emp.date_of_joining) if emp.date_of_joining else '-', size=11),
                         ]),
                         ft.Divider(height=3),
                         ft.Text("EARNINGS", size=12,
@@ -1316,60 +1505,68 @@ class EmployeesScreen(ft.Container):
         self._page.update()
 
     def _show_delete_dialog(self, emp_id: int):
-        """Show delete confirmation dialog"""
-        conn = None
+        """Show delete confirmation dialog using PostgreSQL"""
+
+        db = None
+        emp_name = ""
+        user_id = None
+
         try:
-            conn = sqlite3.connect('vernika.db')
-            conn.row_factory = sqlite3.Row
-            cursor = conn.cursor()
-            cursor.execute(
-                "SELECT first_name, last_name FROM employees WHERE id=?", (emp_id,))
-            emp = cursor.fetchone()
+            db = get_db_session()
+            emp = db.query(Employee).filter(Employee.id == emp_id).first()
+            if emp:
+                emp_name = f"{emp.first_name or ''} {emp.last_name or ''}".strip()
+                user_id = emp.user_id
         except Exception as e:
             self._show_error(f"Error: {e}")
             return
         finally:
-            if conn:
-                conn.close()
+            if db:
+                db.close()
 
-        if not emp:
+        if not emp_name:
             self._show_error("Employee not found!")
             return
 
         def confirm_delete(e):
-            conn = None
+            """Delete employee using PostgreSQL"""
+            db = None
             try:
-                conn = sqlite3.connect('vernika.db')
-                conn.row_factory = sqlite3.Row
-                cursor = conn.cursor()
-                # Get user_id first
-                cursor.execute(
-                    "SELECT user_id FROM employees WHERE id=?", (emp_id,))
-                result = cursor.fetchone()
-                if result:
-                    user_id = result['user_id']
-                    # Delete employee first (due to FK constraints)
-                    cursor.execute(
-                        "DELETE FROM employees WHERE id=?", (emp_id,))
-                    # Then delete user if exists (cascade delete)
-                    if user_id:
-                        cursor.execute(
-                            "DELETE FROM users WHERE id=?", (user_id,))
-                conn.commit()
+                db = get_db_session()
+
+                # Get employee to delete
+                emp_to_delete = db.query(Employee).filter(
+                    Employee.id == emp_id).first()
+                if emp_to_delete:
+                    user_id_to_delete = emp_to_delete.user_id
+
+                    # Delete employee first
+                    db.delete(emp_to_delete)
+
+                    # Then delete user if exists
+                    if user_id_to_delete:
+                        user_to_delete = db.query(User).filter(
+                            User.id == user_id_to_delete).first()
+                        if user_to_delete:
+                            db.delete(user_to_delete)
+
+                db.commit()
                 self._close_dialog()
                 self._show_success("Employee deleted successfully!")
                 self._refresh()
             except Exception as ex:
                 self._show_error(f"Error: {str(ex)}")
+                if db:
+                    db.rollback()
             finally:
-                if conn:
-                    conn.close()
+                if db:
+                    db.close()
 
         dialog = ft.AlertDialog(
             modal=True,
             title=ft.Text("Delete Employee?", color="#F44336"),
             content=ft.Text(
-                f"Are you sure you want to delete '{emp['first_name'] or ''} {emp['last_name'] or ''}'? This action cannot be undone."),
+                f"Are you sure you want to delete '{emp_name}'? This action cannot be undone."),
             actions=[
                 ft.TextButton(
                     "Cancel", on_click=lambda e: self._close_dialog()),

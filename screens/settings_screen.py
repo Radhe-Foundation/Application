@@ -26,6 +26,13 @@ class SettingsScreen(Column):
         self.build_ui()
         self.load_settings()
 
+    def refresh(self):
+        """Refresh the settings screen content"""
+        self.build_content()
+        if self.current_section == "users":
+            self.refresh_users_list()
+        self._page.update()
+
     def build_ui(self):
         self.header = Container(
             padding=15, bgcolor=Colors.GREY_700,

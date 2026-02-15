@@ -45,6 +45,9 @@ class AdminScreen(ft.Container):
         self.expand = True
         self.alignment = ft.alignment.Alignment(0, 0)
 
+        # State variable to track if refresh is needed
+        self._needs_refresh = False
+
         # Verify admin access
         if not check_admin_access(current_user):
             self._handle_access_denied()
@@ -53,6 +56,26 @@ class AdminScreen(ft.Container):
         # Build content with tabs
         self.content = self._build_content()
         print("✓ AdminScreen initialized")
+
+    def refresh(self):
+        """Refresh the entire admin screen including dashboard stats"""
+        self._needs_refresh = False
+        self.content = self._build_content()
+        self._page.update()
+
+    def refresh_dashboard(self):
+        """Refresh only the dashboard stats without rebuilding entire screen"""
+        # Get the dashboard content area
+        try:
+            # Rebuild dashboard tab content
+            # Get the content container
+            content = self.content.content.controls[2]
+            content.content = self._get_tab_content(0)  # 0 is dashboard tab
+            self._page.update()
+        except Exception as e:
+            print(f"Error refreshing dashboard: {e}")
+            # Fallback to full refresh
+            self.refresh()
 
     @property
     def page(self):
@@ -94,6 +117,10 @@ class AdminScreen(ft.Container):
                         ft.NavigationRailDestination(
                             icon=ft.Icons.CHAT,
                             label="Chat"
+                        ),
+                        ft.NavigationRailDestination(
+                            icon=ft.Icons.EMAIL,
+                            label="Mail"
                         ),
                         ft.NavigationRailDestination(
                             icon=ft.Icons.TASK,
@@ -140,10 +167,6 @@ class AdminScreen(ft.Container):
                             label="Reports"
                         ),
                         ft.NavigationRailDestination(
-                            icon=ft.Icons.SECURITY,
-                            label="Access"
-                        ),
-                        ft.NavigationRailDestination(
                             icon=ft.Icons.SETTINGS,
                             label="Settings"
                         ),
@@ -182,18 +205,73 @@ class AdminScreen(ft.Container):
         )
 
     def _on_nav_change(self, e):
-        """Handle navigation rail change"""
+        """Handle navigation rail change - OPTIMIZED with lazy loading"""
         index = e.control.selected_index
-        # Update the content
+
+        # Lazy load tab content only when clicked
         content = self.content.content.controls[2]  # Get the content container
-        content.content = self._get_tab_content(index)
+        content.content = self._get_tab_content_lazy(index)
         self.page.update()
+
+    def _get_tab_content_lazy(self, index):
+        """Get content for the selected tab - lazy loaded"""
+        # Only load the requested tab
+        if index == 0:
+            return self._create_dashboard_tab()
+        elif index == 1:
+            from screens.chat_screen import ChatScreen
+            return ft.Container(content=ChatScreen(self.page, self.current_user), expand=True)
+        elif index == 2:
+            from screens.mail_screen import MailScreen
+            return ft.Container(content=MailScreen(self.page, self.current_user), expand=True)
+        elif index == 3:
+            from screens.tasks_screen import TasksScreen
+            return ft.Container(content=TasksScreen(self.page, self.current_user), expand=True)
+        elif index == 4:
+            from screens.todo_screen import TodoScreen
+            return ft.Container(content=TodoScreen(self.page, self.current_user), expand=True)
+        elif index == 5:
+            from screens.departments_screen import DepartmentsScreen
+            return ft.Container(content=DepartmentsScreen(self.page, self.current_user), expand=True)
+        elif index == 6:
+            from screens.attendance_screen import AttendanceScreen
+            return ft.Container(content=AttendanceScreen(self.page, self.current_user, view_mode="admin"), expand=True)
+        elif index == 7:
+            from screens.leaves_screen import LeavesScreen
+            return ft.Container(content=LeavesScreen(self.page, self.current_user, view_mode="admin"), expand=True)
+        elif index == 8:
+            return self._create_employees_tab()
+        elif index == 9:
+            from screens.positions_screen import PositionsScreen
+            return ft.Container(content=PositionsScreen(self.page, self.current_user), expand=True)
+        elif index == 10:
+            from screens.announcements_screen import AnnouncementsScreen
+            return ft.Container(content=AnnouncementsScreen(self.page), expand=True)
+        elif index == 11:
+            from screens.documents_screen import DocumentsScreen
+            return ft.Container(content=DocumentsScreen(self.page), expand=True)
+        elif index == 12:
+            from screens.performance_screen import PerformanceScreen
+            return ft.Container(content=PerformanceScreen(self.page), expand=True)
+        elif index == 13:
+            from screens.reports_screen import ReportsScreen
+            return ft.Container(content=ReportsScreen(self.page), expand=True)
+        elif index == 14:
+            from screens.settings_screen import SettingsScreen
+            return ft.Container(content=SettingsScreen(self.page, self.current_user), expand=True)
+        elif index == 15:
+            return self._create_audit_tab()
+        elif index == 16:
+            from screens.etl_screen import ETLScreen
+            return ft.Container(content=ETLScreen(self.page, self.current_user), expand=True)
+        return self._create_dashboard_tab()
 
     def _get_tab_content(self, index):
         """Get content for the selected tab"""
         tab_methods = [
             self._create_dashboard_tab,
             self._create_chat_tab,
+            self._create_mail_tab,
             self._create_tasks_tab,
             self._create_todo_tab,
             self._create_departments_tab,
@@ -205,7 +283,6 @@ class AdminScreen(ft.Container):
             self._create_documents_tab,
             self._create_performance_tab,
             self._create_reports_tab,
-            self._create_screen_access_tab,
             self._create_settings_tab,
             self._create_audit_tab,
             self._create_etl_tab,
@@ -242,9 +319,10 @@ class AdminScreen(ft.Container):
         )
 
     def _create_dashboard_tab(self):
-        """Create dashboard overview tab"""
+        """Create dashboard overview tab with enhanced analytics and quick stats"""
         # Get stats
         stats = self._get_dashboard_stats()
+        detailed_stats = self._get_detailed_stats()
 
         return ft.Container(
             content=ft.Column([
@@ -256,9 +334,9 @@ class AdminScreen(ft.Container):
                 ),
                 ft.Container(height=20),
 
-                # Stats Cards Row 1
+                # Stats Cards Row 1 - Overview
                 ft.Text(
-                    "Statistics Overview",
+                    "Overview Statistics",
                     size=18,
                     weight=ft.FontWeight.BOLD,
                     color=TEXT_PRIMARY
@@ -275,7 +353,8 @@ class AdminScreen(ft.Container):
                         "Departments", str(stats.get('departments', 0)), ft.Icons.BUSINESS, TEAL_500),
                 ], spacing=20),
                 ft.Container(height=15),
-                # Stats Cards Row 2
+
+                # Stats Cards Row 2 - Today's Status
                 ft.Row([
                     self._create_stat_card(
                         "Present Today", str(stats.get('present_today', 0)), ft.Icons.CHECK_CIRCLE, SUCCESS),
@@ -291,6 +370,59 @@ class AdminScreen(ft.Container):
                 ft.Divider(),
                 ft.Container(height=20),
 
+                # Employee Analytics Section
+                ft.Text(
+                    "Employee Analytics",
+                    size=20,
+                    weight=ft.FontWeight.BOLD,
+                    color=TEXT_PRIMARY
+                ),
+                ft.Container(height=15),
+
+                # Department-wise distribution
+                ft.Container(
+                    content=ft.Column([
+                        ft.Row([
+                            ft.Icon(ft.Icons.BUSINESS, size=24, color=PRIMARY),
+                            ft.Text("Department-wise Employees",
+                                    size=16, weight=ft.FontWeight.BOLD),
+                        ]),
+                        ft.Container(height=10),
+                        self._create_department_analytics(
+                            detailed_stats.get('department_stats', [])),
+                    ]),
+                    padding=15,
+                    bgcolor=SURFACE,
+                    border_radius=10,
+                    shadow=ft.BoxShadow(
+                        spread_radius=1, blur_radius=5, color="#00000010"),
+                ),
+
+                ft.Container(height=15),
+
+                # Employment Type Distribution
+                ft.Container(
+                    content=ft.Column([
+                        ft.Row([
+                            ft.Icon(ft.Icons.WORK, size=24, color=PURPLE_500),
+                            ft.Text("Employment Type Distribution",
+                                    size=16, weight=ft.FontWeight.BOLD),
+                        ]),
+                        ft.Container(height=10),
+                        self._create_employment_type_analytics(
+                            detailed_stats.get('employment_stats', [])),
+                    ]),
+                    padding=15,
+                    bgcolor=SURFACE,
+                    border_radius=10,
+                    shadow=ft.BoxShadow(
+                        spread_radius=1, blur_radius=5, color="#00000010"),
+                ),
+
+                ft.Container(height=30),
+                ft.Divider(),
+                ft.Container(height=20),
+
                 # Quick Actions
                 ft.Text(
                     "Quick Actions",
@@ -301,23 +433,21 @@ class AdminScreen(ft.Container):
                 ft.Container(height=10),
                 ft.Row([
                     ft.ElevatedButton(
-                        "Add New User",
-                        icon=ft.Icons.ADD,
-                        # Open the Add User dialog directly so this button
-                        # always performs a useful action.
-                        on_click=self._show_add_user_dialog,
+                        "Add New Employee",
+                        icon=ft.Icons.PERSON_ADD,
+                        on_click=self._show_add_employee_from_admin,
                         style=ft.ButtonStyle(bgcolor=PRIMARY, color="white")
                     ),
                     ft.ElevatedButton(
                         "Manage Employees",
                         icon=ft.Icons.BADGE,
-                        on_click=lambda _: self._navigate_to_tab(7),
+                        on_click=lambda _: self._navigate_to_tab(8),
                         style=ft.ButtonStyle(bgcolor=ORANGE_500, color="white")
                     ),
                     ft.ElevatedButton(
                         "View Reports",
                         icon=ft.Icons.ASSESSMENT,
-                        on_click=lambda _: self._navigate_to_tab(12),
+                        on_click=lambda _: self._navigate_to_tab(13),
                         style=ft.ButtonStyle(bgcolor=PURPLE_500, color="white")
                     ),
                     ft.ElevatedButton(
@@ -347,13 +477,13 @@ class AdminScreen(ft.Container):
                 ft.Container(height=8),
                 ft.Row([
                     self._create_module_card(
-                        "Tasks", ft.Icons.TASK, "Task Management", 2, ORANGE_500),
+                        "Tasks", ft.Icons.TASK, "Task Management", 3, ORANGE_500),
                     self._create_module_card(
-                        "Todo", ft.Icons.LIST_ALT, "Todo Lists", 3, CYAN_600),
+                        "Todo", ft.Icons.LIST_ALT, "Todo Lists", 4, CYAN_600),
                     self._create_module_card(
-                        "Departments", ft.Icons.BUSINESS, "Departments", 4, GREEN_500),
+                        "Departments", ft.Icons.BUSINESS, "Departments", 5, GREEN_500),
                     self._create_module_card(
-                        "Attendance", ft.Icons.EVENT, "Attendance", 5, BLUE_500),
+                        "Attendance", ft.Icons.EVENT, "Attendance", 6, BLUE_500),
                 ], spacing=15),
 
                 ft.Container(height=15),
@@ -363,13 +493,13 @@ class AdminScreen(ft.Container):
                 ft.Container(height=8),
                 ft.Row([
                     self._create_module_card(
-                        "Leave", ft.Icons.EVENT_BUSY, "Leave Management", 6, PURPLE_500),
+                        "Leave", ft.Icons.EVENT_BUSY, "Leave Management", 7, PURPLE_500),
                     self._create_module_card(
-                        "Announcements", ft.Icons.CAMPAIGN, "News & Updates", 9, RED_500),
+                        "Announcements", ft.Icons.CAMPAIGN, "News & Updates", 10, RED_500),
                     self._create_module_card(
-                        "Documents", ft.Icons.FOLDER, "Documents", 10, AMBER_500),
+                        "Documents", ft.Icons.FOLDER, "Documents", 11, AMBER_500),
                     self._create_module_card(
-                        "Positions", ft.Icons.WORK, "Job Positions", 8, INDIGO_500),
+                        "Positions", ft.Icons.WORK, "Job Positions", 9, INDIGO_500),
                 ], spacing=15),
 
                 ft.Container(height=15),
@@ -379,9 +509,9 @@ class AdminScreen(ft.Container):
                 ft.Container(height=8),
                 ft.Row([
                     self._create_module_card(
-                        "Performance", ft.Icons.TRENDING_UP, "Performance Reviews", 11, PINK_500),
+                        "Performance", ft.Icons.TRENDING_UP, "Performance Reviews", 12, PINK_500),
                     self._create_module_card(
-                        "Reports", ft.Icons.ASSESSMENT, "Reports & Analytics", 12, CYAN_600),
+                        "Reports", ft.Icons.ASSESSMENT, "Reports & Analytics", 13, CYAN_600),
                     self._create_module_card(
                         "Settings", ft.Icons.SETTINGS, "System Settings", 14, TEAL_500),
                     self._create_module_card(
@@ -394,7 +524,7 @@ class AdminScreen(ft.Container):
 
                 # Additional Management
                 ft.Text(
-                    "User & Access Management",
+                    "User Management",
                     size=20,
                     weight=ft.FontWeight.BOLD,
                     color=TEXT_PRIMARY
@@ -402,9 +532,7 @@ class AdminScreen(ft.Container):
                 ft.Container(height=10),
                 ft.Row([
                     self._create_module_card(
-                        "Employees", ft.Icons.BADGE, "Employee Mgmt", 7, SUCCESS),
-                    self._create_module_card(
-                        "Screen Access", ft.Icons.SECURITY, "Access Control", 13, WARNING),
+                        "Employees", ft.Icons.BADGE, "Employee Mgmt", 8, SUCCESS),
                     self._create_module_card(
                         "Audit Logs", ft.Icons.HISTORY, "Activity Logs", 15, ERROR),
                 ], spacing=15),
@@ -412,6 +540,132 @@ class AdminScreen(ft.Container):
             ], scroll=ft.ScrollMode.AUTO),
             padding=ft.padding.all(20)
         )
+
+    def _get_detailed_stats(self):
+        """Get detailed analytics statistics"""
+        stats = {
+            'department_stats': [],
+            'employment_stats': [],
+            'new_hires_this_month': 0,
+            'birthdays_this_month': 0,
+        }
+        try:
+            db = get_db_session()
+            from database.models import Employee, Department
+            from datetime import datetime
+            from sqlalchemy import func
+
+            # Department-wise employee count
+            departments = db.query(
+                Department.name,
+                func.count(Employee.id).label('count')
+            ).outerjoin(Employee, Department.id == Employee.department_id).group_by(Department.id, Department.name).all()
+
+            stats['department_stats'] = [
+                {'name': d.name, 'count': d.count} for d in departments if d.name
+            ]
+
+            # Employment type distribution
+            emp_types = db.query(
+                Employee.employment_type,
+                func.count(Employee.id).label('count')
+            ).group_by(Employee.employment_type).all()
+
+            stats['employment_stats'] = [
+                {'type': e.employment_type or 'unknown', 'count': e.count}
+                for e in emp_types
+            ]
+
+            # New hires this month
+            now = datetime.now()
+            new_hires = db.query(Employee).filter(
+                func.extract('year', Employee.date_of_joining) == now.year,
+                func.extract('month', Employee.date_of_joining) == now.month
+            ).count()
+            stats['new_hires_this_month'] = new_hires
+
+            db.close()
+        except Exception as e:
+            print(f"Error getting detailed stats: {e}")
+        return stats
+
+    def _create_department_analytics(self, dept_stats):
+        """Create department-wise analytics display"""
+        if not dept_stats:
+            return ft.Text("No department data available", size=12, color=TEXT_SECONDARY)
+
+        # Find max for scaling
+        max_count = max(s['count'] for s in dept_stats) if dept_stats else 1
+
+        rows = []
+        for dept in dept_stats:
+            percentage = (dept['count'] / max_count *
+                          100) if max_count > 0 else 0
+
+            # Color based on count
+            color = GREEN_500 if percentage > 50 else ORANGE_500 if percentage > 25 else BLUE_500
+
+            rows.append(
+                ft.Container(
+                    content=ft.Column([
+                        ft.Row([
+                            ft.Text(dept['name'], size=13,
+                                    weight=ft.FontWeight.W_500, expand=True),
+                            ft.Text(str(dept['count']), size=13,
+                                    weight=ft.FontWeight.BOLD),
+                        ]),
+                        ft.Container(
+                            height=8,
+                            bgcolor="#E0E0E0",
+                            border_radius=4,
+                            content=ft.Container(
+                                width=max(30, int(percentage * 2)),
+                                bgcolor=color,
+                                border_radius=4,
+                            ),
+                        ),
+                    ], spacing=4),
+                    margin=ft.margin.only(bottom=8),
+                )
+            )
+
+        return ft.Column(controls=rows, spacing=0)
+
+    def _create_employment_type_analytics(self, emp_stats):
+        """Create employment type distribution display"""
+        if not emp_stats:
+            return ft.Text("No employment data available", size=12, color=TEXT_SECONDARY)
+
+        total = sum(s['count'] for s in emp_stats)
+
+        # Colors for different types
+        type_colors = {
+            'full_time': GREEN_500,
+            'part_time': BLUE_500,
+            'contract': ORANGE_500,
+            'intern': PURPLE_500,
+        }
+
+        rows = []
+        for emp in emp_stats:
+            emp_type = emp['type'].replace('_', ' ').title()
+            count = emp['count']
+            percentage = (count / total * 100) if total > 0 else 0
+            color = type_colors.get(emp['type'], PRIMARY)
+
+            rows.append(
+                ft.Row([
+                    ft.Container(
+                        width=12, height=12,
+                        bgcolor=color, border_radius=6,
+                    ),
+                    ft.Text(emp_type, size=13, expand=True),
+                    ft.Text(f"{count} ({percentage:.1f}%)",
+                            size=12, color=TEXT_SECONDARY),
+                ], spacing=10)
+            )
+
+        return ft.Column(controls=rows, spacing=8)
 
     def _create_stat_card(self, title: str, value: str, icon_name, color):
         """Create a statistics card"""
@@ -516,68 +770,318 @@ class AdminScreen(ft.Container):
         )
 
     def _create_employees_tab(self):
-        """Create employee management tab"""
+        """Create employee management tab with full CRUD and filters"""
+        from database.connection import get_db_session
+        from database.models import Employee, Department, Position
+        from sqlalchemy.orm import joinedload
+
+        # State variables for filtering
+        self._emp_filter_dept = {"value": "all"}
+        self._emp_filter_status = {"value": "all"}
+        self._emp_filter_type = {"value": "all"}
+        self._emp_search = {"value": ""}
+
+        def load_employees():
+            """Load employees based on filters"""
+            db = None
+            try:
+                db = get_db_session()
+                query = db.query(Employee).options(
+                    joinedload(Employee.department),
+                    joinedload(Employee.position)
+                )
+
+                # Apply department filter
+                if self._emp_filter_dept["value"] != "all":
+                    query = query.filter(Employee.department_id == int(
+                        self._emp_filter_dept["value"]))
+
+                # Apply status filter
+                if self._emp_filter_status["value"] == "active":
+                    query = query.filter(Employee.is_active == True)
+                elif self._emp_filter_status["value"] == "inactive":
+                    query = query.filter(Employee.is_active == False)
+
+                # Apply employment type filter
+                if self._emp_filter_type["value"] != "all":
+                    query = query.filter(
+                        Employee.employment_type == self._emp_filter_type["value"])
+
+                # Apply search filter
+                search_term = self._emp_search["value"].strip().lower()
+                if search_term:
+                    query = query.filter(
+                        (Employee.first_name.ilike(f"%{search_term}%")) |
+                        (Employee.last_name.ilike(f"%{search_term}%")) |
+                        (Employee.email.ilike(f"%{search_term}%")) |
+                        (Employee.employee_code.ilike(f"%{search_term}%"))
+                    )
+
+                employees = query.order_by(Employee.id.desc()).all()
+                return employees
+            except Exception as e:
+                print(f"Error loading employees: {e}")
+                return []
+            finally:
+                if db:
+                    db.close()
+
+        def load_departments():
+            """Load departments for filter"""
+            db = None
+            try:
+                db = get_db_session()
+                return db.query(Department).filter(Department.is_active == True).all()
+            except Exception as e:
+                print(f"Error loading departments: {e}")
+                return []
+            finally:
+                if db:
+                    db.close()
+
+        def refresh_employee_list(e=None):
+            """Refresh the employee list"""
+            try:
+                emp_list.content = build_employee_table()
+                self._page.update()
+            except Exception as ex:
+                print(f"Error refreshing: {ex}")
+
+        def build_employee_table():
+            """Build the employee data table"""
+            employees = load_employees()
+
+            if not employees:
+                return ft.Container(
+                    content=ft.Column([
+                        ft.Icon(ft.Icons.PEOPLE_OUTLINE,
+                                size=64, color="#BDBDBD"),
+                        ft.Text("No employees found",
+                                size=14, color="#757575"),
+                        ft.Container(height=10),
+                        ft.ElevatedButton(
+                            "Add First Employee",
+                            on_click=lambda e: self._show_add_employee_from_admin(),
+                            style=ft.ButtonStyle(
+                                bgcolor="#4CAF50", color="WHITE")
+                        )
+                    ], horizontal_alignment=ft.CrossAxisAlignment.CENTER),
+                    alignment=ft.alignment.Alignment(0, 0),
+                    expand=True
+                )
+
+            rows = []
+            for emp in employees:
+                status_color = "#4CAF50" if emp.is_active else "#F44336"
+                status_text = "Active" if emp.is_active else "Inactive"
+
+                emp_type = emp.employment_type or "full_time"
+                type_display = emp_type.replace('_', ' ').title()
+                type_color = "#2196F3" if emp_type == "full_time" else "#FF9800"
+
+                dept_name = emp.department.name if emp.department else "General"
+                pos_title = emp.position.title if emp.position else "-"
+
+                rows.append(
+                    ft.DataRow(
+                        cells=[
+                            ft.DataCell(ft.Text(str(emp.id), size=12)),
+                            ft.DataCell(
+                                ft.Text(emp.employee_code or f"EMP{emp.id:03d}", size=12)),
+                            ft.DataCell(
+                                ft.Text(f"{emp.first_name or ''} {emp.last_name or ''}", size=12)),
+                            ft.DataCell(ft.Text(emp.email or "-", size=12)),
+                            ft.DataCell(ft.Text(dept_name, size=12)),
+                            ft.DataCell(ft.Text(pos_title, size=12)),
+                            ft.DataCell(ft.Container(
+                                ft.Text(type_display, size=10, color="WHITE"),
+                                bgcolor=type_color,
+                                padding=ft.padding.all(4),
+                                border_radius=4
+                            )),
+                            ft.DataCell(ft.Container(
+                                ft.Text(status_text, size=10, color="WHITE"),
+                                bgcolor=status_color,
+                                padding=ft.padding.all(4),
+                                border_radius=4
+                            )),
+                            ft.DataCell(
+                                ft.Row([
+                                    ft.IconButton(
+                                        icon=ft.Icons.EDIT,
+                                        icon_color="#1976D2",
+                                        on_click=lambda e, emp_id=emp.id: self._show_edit_employee_from_admin(
+                                            emp_id),
+                                        tooltip="Edit",
+                                        scale=0.8
+                                    ),
+                                    ft.IconButton(
+                                        icon=ft.Icons.PERSON,
+                                        icon_color="#4CAF50",
+                                        on_click=lambda e, emp_id=emp.id: self._show_employee_details_from_admin(
+                                            emp_id),
+                                        tooltip="View Details",
+                                        scale=0.8
+                                    ),
+                                    ft.IconButton(
+                                        icon=ft.Icons.BADGE,
+                                        icon_color="#FF9800",
+                                        on_click=lambda e, emp_id=emp.id: self._generate_id_card_from_admin(
+                                            emp_id),
+                                        tooltip="ID Card",
+                                        scale=0.8
+                                    ),
+                                    ft.IconButton(
+                                        icon=ft.Icons.DELETE,
+                                        icon_color="#D32F2F",
+                                        on_click=lambda e, emp_id=emp.id: self._show_delete_employee_from_admin(
+                                            emp_id),
+                                        tooltip="Delete",
+                                        scale=0.8
+                                    ),
+                                ], spacing=0)
+                            ),
+                        ]
+                    )
+                )
+
+            return ft.DataTable(
+                columns=[
+                    ft.DataColumn(label=ft.Text(
+                        "ID", weight=ft.FontWeight.BOLD)),
+                    ft.DataColumn(label=ft.Text(
+                        "Code", weight=ft.FontWeight.BOLD)),
+                    ft.DataColumn(label=ft.Text(
+                        "Name", weight=ft.FontWeight.BOLD)),
+                    ft.DataColumn(label=ft.Text(
+                        "Email", weight=ft.FontWeight.BOLD)),
+                    ft.DataColumn(label=ft.Text(
+                        "Department", weight=ft.FontWeight.BOLD)),
+                    ft.DataColumn(label=ft.Text(
+                        "Position", weight=ft.FontWeight.BOLD)),
+                    ft.DataColumn(label=ft.Text(
+                        "Type", weight=ft.FontWeight.BOLD)),
+                    ft.DataColumn(label=ft.Text(
+                        "Status", weight=ft.FontWeight.BOLD)),
+                    ft.DataColumn(label=ft.Text(
+                        "Actions", weight=ft.FontWeight.BOLD)),
+                ],
+                rows=rows,
+                expand=True,
+            )
+
+        # Build filter row - simplified without problematic components
+        search_field = ft.TextField(
+            label="Search",
+            hint_text="Search by name, email, code...",
+            width=300,
+            on_change=lambda e: (
+                self._emp_search.__setitem__("value", e.control.value),
+                refresh_employee_list()
+            ),
+            prefix_icon=ft.Icons.SEARCH,
+        )
+
+        # Employee list container
+        emp_list = ft.Container(
+            content=build_employee_table(),
+            expand=True,
+            padding=ft.padding.all(10),
+        )
+
         return ft.Container(
             content=ft.Column([
                 ft.Row([
+                    ft.Text("Employee Management", size=24,
+                            weight=ft.FontWeight.BOLD, color=PRIMARY),
+                    ft.Container(expand=True),
                     ft.Text(
-                        "Employee Management",
-                        size=24,
-                        weight=ft.FontWeight.BOLD
-                    ),
+                        f"Total: {len(load_employees())} employees", size=14, color=TEXT_SECONDARY),
+                ]),
+                ft.Container(height=10),
+                # Search and Add button row
+                ft.Row([
+                    search_field,
                     ft.Container(expand=True),
                     ft.ElevatedButton(
-                        "Manage Employees",
+                        "Add Employee",
+                        icon=ft.Icons.ADD,
+                        on_click=lambda e: self._show_add_employee_from_admin(),
+                        style=ft.ButtonStyle(bgcolor="#4CAF50", color="WHITE")
+                    ),
+                    ft.ElevatedButton(
+                        "Full Management",
                         icon=ft.Icons.BADGE,
-                        on_click=self._show_employees,
-                        style=ft.ButtonStyle(bgcolor=PRIMARY, color="white")
-                    )
-                ]),
-                ft.Container(height=20),
-                ft.Container(
-                    content=ft.Column([
-                        ft.Icon(ft.Icons.BADGE, size=60, color=PRIMARY),
-                        ft.Container(height=10),
-                        ft.Text("Employee Management", size=18,
-                                weight=ft.FontWeight.BOLD),
-                        ft.Text("Full employee management with add/edit/view features, ID cards, offer letters, and salary slips.",
-                                size=14, color=TEXT_SECONDARY),
-                        ft.Container(height=20),
-                        ft.ElevatedButton(
-                            "Open Employee Management",
-                            icon=ft.Icons.ARROW_FORWARD,
-                            on_click=self._show_employees,
-                            style=ft.ButtonStyle(
-                                bgcolor=PRIMARY, color="white"),
-                            height=40,
-                        )
-                    ], horizontal_alignment=ft.CrossAxisAlignment.CENTER),
-                    padding=ft.padding.all(50),
-                    alignment=ft.alignment.Alignment(0, 0),
-                    bgcolor=SURFACE_VARIANT,
-                    border_radius=ft.border_radius.all(10),
-                    expand=True
-                ),
-            ], expand=True, scroll=ft.ScrollMode.AUTO),
-            padding=ft.padding.all(10)
+                        on_click=lambda e: self._show_employees(e),
+                        style=ft.ButtonStyle(bgcolor=PRIMARY, color="WHITE")
+                    ),
+                ], spacing=10),
+                ft.Container(height=10),
+                emp_list,
+            ], scroll=ft.ScrollMode.AUTO, expand=True),
+            padding=ft.padding.all(10),
+            expand=True,
         )
 
+    def _show_add_employee_from_admin(self):
+        """Show add employee dialog from admin screen"""
+        # Import the employees screen and use its add dialog
+        from screens.employees_screen import EmployeesScreen
+        emp_screen = EmployeesScreen(self._page, self.current_user)
+        emp_screen._show_add_dialog()
+
+    def _show_edit_employee_from_admin(self, emp_id):
+        """Show edit employee dialog from admin screen"""
+        from screens.employees_screen import EmployeesScreen
+        emp_screen = EmployeesScreen(self._page, self.current_user)
+        emp_screen._show_edit_dialog(emp_id)
+
+    def _show_employee_details_from_admin(self, emp_id):
+        """Show employee details dialog from admin screen"""
+        from screens.employees_screen import EmployeesScreen
+        emp_screen = EmployeesScreen(self._page, self.current_user)
+        emp_screen._show_details_dialog(emp_id)
+
+    def _generate_id_card_from_admin(self, emp_id):
+        """Generate ID card from admin screen"""
+        from screens.employees_screen import EmployeesScreen
+        emp_screen = EmployeesScreen(self._page, self.current_user)
+        emp_screen._generate_id_card_dialog(emp_id)
+
+    def _show_delete_employee_from_admin(self, emp_id):
+        """Show delete confirmation from admin screen"""
+        from screens.employees_screen import EmployeesScreen
+        emp_screen = EmployeesScreen(self._page, self.current_user)
+        emp_screen._show_delete_dialog(emp_id)
+
     def _create_screen_access_tab(self):
-        """Create screen access management tab with real-time controls"""
-        import threading
+        """Create screen and button access management tab with improved UI and PostgreSQL"""
         from utils.screen_access import (
-            SCREEN_ACCESS_CONFIG, get_all_employees_for_access_management, set_screen_access, reset_to_defaults
+            SCREEN_ACCESS_CONFIG,
+            BUTTON_ACCESS_CONFIG,
+            get_active_employees_for_access_management,
+            set_screen_access,
+            set_button_access,
+            reset_to_defaults,
+            get_screens_by_category,
+            get_buttons_by_screen
         )
 
         # State for UI
-        self._access_employees = get_all_employees_for_access_management()
+        self._access_employees = get_active_employees_for_access_management()
         self._access_controls = {}
 
+        # Tab state for switching between Screen Access and Button Access
+        access_type = {"current": "screen"}  # "screen" or "button"
+
+        # Selected employee for detailed view
+        selected_employee = {"user_id": None}
+
         def refresh_employees():
-            self._access_employees = get_all_employees_for_access_management()
+            self._access_employees = get_active_employees_for_access_management()
             self.page.update()
 
-        def handle_toggle(user_id, screen_key):
+        def handle_screen_toggle(user_id, screen_key):
             def _handler(e):
                 is_enabled = e.control.value
                 admin_id = self.current_user.get('id') if isinstance(
@@ -585,78 +1089,566 @@ class AdminScreen(ft.Container):
                 set_screen_access(user_id, screen_key,
                                   is_enabled, granted_by=admin_id)
                 refresh_employees()
+                self._show_message(
+                    f"Screen access updated for {screen_key}", "success")
+            return _handler
+
+        def handle_button_toggle(user_id, button_key):
+            def _handler(e):
+                try:
+                    is_enabled = e.control.value
+                    admin_id = self.current_user.get('id') if isinstance(
+                        self.current_user, dict) else None
+                    result = set_button_access(user_id, button_key,
+                                               is_enabled, granted_by=admin_id)
+                    if result:
+                        refresh_employees()
+                        self._show_message(
+                            f"Button access updated for {button_key}", "success")
+                    else:
+                        self._show_message(
+                            f"Failed to update {button_key}", "error")
+                except Exception as ex:
+                    print(f"Error toggling button access: {ex}")
+                    self._show_message(f"Error: {str(ex)}", "error")
             return _handler
 
         def handle_reset(user_id):
             def _handler(e):
                 reset_to_defaults(user_id)
                 refresh_employees()
+                self._show_message("Access reset to defaults", "success")
             return _handler
 
-        # Build table header
-        screen_keys = list(SCREEN_ACCESS_CONFIG.keys())
-        header_row = ft.Row([
-            ft.Text("Employee", weight=ft.FontWeight.BOLD, width=180),
-        ] + [ft.Text(SCREEN_ACCESS_CONFIG[k]["name"], size=12, weight=ft.FontWeight.BOLD, width=110, text_align=ft.TextAlign.CENTER) for k in screen_keys] + [ft.Text("Actions", weight=ft.FontWeight.BOLD, width=120)], spacing=5)
-
-        # Build employee rows
-        employee_rows = []
-        for emp in self._access_employees:
+        def show_employee_details(emp, access_type="screen"):
+            """Show detailed access management for a specific employee"""
+            selected_employee["user_id"] = emp['user_id']
             emp_name = emp['full_name'] or emp['username']
-            row_controls = [
-                ft.Text(emp_name, width=180, size=13, color=TEXT_PRIMARY),
-            ]
-            for k in screen_keys:
-                toggle = ft.Switch(
-                    value=emp['screen_access'].get(k, False),
-                    on_change=handle_toggle(emp['user_id'], k),
-                    active_color=PRIMARY,
-                    inactive_thumb_color=ft.Colors.GREY_400,
-                    width=110,
-                    disabled=(k == 'profile')  # Profile always enabled
+
+            if access_type == "screen":
+                # Create access cards for each screen
+                access_cards = []
+                for screen_key, config in SCREEN_ACCESS_CONFIG.items():
+                    is_enabled = emp['screen_access'].get(screen_key, False)
+
+                    card = ft.Card(
+                        content=ft.Container(
+                            content=ft.Row([
+                                ft.Column([
+                                    ft.Text(config["name"], size=14,
+                                            weight=ft.FontWeight.BOLD),
+                                    ft.Text(config["description"],
+                                            size=11, color=TEXT_SECONDARY),
+                                ], expand=True),
+                                ft.Switch(
+                                    value=is_enabled,
+                                    on_change=handle_screen_toggle(
+                                        emp['user_id'], screen_key),
+                                    active_color=PRIMARY,
+                                    # Profile always enabled
+                                    disabled=(screen_key == 'profile'),
+                                ),
+                            ], alignment=ft.MainAxisAlignment.SPACE_BETWEEN),
+                            padding=15,
+                            width=400,
+                        ),
+                        elevation=1,
+                    )
+                    access_cards.append(card)
+
+                # Detail dialog for screen access
+                detail_content = ft.Container(
+                    content=ft.Column([
+                        ft.Row([
+                            ft.Icon(ft.Icons.SECURITY, size=24, color=PRIMARY),
+                            ft.Text(
+                                f"Screen Access for {emp_name}", size=18, weight=ft.FontWeight.BOLD),
+                        ]),
+                        ft.Container(height=10),
+                        ft.Text(f"Email: {emp['email']}",
+                                size=12, color=TEXT_SECONDARY),
+                        ft.Text(f"Role: {emp['role']}",
+                                size=12, color=TEXT_SECONDARY),
+                        ft.Divider(),
+                        ft.Text("Screen Access Permissions",
+                                size=14, weight=ft.FontWeight.BOLD),
+                        ft.Container(height=10),
+                        # Create rows of access cards (2 per row)
+                        ft.Column(
+                            controls=[
+                                ft.Row(access_cards[i:i+2], spacing=15)
+                                for i in range(0, len(access_cards), 2)
+                            ],
+                            spacing=10
+                        ),
+                        ft.Container(height=20),
+                        ft.Row([
+                            ft.Container(expand=True),
+                            ft.ElevatedButton(
+                                "Reset to Defaults",
+                                icon=ft.Icons.RESTART_ALT,
+                                on_click=handle_reset(emp['user_id']),
+                                style=ft.ButtonStyle(
+                                    bgcolor=WARNING, color="white"),
+                            ),
+                        ]),
+                    ], scroll=ft.ScrollMode.AUTO),
+                    width=650,
+                    height=550,
                 )
-                row_controls.append(toggle)
-            # Actions: Reset
-            row_controls.append(
-                ft.ElevatedButton(
-                    "Reset to Default",
-                    icon=ft.Icons.RESTART_ALT,
-                    on_click=handle_reset(emp['user_id']),
-                    style=ft.ButtonStyle(bgcolor=WARNING, color="white"),
-                    height=32,
-                    width=120
+            else:
+                # Button-level access
+                buttons_by_screen = get_buttons_by_screen()
+
+                # Create sections for each screen
+                sections = []
+                for screen_name, buttons in buttons_by_screen.items():
+                    if not buttons:
+                        continue
+
+                    button_rows = []
+                    for btn in buttons:
+                        is_enabled = emp.get('button_access', {}).get(
+                            btn['key'], False)
+
+                        card = ft.Card(
+                            content=ft.Container(
+                                content=ft.Row([
+                                    ft.Column([
+                                        ft.Text(btn["name"], size=13,
+                                                weight=ft.FontWeight.BOLD),
+                                        ft.Text(btn["description"],
+                                                size=10, color=TEXT_SECONDARY),
+                                    ], expand=True),
+                                    ft.Switch(
+                                        value=is_enabled,
+                                        on_change=handle_button_toggle(
+                                            emp['user_id'], btn['key']),
+                                        active_color=PRIMARY,
+                                    ),
+                                ], alignment=ft.MainAxisAlignment.SPACE_BETWEEN),
+                                padding=10,
+                                width=380,
+                            ),
+                            elevation=1,
+                        )
+                        button_rows.append(card)
+
+                    # Add section for this screen
+                    sections.append(
+                        ft.Column([
+                            ft.Text(screen_name.upper(), size=12,
+                                    weight=ft.FontWeight.BOLD, color=PRIMARY),
+                            ft.Container(height=5),
+                            ft.Row(
+                                list(button_rows[i:i+2] for i in range(0, len(button_rows), 2)), spacing=10),
+                            ft.Container(height=15),
+                        ])
+                    )
+
+                # Detail dialog for button access
+                detail_content = ft.Container(
+                    content=ft.Column([
+                        ft.Row([
+                            ft.Icon(ft.Icons.TOUCH_APP,
+                                    size=24, color=PRIMARY),
+                            ft.Text(
+                                f"Button Access for {emp_name}", size=18, weight=ft.FontWeight.BOLD),
+                        ]),
+                        ft.Container(height=10),
+                        ft.Text(f"Email: {emp['email']}",
+                                size=12, color=TEXT_SECONDARY),
+                        ft.Text(f"Role: {emp['role']}",
+                                size=12, color=TEXT_SECONDARY),
+                        ft.Divider(),
+                        ft.Text("Button-Level Access Permissions",
+                                size=14, weight=ft.FontWeight.BOLD),
+                        ft.Container(height=10),
+                        ft.Container(
+                            content=ft.Column(
+                                sections, scroll=ft.ScrollMode.AUTO),
+                            height=400,
+                        ),
+                    ], scroll=ft.ScrollMode.AUTO),
+                    width=650,
+                    height=550,
                 )
+
+            dlg = ft.AlertDialog(
+                title=ft.Text(f"Manage Access - {emp_name}"),
+                content=detail_content,
+                actions=[
+                    ft.TextButton("Close", on_click=lambda e: close_dialog()),
+                ]
             )
-            employee_rows.append(ft.Row(row_controls, spacing=5))
+
+            def close_dialog():
+                if self.page.dialog:
+                    self.page.dialog.open = False
+                self.page.update()
+
+            self.page.dialog = dlg
+            dlg.open = True
+            self.page.update()
+
+        def show_access_details_wrapper(emp):
+            """Wrapper to show access details based on current tab"""
+            show_employee_details(emp, access_type["current"])
+
+        # Build the main content with tabs for Screen Access and Button Access
+
+        # Header with tabs
+        header = ft.Container(
+            content=ft.Column([
+                ft.Row([
+                    ft.Icon(ft.Icons.SECURITY, size=32, color=PRIMARY),
+                    ft.Column([
+                        ft.Text("Access Management",
+                                size=24, weight=ft.FontWeight.BOLD),
+                        ft.Text("Manage screen and button access for employees",
+                                size=13, color=TEXT_SECONDARY),
+                    ]),
+                ]),
+                ft.Container(height=20),
+                # Tab buttons for Screen Access and Button Access
+                ft.Row([
+                    ft.ElevatedButton(
+                        "Screen Access",
+                        icon=ft.Icons.DASHBOARD,
+                        on_click=lambda e: (
+                            access_type.__setitem__('current', 'screen'),
+                            self._update_access_content(
+                                access_container, access_type)
+                        ),
+                        style=ft.ButtonStyle(
+                            bgcolor=PRIMARY if access_type["current"] == "screen" else SURFACE_VARIANT,
+                            color="WHITE" if access_type["current"] == "screen" else TEXT_PRIMARY
+                        )
+                    ),
+                    ft.Container(width=10),
+                    ft.ElevatedButton(
+                        "Button Access",
+                        icon=ft.Icons.TOUCH_APP,
+                        on_click=lambda e: (
+                            access_type.__setitem__('current', 'button'),
+                            self._update_access_content(
+                                access_container, access_type)
+                        ),
+                        style=ft.ButtonStyle(
+                            bgcolor=PRIMARY if access_type["current"] == "button" else SURFACE_VARIANT,
+                            color="WHITE" if access_type["current"] == "button" else TEXT_PRIMARY
+                        )
+                    ),
+                ]),
+                ft.Container(height=15),
+                ft.Container(
+                    content=ft.Row([
+                        ft.Icon(ft.Icons.INFO_OUTLINE, size=16, color=INFO),
+                        ft.Text("Click 'Manage Access' on any employee to configure permissions. "
+                                "New buttons added to the system will automatically appear here.",
+                                size=12, color=TEXT_SECONDARY),
+                    ], spacing=8),
+                    bgcolor="#E3F2FD",
+                    padding=10,
+                    border_radius=8,
+                ),
+            ]),
+        )
+
+        # Create access content container
+        access_container = ft.Container()
+
+        def build_employee_list(access_type_val):
+            """Build the employee list based on access type"""
+            employee_cards = []
+            for emp in self._access_employees:
+                emp_name = emp['full_name'] or emp['username']
+
+                if access_type_val == "screen":
+                    enabled_count = emp['enabled_count']
+                    total_screens = emp['total_screens']
+                    progress_text = f"{enabled_count}/{total_screens}"
+                else:
+                    # For button access
+                    button_access = emp.get('button_access', {})
+                    enabled_count = sum(1 for v in button_access.values() if v)
+                    total_buttons = len(BUTTON_ACCESS_CONFIG)
+                    progress_text = f"{enabled_count}/{total_buttons}"
+
+                # Create progress indicator
+                progress_color = GREEN_500 if enabled_count > 3 else ORANGE_500 if enabled_count > 0 else ERROR
+
+                card = ft.Card(
+                    content=ft.Container(
+                        content=ft.Column([
+                            ft.Row([
+                                ft.Container(
+                                    width=40, height=40,
+                                    bgcolor=PRIMARY,
+                                    border_radius=20,
+                                    content=ft.Text(
+                                        emp_name[0].upper(
+                                        ) if emp_name else "?",
+                                        size=18, color="WHITE", weight=ft.FontWeight.BOLD
+                                    ),
+                                    alignment=ft.alignment.Alignment(0, 0),
+                                ),
+                                ft.Column([
+                                    ft.Text(emp_name, size=14,
+                                            weight=ft.FontWeight.BOLD),
+                                    ft.Text(emp['email'], size=11,
+                                            color=TEXT_SECONDARY),
+                                ], expand=True),
+                                ft.Container(
+                                    bgcolor=progress_color,
+                                    padding=ft.padding.symmetric(
+                                        horizontal=8, vertical=4),
+                                    border_radius=12,
+                                    content=ft.Text(
+                                        progress_text,
+                                        size=11, color="WHITE", weight=ft.FontWeight.BOLD
+                                    ),
+                                ),
+                            ]),
+                            ft.Container(height=10),
+                            ft.Row([
+                                ft.Text(f"Role: {emp['role']}",
+                                        size=11, color=TEXT_SECONDARY),
+                                ft.Container(expand=True),
+                                ft.ElevatedButton(
+                                    "Manage Access",
+                                    icon=ft.Icons.EDIT,
+                                    on_click=lambda e, user_id=emp['user_id'], emp_data=emp: self._show_access_dialog(
+                                        user_id, emp_data, access_type_val),
+                                    style=ft.ButtonStyle(
+                                        bgcolor=PRIMARY, color="WHITE"),
+                                    height=32,
+                                ),
+                            ]),
+                        ], spacing=5),
+                        padding=15,
+                    ),
+                    elevation=2,
+                    width=350,
+                )
+                employee_cards.append(card)
+
+            if not employee_cards:
+                return ft.Container(
+                    content=ft.Column([
+                        ft.Icon(ft.Icons.PEOPLE_OUTLINE,
+                                size=64, color=TEXT_SECONDARY),
+                        ft.Text("No employees found", size=16,
+                                color=TEXT_SECONDARY),
+                        ft.Text("Add employees to manage their access permissions",
+                                size=12, color=TEXT_SECONDARY),
+                    ], horizontal_alignment=ft.CrossAxisAlignment.CENTER),
+                    alignment=ft.alignment.Alignment(0, 0),
+                    padding=50,
+                )
+
+            # Return Column with rows of cards
+            return ft.Column(
+                controls=[
+                    ft.Row(employee_cards[i:i+3], spacing=15)
+                    for i in range(0, len(employee_cards), 3)
+                ],
+                spacing=15
+            )
+
+        # Initial build
+        access_container.content = ft.Column([
+            ft.Text("Employees", size=16, weight=ft.FontWeight.BOLD),
+            ft.Container(height=10),
+            build_employee_list(access_type["current"]),
+        ], scroll=ft.ScrollMode.AUTO)
+
+        # Method to update content when tabs change
+        def update_access_content(container, access_type_val):
+            container.content = ft.Column([
+                ft.Text("Employees", size=16, weight=ft.FontWeight.BOLD),
+                ft.Container(height=10),
+                build_employee_list(access_type_val),
+            ], scroll=ft.ScrollMode.AUTO)
+            self.page.update()
+
+        # Store the update method for later use
+        self._update_access_content = update_access_content
 
         # Compose the full UI
         return ft.Container(
             content=ft.Column([
-                ft.Row([
-                    ft.Icon(ft.Icons.SECURITY, size=28, color=PRIMARY),
-                    ft.Container(width=10),
-                    ft.Text("Screen Access Management",
-                            size=24, weight=ft.FontWeight.BOLD),
-                ], alignment=ft.MainAxisAlignment.CENTER),
-                ft.Container(height=10),
-                ft.Text("Grant or revoke employee access to various screens.",
-                        size=14, color=TEXT_SECONDARY),
-                ft.Container(height=10),
-                ft.Container(
-                    content=ft.Column([
-                        header_row,
-                        ft.Divider(),
-                        *employee_rows
-                    ], scroll=ft.ScrollMode.AUTO),
-                    bgcolor=SURFACE_VARIANT,
-                    border_radius=ft.border_radius.all(10),
-                    padding=ft.padding.all(20),
-                    expand=True
-                ),
+                header,
+                ft.Container(height=20),
+                access_container,
             ], scroll=ft.ScrollMode.AUTO),
-            padding=ft.padding.all(20),
+            padding=25,
             expand=True
         )
+
+    def _show_access_dialog(self, user_id, emp_data, access_type):
+        """Show the access management dialog for an employee"""
+        from utils.screen_access import (
+            SCREEN_ACCESS_CONFIG,
+            BUTTON_ACCESS_CONFIG,
+            get_user_screen_access,
+            get_user_button_access,
+            set_screen_access,
+            set_button_access,
+            reset_to_defaults
+        )
+
+        emp_name = emp_data.get('full_name') or emp_data.get(
+            'username', 'Employee')
+
+        # Get current access
+        screen_access = get_user_screen_access(user_id)
+        button_access = get_user_button_access(user_id)
+
+        def close_dialog(e):
+            if self.page.dialog:
+                self.page.dialog.open = False
+            self.page.update()
+
+        def handle_screen_toggle(uid, sk):
+            def handler(e):
+                try:
+                    is_enabled = e.control.value
+                    admin_id = self.current_user.get('id') if isinstance(
+                        self.current_user, dict) else None
+                    result = set_screen_access(
+                        uid, sk, is_enabled, granted_by=admin_id)
+                    if result:
+                        self._show_message(
+                            f"Updated {SCREEN_ACCESS_CONFIG.get(sk, {}).get('name', sk)}", "success")
+                        self.refresh()
+                except Exception as ex:
+                    print(f"Error: {ex}")
+                    self._show_message(f"Error: {str(ex)}", "error")
+            return handler
+
+        def handle_button_toggle(uid, bk):
+            def handler(e):
+                try:
+                    is_enabled = e.control.value
+                    admin_id = self.current_user.get('id') if isinstance(
+                        self.current_user, dict) else None
+                    result = set_button_access(
+                        uid, bk, is_enabled, granted_by=admin_id)
+                    if result:
+                        self._show_message(
+                            f"Updated {BUTTON_ACCESS_CONFIG.get(bk, {}).get('name', bk)}", "success")
+                        self.refresh()
+                except Exception as ex:
+                    print(f"Error: {ex}")
+                    self._show_message(f"Error: {str(ex)}", "error")
+            return handler
+
+        # Build access controls based on type
+        if access_type == "screen":
+            # Screen access view
+            access_items = []
+            for sk, config in SCREEN_ACCESS_CONFIG.items():
+                is_enabled = screen_access.get(sk, False)
+
+                row = ft.Container(
+                    content=ft.Row([
+                        ft.Column([
+                            ft.Text(config["name"], size=14,
+                                    weight=ft.FontWeight.BOLD),
+                            ft.Text(config["description"],
+                                    size=11, color=TEXT_SECONDARY),
+                        ], expand=True),
+                        ft.Switch(
+                            value=is_enabled,
+                            on_change=handle_screen_toggle(user_id, sk),
+                            active_color=PRIMARY,
+                            disabled=(sk == 'profile'),
+                        ),
+                    ], alignment=ft.MainAxisAlignment.SPACE_BETWEEN),
+                    padding=10,
+                    bgcolor="#F5F5F5" if sk != 'profile' else "#E3F2FD",
+                    border_radius=8,
+                    margin=5,
+                )
+                access_items.append(row)
+
+            content = ft.Column([
+                ft.Row([
+                    ft.Icon(ft.Icons.SECURITY, size=24, color=PRIMARY),
+                    ft.Text(f"Screen Access - {emp_name}",
+                            size=18, weight=ft.FontWeight.BOLD),
+                ]),
+                ft.Container(height=10),
+                ft.Text(f"Email: {emp_data.get('email', 'N/A')}",
+                        size=12, color=TEXT_SECONDARY),
+                ft.Text(f"Role: {emp_data.get('role', 'employee')}",
+                        size=12, color=TEXT_SECONDARY),
+                ft.Divider(),
+                ft.Container(height=10),
+                ft.Column(access_items, scroll=ft.ScrollMode.AUTO, spacing=5),
+            ], scroll=ft.ScrollMode.AUTO)
+
+            dialog_width = 500
+            dialog_height = 550
+        else:
+            # Button access view
+            access_items = []
+            for bk, config in BUTTON_ACCESS_CONFIG.items():
+                is_enabled = button_access.get(bk, False)
+
+                row = ft.Container(
+                    content=ft.Row([
+                        ft.Column([
+                            ft.Text(config["name"], size=14,
+                                    weight=ft.FontWeight.BOLD),
+                            ft.Text(config["description"],
+                                    size=11, color=TEXT_SECONDARY),
+                        ], expand=True),
+                        ft.Switch(
+                            value=is_enabled,
+                            on_change=handle_button_toggle(user_id, bk),
+                            active_color=PRIMARY,
+                        ),
+                    ], alignment=ft.MainAxisAlignment.SPACE_BETWEEN),
+                    padding=10,
+                    bgcolor="#F5F5F5",
+                    border_radius=8,
+                    margin=5,
+                )
+                access_items.append(row)
+
+            content = ft.Column([
+                ft.Row([
+                    ft.Icon(ft.Icons.TOUCH_APP, size=24, color=PRIMARY),
+                    ft.Text(f"Button Access - {emp_name}",
+                            size=18, weight=ft.FontWeight.BOLD),
+                ]),
+                ft.Container(height=10),
+                ft.Text(f"Email: {emp_data.get('email', 'N/A')}",
+                        size=12, color=TEXT_SECONDARY),
+                ft.Text(f"Role: {emp_data.get('role', 'employee')}",
+                        size=12, color=TEXT_SECONDARY),
+                ft.Divider(),
+                ft.Container(height=10),
+                ft.Column(access_items, scroll=ft.ScrollMode.AUTO, spacing=5),
+            ], scroll=ft.ScrollMode.AUTO)
+
+            dialog_width = 500
+            dialog_height = 550
+
+        dlg = ft.AlertDialog(
+            title=ft.Text(f"Manage Access - {emp_name}"),
+            content=ft.Container(
+                content=content, width=dialog_width, height=dialog_height),
+            actions=[
+                ft.TextButton("Close", on_click=close_dialog),
+            ]
+        )
+
+        self.page.dialog = dlg
+        dlg.open = True
+        self.page.update()
 
     def _create_audit_tab(self):
         """Create audit logs tab"""
@@ -702,6 +1694,14 @@ class AdminScreen(ft.Container):
         from screens.chat_screen import ChatScreen
         return ft.Container(
             content=ChatScreen(self.page, self.current_user),
+            expand=True
+        )
+
+    def _create_mail_tab(self):
+        """Create internal mail tab"""
+        from screens.mail_screen import MailScreen
+        return ft.Container(
+            content=MailScreen(self.page, self.current_user),
             expand=True
         )
 
@@ -998,6 +1998,9 @@ class AdminScreen(ft.Container):
                     f"User '{username}' created successfully!", "success")
                 self.page.dialog.open = False
                 self.page.update()
+
+                # Refresh dashboard to show updated stats
+                self.refresh_dashboard()
 
             except Exception as ex:
                 error_text.value = f"Error: {str(ex)}"

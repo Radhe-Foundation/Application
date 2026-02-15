@@ -341,13 +341,13 @@ class LoginScreen(ft.Container):
 
             print(f"Logging in user: {username}, role: {role}")
 
-            # Redirect admin to AdminScreen, employees to DashboardScreen
+            # Redirect admin to AdminScreen, employees to EmployeeScreen
             if role == 'admin':
                 from screens.admin_screen import AdminScreen
                 self._page.add(AdminScreen(self._page, user_data))
             else:
-                from screens.dashboard_screen import DashboardScreen
-                self._page.add(DashboardScreen(self._page, user_data))
+                from screens.employee_screen import EmployeeScreen
+                self._page.add(EmployeeScreen(self._page, user_data))
 
         except Exception as ex:
             print(f"Navigation error: {str(ex)}")

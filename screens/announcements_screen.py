@@ -1,11 +1,12 @@
 """
 Vernika HRA - Announcements Screen
-Company announcements management
+PostgreSQL/SQLAlchemy based announcements management
 """
 
 import flet as ft
-import sqlite3
 from datetime import datetime
+from database.connection import get_db_session
+from database.models import Announcement
 
 
 # Theme colors
@@ -21,13 +22,6 @@ class AnnouncementsScreen(ft.Container):
     """
 
     def __init__(self, page, user=None):
-        """
-        Initialize announcements screen.
-
-        Args:
-            page: Flet page object
-            user: Current user object (optional)
-        """
         super().__init__()
         self._page = page
         self.user = user
@@ -36,12 +30,6 @@ class AnnouncementsScreen(ft.Container):
         self.announcements = []
         self.content = self._build_content()
         self._load_announcements()
-
-    def _get_db(self):
-        """Get database connection"""
-        conn = sqlite3.connect('vernika.db')
-        conn.row_factory = sqlite3.Row
-        return conn
 
     def _build_content(self):
         """Build the UI"""
@@ -80,6 +68,23 @@ class AnnouncementsScreen(ft.Container):
         from core.navigation import navigate_to_home
         navigate_to_home(self._page, self.user)
 
+    def _get_announcements(self):
+        """Get all announcements from PostgreSQL"""
+        db = get_db_session()
+        try:
+            announcements = db.query(Announcement).order_by(
+                Announcement.created_at.desc()).limit(50).all()
+            return announcements
+        except Exception as e:
+            print(f"Error loading announcements: {e}")
+            return []
+        finally:
+            db.close()
+
+    def _load_announcements(self):
+        """Load announcements from database"""
+        self.announcements = self._get_announcements()
+
     def _build_announcements_list(self):
         """Build announcements list"""
         if not self.announcements:
@@ -101,44 +106,46 @@ class AnnouncementsScreen(ft.Container):
         # Build cards for each announcement
         cards = []
         for ann in self.announcements:
-            priority_color = self._get_priority_color(
-                ann.get('priority', 'normal'))
+            priority_color = self._get_priority_color(ann.priority or 'normal')
+
+            created_date = ann.created_at.strftime(
+                '%Y-%m-%d') if ann.created_at else ''
 
             card = ft.Card(
                 content=ft.Container(
                     padding=20,
                     content=ft.Column([
                         ft.Row([
-                            ft.Text(ann.get('title', 'N/A'), size=16,
+                            ft.Text(ann.title or 'N/A', size=16,
                                     weight=ft.FontWeight.BOLD, expand=True),
                             ft.Container(
                                 content=ft.Text(
-                                    ann.get('type', 'General'), size=10, color="WHITE"),
+                                    ann.type or 'General', size=10, color="WHITE"),
                                 bgcolor=priority_color,
                                 padding=ft.padding.symmetric(
                                     horizontal=8, vertical=4),
                                 border_radius=15,
                             ),
                         ], alignment=ft.MainAxisAlignment.SPACE_BETWEEN),
-                        ft.Text(ann.get('content', ''), size=13, color="#666"),
+                        ft.Text(ann.content or '', size=13, color="#666"),
                         ft.Divider(),
                         ft.Row([
                             ft.Row([
                                 ft.Icon(ft.Icons.PERSON,
                                         size=14, color="#999"),
-                                ft.Text(ann.get('author', 'Admin'),
+                                ft.Text(ann.author or 'Admin',
                                         size=11, color="#666"),
                             ], spacing=5),
                             ft.Row([
                                 ft.Icon(ft.Icons.CALENDAR_TODAY,
                                         size=14, color="#999"),
-                                ft.Text(ann.get('date', ''),
+                                ft.Text(created_date,
                                         size=11, color="#666"),
                             ], spacing=5),
                             ft.Row([
                                 ft.Icon(ft.Icons.VISIBILITY,
                                         size=14, color="#999"),
-                                ft.Text(f"{ann.get('views', 0)} views",
+                                ft.Text(f"{ann.views or 0} views",
                                         size=11, color="#666"),
                             ], spacing=5),
                         ], spacing=20),
@@ -175,48 +182,6 @@ class AnnouncementsScreen(ft.Container):
             "low": "#9E9E9E",
         }
         return colors_map.get(priority.lower(), PRIMARY)
-
-    def _load_announcements(self):
-        """Load announcements from database or use defaults"""
-        try:
-            conn = self._get_db()
-            cursor = conn.cursor()
-            cursor.execute("""
-                SELECT id, title, content, type, priority, author, created_at as date, views
-                FROM announcements ORDER BY created_at DESC LIMIT 50
-            """)
-            results = cursor.fetchall()
-            conn.close()
-
-            if results:
-                self.announcements = [dict(r) for r in results]
-                return
-        except Exception as e:
-            print(f"Error loading announcements: {e}")
-
-        # Default sample announcements
-        self.announcements = [
-            {
-                "id": 1,
-                "title": "Office Closure - Holiday Notice",
-                "content": "The office will be closed on Friday for a company-wide holiday.",
-                "type": "important",
-                "priority": "high",
-                "author": "Admin",
-                "date": datetime.now().strftime('%Y-%m-%d'),
-                "views": 45,
-            },
-            {
-                "id": 2,
-                "title": "New Health Insurance Plan",
-                "content": "We are pleased to announce an improved health insurance plan.",
-                "type": "policy",
-                "priority": "important",
-                "author": "HR Manager",
-                "date": datetime.now().strftime('%Y-%m-%d'),
-                "views": 78,
-            },
-        ]
 
     def _show_create_dialog(self, e=None):
         """Show create announcement dialog"""
@@ -259,17 +224,18 @@ class AnnouncementsScreen(ft.Container):
                 self._page.update()
                 return
 
+            db = get_db_session()
             try:
-                conn = self._get_db()
-                cursor = conn.cursor()
-                cursor.execute("""
-                    INSERT INTO announcements (title, content, type, priority, author, created_at, views)
-                    VALUES (?, ?, ?, ?, ?, ?, 0)
-                """, (title_field.value, content_field.value,
-                      type_dropdown.value, priority_dropdown.value,
-                      "Admin", datetime.now().strftime('%Y-%m-%d')))
-                conn.commit()
-                conn.close()
+                new_announcement = Announcement(
+                    title=title_field.value,
+                    content=content_field.value,
+                    type=type_dropdown.value,
+                    priority=priority_dropdown.value,
+                    author="Admin",
+                    views=0
+                )
+                db.add(new_announcement)
+                db.commit()
 
                 self._close_dialog()
                 self._show_success("Announcement published!")
@@ -280,6 +246,8 @@ class AnnouncementsScreen(ft.Container):
                 error.value = str(ex)
                 error.visible = True
                 self._page.update()
+            finally:
+                db.close()
 
         form = ft.Column([
             title_field,
@@ -312,7 +280,7 @@ class AnnouncementsScreen(ft.Container):
         """Show announcement form dialog"""
         title_field = ft.TextField(
             label="Title", width=450,
-            value=announcement.get('title') if announcement else ""
+            value=announcement.title if announcement else ""
         )
 
         type_dropdown = ft.Dropdown(
@@ -323,7 +291,7 @@ class AnnouncementsScreen(ft.Container):
                 ft.dropdown.Option("event", "Event"),
                 ft.dropdown.Option("policy", "Policy"),
             ],
-            value=announcement.get('type') if announcement else "general",
+            value=announcement.type if announcement else "general",
             label="Type"
         )
 
@@ -335,32 +303,35 @@ class AnnouncementsScreen(ft.Container):
                 ft.dropdown.Option("important", "Important"),
                 ft.dropdown.Option("high", "High"),
             ],
-            value=announcement.get('priority') if announcement else "normal",
+            value=announcement.priority if announcement else "normal",
             label="Priority"
         )
 
         content_field = ft.TextField(
             label="Content", width=450, multiline=True, min_lines=4,
-            value=announcement.get('content') if announcement else ""
+            value=announcement.content if announcement else ""
         )
 
         def update(e):
-            conn = self._get_db()
-            cursor = conn.cursor()
-            cursor.execute("""
-                UPDATE announcements SET title=?, content=?, type=?, priority=?
-                WHERE id=?
-            """, (title_field.value, content_field.value,
-                  type_dropdown.value, priority_dropdown.value,
-                  announcement['id']))
-            conn.commit()
-            conn.close()
+            db = get_db_session()
+            try:
+                db.query(Announcement).filter(Announcement.id == announcement.id).update({
+                    Announcement.title: title_field.value,
+                    Announcement.content: content_field.value,
+                    Announcement.type: type_dropdown.value,
+                    Announcement.priority: priority_dropdown.value
+                })
+                db.commit()
 
-            self._close_dialog()
-            self._show_success("Announcement updated!")
-            self._load_announcements()
-            self.content = self._build_content()
-            self._page.update()
+                self._close_dialog()
+                self._show_success("Announcement updated!")
+                self._load_announcements()
+                self.content = self._build_content()
+                self._page.update()
+            except Exception as ex:
+                self._show_error(str(ex))
+            finally:
+                db.close()
 
         form = ft.Column([
             title_field,
@@ -387,13 +358,11 @@ class AnnouncementsScreen(ft.Container):
     def _confirm_delete(self, announcement):
         """Show delete confirmation"""
         def confirm(e):
+            db = get_db_session()
             try:
-                conn = self._get_db()
-                cursor = conn.cursor()
-                cursor.execute(
-                    "DELETE FROM announcements WHERE id=?", (announcement['id'],))
-                conn.commit()
-                conn.close()
+                db.query(Announcement).filter(
+                    Announcement.id == announcement.id).delete()
+                db.commit()
 
                 self._close_dialog()
                 self._show_success("Announcement deleted!")
@@ -402,11 +371,13 @@ class AnnouncementsScreen(ft.Container):
                 self._page.update()
             except Exception as ex:
                 self._show_error(str(ex))
+            finally:
+                db.close()
 
         dialog = ft.AlertDialog(
             modal=True,
             title=ft.Text("Delete Announcement?", color=ERROR),
-            content=ft.Text(f"Delete '{announcement.get('title', '')}'?"),
+            content=ft.Text(f"Delete '{announcement.title}'?"),
             actions=[
                 ft.TextButton(
                     "Cancel", on_click=lambda e: self._close_dialog()),

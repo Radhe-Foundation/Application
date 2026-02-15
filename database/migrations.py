@@ -1,37 +1,57 @@
 """
-Database Migration Script - Add new columns for enhanced screens
+Database migrations using SQLAlchemy engine/inspector.
+
+This script creates/updates schema items previously done with a direct
+SQLite connection. It uses the central `database.connection.get_engine`
+to operate safely against SQLite or PostgreSQL (Supabase).
 """
 
-import sqlite3
+from datetime import datetime
+from sqlalchemy import text, inspect
+from database.connection import get_engine
 
 
 def run_migrations():
-    """Run all database migrations"""
-    conn = sqlite3.connect('vernika.db')
-    cursor = conn.cursor()
+    engine = get_engine()
+    inspector = inspect(engine)
 
     # ========== Create Announcements Table ==========
     print("\nCreating announcements table...")
 
-    cursor.execute(
-        """SELECT name FROM sqlite_master WHERE type='table' AND name='announcements'""")
-    if not cursor.fetchone():
-        cursor.execute("""
-            CREATE TABLE announcements (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                title VARCHAR(200) NOT NULL,
-                content TEXT NOT NULL,
-                type VARCHAR(50) DEFAULT 'general',
-                priority VARCHAR(20) DEFAULT 'normal',
-                author VARCHAR(100) DEFAULT 'Admin',
-                created_at DATE DEFAULT CURRENT_DATE,
-                views INTEGER DEFAULT 0
-            )
-        """)
-        print("  ✅ Created announcements table")
+    tables = inspector.get_table_names()
+    if 'announcements' not in tables:
+        create_sql = """
+        CREATE TABLE announcements (
+            id SERIAL PRIMARY KEY,
+            title VARCHAR(200) NOT NULL,
+            content TEXT NOT NULL,
+            type VARCHAR(50) DEFAULT 'general',
+            priority VARCHAR(20) DEFAULT 'normal',
+            author VARCHAR(100) DEFAULT 'Admin',
+            created_at DATE DEFAULT CURRENT_DATE,
+            views INTEGER DEFAULT 0
+        )
+        """
+        # Use IF NOT EXISTS in dialects that support it
+        try:
+            with engine.begin() as conn:
+                conn.execute(text(create_sql))
+            print("  ✅ Created announcements table")
+        except Exception:
+            # Fallback using IF NOT EXISTS for SQLite/Postgres
+            with engine.begin() as conn:
+                conn.execute(text("CREATE TABLE IF NOT EXISTS announcements (\n"
+                                  "id INTEGER PRIMARY KEY AUTOINCREMENT,\n"
+                                  "title VARCHAR(200) NOT NULL,\n"
+                                  "content TEXT NOT NULL,\n"
+                                  "type VARCHAR(50) DEFAULT 'general',\n"
+                                  "priority VARCHAR(20) DEFAULT 'normal',\n"
+                                  "author VARCHAR(100) DEFAULT 'Admin',\n"
+                                  "created_at DATE DEFAULT CURRENT_DATE,\n"
+                                  "views INTEGER DEFAULT 0\n)"))
+            print("  ✅ Created announcements table (fallback)")
 
         # Insert sample announcements
-        from datetime import datetime
         sample_announcements = [
             ("Office Closure - Holiday Notice",
              "The office will be closed on Friday for a company-wide holiday.",
@@ -44,11 +64,20 @@ def run_migrations():
              "general", "normal", "HR Manager"),
         ]
 
-        for title, content, type_, priority, author in sample_announcements:
-            cursor.execute("""
-                INSERT INTO announcements (title, content, type, priority, author, created_at, views)
-                VALUES (?, ?, ?, ?, ?, ?, 0)
-            """, (title, content, type_, priority, author, datetime.now().strftime('%Y-%m-%d')))
+        with engine.begin() as conn:
+            for title, content, type_, priority, author in sample_announcements:
+                conn.execute(
+                    text("INSERT INTO announcements (title, content, type, priority, author, created_at, views)"
+                         " VALUES (:title, :content, :type, :priority, :author, :created_at, 0)"),
+                    {
+                        'title': title,
+                        'content': content,
+                        'type': type_,
+                        'priority': priority,
+                        'author': author,
+                        'created_at': datetime.now().strftime('%Y-%m-%d')
+                    }
+                )
 
         print("  ✅ Added sample announcements")
     else:
@@ -57,11 +86,9 @@ def run_migrations():
     # ========== Department Table Updates ==========
     print("\nUpdating departments table...")
 
-    # Get existing columns
-    cursor.execute("PRAGMA table_info(departments)")
-    existing_cols = [row[1] for row in cursor.fetchall()]
+    cols = {c['name'] for c in inspector.get_columns(
+        'departments')} if 'departments' in inspector.get_table_names() else set()
 
-    # Add columns if they don't exist
     new_dept_cols = [
         ("head_id", "INTEGER"),
         ("budget", "DECIMAL(12,2) DEFAULT 0"),
@@ -71,20 +98,21 @@ def run_migrations():
         ("parent_dept_id", "INTEGER"),
     ]
 
-    for col_name, col_type in new_dept_cols:
-        if col_name not in existing_cols:
-            try:
-                cursor.execute(
-                    f"ALTER TABLE departments ADD COLUMN {col_name} {col_type}")
-                print(f"  ✅ Added column: {col_name}")
-            except Exception as e:
-                print(f"  ⚠️  Column {col_name} already exists or error: {e}")
+    with engine.begin() as conn:
+        for col_name, col_type in new_dept_cols:
+            if col_name not in cols:
+                try:
+                    conn.execute(
+                        text(f"ALTER TABLE departments ADD COLUMN {col_name} {col_type}"))
+                    print(f"  ✅ Added column: {col_name}")
+                except Exception as e:
+                    print(
+                        f"  ⚠️  Column {col_name} could not be added or already exists: {e}")
 
     # ========== Tasks Table Updates ==========
     print("\nUpdating tasks table...")
-
-    cursor.execute("PRAGMA table_info(tasks)")
-    existing_cols = [row[1] for row in cursor.fetchall()]
+    cols = {c['name'] for c in inspector.get_columns(
+        'tasks')} if 'tasks' in inspector.get_table_names() else set()
 
     new_task_cols = [
         ("category", "VARCHAR(50)"),
@@ -98,38 +126,38 @@ def run_migrations():
         ("time_spent", "DECIMAL(5,2) DEFAULT 0"),
     ]
 
-    for col_name, col_type in new_task_cols:
-        if col_name not in existing_cols:
-            try:
-                cursor.execute(
-                    f"ALTER TABLE tasks ADD COLUMN {col_name} {col_type}")
-                print(f"  ✅ Added column: {col_name}")
-            except Exception as e:
-                print(f"  ⚠️  Column {col_name} already exists or error: {e}")
+    with engine.begin() as conn:
+        for col_name, col_type in new_task_cols:
+            if col_name not in cols:
+                try:
+                    conn.execute(
+                        text(f"ALTER TABLE tasks ADD COLUMN {col_name} {col_type}"))
+                    print(f"  ✅ Added column: {col_name}")
+                except Exception as e:
+                    print(
+                        f"  ⚠️  Column {col_name} could not be added or already exists: {e}")
 
     # ========== Create Task Comments Table ==========
     print("\nCreating task_comments table...")
-
-    cursor.execute(
-        """SELECT name FROM sqlite_master WHERE type='table' AND name='task_comments'""")
-    if not cursor.fetchone():
-        cursor.execute("""
-            CREATE TABLE task_comments (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                task_id INTEGER NOT NULL,
-                employee_id INTEGER NOT NULL,
-                content TEXT NOT NULL,
-                created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-                FOREIGN KEY (task_id) REFERENCES tasks(id),
-                FOREIGN KEY (employee_id) REFERENCES employees(id)
-            )
-        """)
-        print("  ✅ Created task_comments table")
+    if 'task_comments' not in inspector.get_table_names():
+        create_comments = """
+        CREATE TABLE task_comments (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            task_id INTEGER NOT NULL,
+            employee_id INTEGER NOT NULL,
+            content TEXT NOT NULL,
+            created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+        )
+        """
+        try:
+            with engine.begin() as conn:
+                conn.execute(text(create_comments))
+            print("  ✅ Created task_comments table")
+        except Exception as e:
+            print(f"  ⚠️  Could not create task_comments: {e}")
     else:
         print("  ⚠️  task_comments table already exists")
 
-    conn.commit()
-    conn.close()
     print("\n✅ All migrations completed successfully!")
 
 

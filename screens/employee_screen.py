@@ -1,6 +1,6 @@
 """
 Vernika HRA - Employee Dashboard Screen
-Employee personal dashboard with limited access
+Employee personal dashboard with all features accessible
 """
 
 import flet as ft
@@ -11,9 +11,29 @@ from database.operations import (
     get_user_by_id,
     get_employee_by_user_id,
 )
-from utils.screen_access import (
-    SCREEN_ACCESS_CONFIG, get_user_screen_access, check_screen_access
-)
+
+
+# Color constants
+PRIMARY = "#009688"
+ERROR = "#DC3545"
+SUCCESS = "#28A745"
+WARNING = "#FFC107"
+INFO = "#17A2B8"
+BACKGROUND = "#F8F9FA"
+SURFACE = "#FFFFFF"
+SURFACE_VARIANT = "#E8E8E8"
+TEXT_PRIMARY = "#1A1C1E"
+TEXT_SECONDARY = "#6C757D"
+BLUE_500 = "#2196F3"
+GREEN_500 = "#4CAF50"
+ORANGE_500 = "#FF9800"
+PURPLE_500 = "#9C27B0"
+RED_500 = "#F44336"
+TEAL_500 = "#009688"
+CYAN_600 = "#00ACC1"
+AMBER_500 = "#FFC107"
+INDIGO_500 = "#3F51B5"
+PINK_500 = "#E91E63"
 
 
 class EmployeeScreen(ft.Container):
@@ -22,135 +42,204 @@ class EmployeeScreen(ft.Container):
         self._page = page
         self.current_user = current_user
         self.expand = True
-        self.bgcolor = "#F5F5F5"
+        self.bgcolor = BACKGROUND
 
-        # Get user ID for permission checks
+        # Get user ID
         self.user_id = None
         if isinstance(current_user, dict):
             self.user_id = current_user.get('id')
 
-        # Load screen access permissions
-        self.screen_access = get_user_screen_access(
-            self.user_id) if self.user_id else {}
-
         self.content = self._build_content()
-
-    def _get_screen_access(self, screen_key: str) -> bool:
-        """Check if user has access to a specific screen"""
-        # Admins always have access
-        if isinstance(self.current_user, dict):
-            if self.current_user.get('role', '').lower() == 'admin':
-                return True
-        return self.screen_access.get(screen_key, False)
 
     def _build_content(self):
         """Build and add the employee content to the page"""
-        # Header - No back button for employees to prevent admin access
+        # Header
         header = ft.Container(
             padding=15,
-            bgcolor="#009688",
+            bgcolor=PRIMARY,
             content=ft.Row([
-                ft.Text(
-                    f"Welcome, {self.current_user.get('username', 'Employee')}!",
-                    size=18,
-                    color="WHITE",
-                    weight=ft.FontWeight.BOLD
-                ),
+                ft.Row([
+                    ft.Icon(ft.Icons.DASHBOARD, color="WHITE", size=24),
+                    ft.Text(
+                        "Vernika HRA - Employee Dashboard",
+                        size=18,
+                        color="WHITE",
+                        weight=ft.FontWeight.BOLD
+                    ),
+                ], spacing=10),
                 ft.Container(expand=True),
-                ft.ElevatedButton(
-                    "Logout",
+                ft.Text(
+                    f"Welcome, {self.current_user.get('username', 'Employee')}",
+                    size=14,
+                    color="WHITE"
+                ),
+                ft.Container(width=10),
+                ft.IconButton(
+                    icon=ft.Icons.LOGOUT,
+                    icon_color="WHITE",
                     on_click=self._handle_logout,
-                    style=ft.ButtonStyle(bgcolor="WHITE", color="#009688")
+                    tooltip="Logout"
                 )
             ])
         )
 
-        # Quick actions section - only show screens user has access to
+        # Get employee info for welcome message
+        first_name = "Employee"
+        try:
+            db = get_db_session()
+            emp = get_employee_by_user_id(db, self.user_id)
+            if emp:
+                first_name = emp.first_name or "Employee"
+            db.close()
+        except:
+            pass
+
+        # Quick actions section - all buttons now available
         action_cards = []
 
-        # Profile card (always available)
+        # Profile card
         action_cards.append(
             self._create_action_card(
                 "My Profile",
                 "View and edit your profile",
                 ft.Icons.PERSON,
                 self._view_profile,
-                enabled=True  # Always enabled
+                PRIMARY
             )
         )
 
-        # Tasks card (check access)
-        if self._get_screen_access("tasks"):
-            action_cards.append(
-                self._create_action_card(
-                    "My Tasks",
-                    "View your assigned tasks",
-                    ft.Icons.TASK,
-                    self._view_tasks,
-                    enabled=True
-                )
+        # Tasks card
+        action_cards.append(
+            self._create_action_card(
+                "My Tasks",
+                "View your assigned tasks",
+                ft.Icons.TASK,
+                self._view_tasks,
+                ORANGE_500
             )
-        else:
-            action_cards.append(
-                self._create_action_card(
-                    "My Tasks",
-                    "Access restricted",
-                    ft.Icons.TASK,
-                    self._show_access_denied,
-                    enabled=False
-                )
-            )
+        )
 
-        # Time Off card (check access)
-        if self._get_screen_access("leaves"):
-            action_cards.append(
-                self._create_action_card(
-                    "Time Off",
-                    "Request time off",
-                    ft.Icons.CALENDAR_MONTH,
-                    self._request_time_off,
-                    enabled=True
-                )
+        # Time Off card
+        action_cards.append(
+            self._create_action_card(
+                "Time Off",
+                "Request time off",
+                ft.Icons.CALENDAR_MONTH,
+                self._request_time_off,
+                PURPLE_500
             )
-        else:
-            action_cards.append(
-                self._create_action_card(
-                    "Time Off",
-                    "Access restricted",
-                    ft.Icons.CALENDAR_MONTH,
-                    self._show_access_denied,
-                    enabled=False
-                )
-            )
+        )
 
-        # Attendance card (check access)
-        if self._get_screen_access("attendance"):
-            action_cards.append(
-                self._create_action_card(
-                    "My Attendance",
-                    "View your attendance",
-                    ft.Icons.EVENT,
-                    self._view_attendance,
-                    enabled=True
-                )
+        # Attendance card
+        action_cards.append(
+            self._create_action_card(
+                "My Attendance",
+                "View your attendance",
+                ft.Icons.EVENT,
+                self._view_attendance,
+                BLUE_500
             )
-        else:
-            action_cards.append(
-                self._create_action_card(
-                    "My Attendance",
-                    "Access restricted",
-                    ft.Icons.EVENT,
-                    self._show_access_denied,
-                    enabled=False
-                )
+        )
+
+        # Chat card
+        action_cards.append(
+            self._create_action_card(
+                "Team Chat",
+                "Chat with colleagues",
+                ft.Icons.CHAT,
+                self._open_chat,
+                TEAL_500
             )
+        )
+
+        # Mail card
+        action_cards.append(
+            self._create_action_card(
+                "Internal Mail",
+                "Send and receive messages",
+                ft.Icons.EMAIL,
+                self._open_mail,
+                AMBER_500
+            )
+        )
+
+        # Documents card
+        action_cards.append(
+            self._create_action_card(
+                "Documents",
+                "Access shared documents",
+                ft.Icons.FOLDER,
+                self._open_documents,
+                INDIGO_500
+            )
+        )
+
+        # Announcements card
+        action_cards.append(
+            self._create_action_card(
+                "Announcements",
+                "Company news and updates",
+                ft.Icons.CAMPAIGN,
+                self._view_announcements,
+                RED_500
+            )
+        )
+
+        # Teams card
+        action_cards.append(
+            self._create_action_card(
+                "My Teams",
+                "View your teams",
+                ft.Icons.GROUP,
+                self._view_teams,
+                CYAN_600
+            )
+        )
+
+        # Projects card
+        action_cards.append(
+            self._create_action_card(
+                "Projects",
+                "View assigned projects",
+                ft.Icons.WORK,
+                self._view_projects,
+                PINK_500
+            )
+        )
+
+        # Performance card
+        action_cards.append(
+            self._create_action_card(
+                "Performance",
+                "View performance reviews",
+                ft.Icons.TRENDING_UP,
+                self._view_performance,
+                GREEN_500
+            )
+        )
+
+        # Reports card
+        action_cards.append(
+            self._create_action_card(
+                "My Reports",
+                "View personal reports",
+                ft.Icons.ASSESSMENT,
+                self._view_reports,
+                PURPLE_500
+            )
+        )
 
         quick_actions = ft.Container(
             padding=20,
             content=ft.Column([
                 ft.Text("Quick Actions", size=20,
-                        weight=ft.FontWeight.BOLD, color="#333"),
-                ft.Row(action_cards, spacing=20)
+                        weight=ft.FontWeight.BOLD, color=TEXT_PRIMARY),
+                ft.Container(height=15),
+                ft.Row(action_cards[:4], spacing=20),
+                ft.Container(height=15),
+                ft.Row(action_cards[4:8], spacing=20),
+                ft.Container(height=15),
+                ft.Row(action_cards[8:12], spacing=20),
             ])
         )
 
@@ -159,7 +248,8 @@ class EmployeeScreen(ft.Container):
             padding=20,
             content=ft.Column([
                 ft.Text("My Information", size=20,
-                        weight=ft.FontWeight.BOLD, color="#333"),
+                        weight=ft.FontWeight.BOLD, color=TEXT_PRIMARY),
+                ft.Container(height=10),
                 self._get_employee_info_card()
             ])
         )
@@ -169,7 +259,8 @@ class EmployeeScreen(ft.Container):
             padding=20,
             content=ft.Column([
                 ft.Text("Recent Activity", size=20,
-                        weight=ft.FontWeight.BOLD, color="#333"),
+                        weight=ft.FontWeight.BOLD, color=TEXT_PRIMARY),
+                ft.Container(height=10),
                 self._create_recent_activity_section()
             ])
         )
@@ -183,52 +274,34 @@ class EmployeeScreen(ft.Container):
 
         return content
 
-    def _create_action_card(self, title, subtitle, icon, on_click, enabled=True):
-        """Create an action card"""
-        # If disabled, change appearance
-        opacity = 0.6 if not enabled else 1.0
-        icon_color = "#9E9E9E" if not enabled else "#009688"
-        bgcolor = "#F5F5F5" if not enabled else "WHITE"
-
+    def _create_action_card(self, title, subtitle, icon, on_click, color):
+        """Create an action card with modern design"""
         return ft.Card(
             content=ft.Container(
                 content=ft.Column([
-                    ft.Icon(icon, size=40, color=icon_color),
-                    ft.Text(title, size=18, weight=ft.FontWeight.BOLD,
-                            opacity=opacity),
-                    ft.Text(subtitle, size=12, color="#757575",
-                            opacity=opacity),
-                    ft.Container(height=10),
+                    ft.Icon(icon, size=36, color=color),
+                    ft.Text(title, size=14, weight=ft.FontWeight.BOLD),
+                    ft.Text(subtitle, size=11, color=TEXT_SECONDARY),
+                    ft.Container(height=8),
                     ft.ElevatedButton(
-                        "Open" if enabled else "Locked",
-                        icon=ft.Icons.ARROW_FORWARD if enabled else ft.Icons.LOCK,
+                        "Open",
+                        icon=ft.Icons.ARROW_FORWARD,
                         on_click=on_click,
                         style=ft.ButtonStyle(
-                            bgcolor="#009688" if enabled else "#E0E0E0",
-                            color="WHITE" if enabled else "#757575"
+                            bgcolor=color,
+                            color="WHITE"
                         ),
-                        disabled=not enabled
+                        height=32,
                     )
                 ], horizontal_alignment=ft.CrossAxisAlignment.CENTER, spacing=5),
-                padding=ft.padding.all(20),
-                width=200
+                padding=ft.padding.all(15),
+                width=150
             ),
-            elevation=3
+            elevation=2
         )
-
-    def _show_access_denied(self, e):
-        """Show access denied message"""
-        snack = ft.SnackBar(
-            content=ft.Text(
-                "Access Restricted: Please contact administrator for access"),
-            bgcolor="#DC3545"
-        )
-        self._page.overlay.append(snack)
-        snack.open = True
-        self._page.update()
 
     def _get_employee_info_card(self):
-        """Get employee information from database and display as card (cloud-ready via SQLAlchemy)"""
+        """Get employee information from database"""
         first_name = "Not provided"
         last_name = ""
         department = "Not assigned"
@@ -245,7 +318,7 @@ class EmployeeScreen(ft.Container):
             try:
                 db = get_db_session()
 
-                # Load user and linked employee profile using SQLAlchemy
+                # Load user and linked employee profile
                 user = get_user_by_id(db, user_id)
                 if user and user.email:
                     email = user.email
@@ -323,12 +396,12 @@ class EmployeeScreen(ft.Container):
                         title=ft.Text("Logged in"),
                         subtitle=ft.Text(
                             datetime.now().strftime("%Y-%m-%d %H:%M")),
-                        leading=ft.Icon(ft.Icons.LOGIN, color="#4CAF50")
+                        leading=ft.Icon(ft.Icons.LOGIN, color=SUCCESS)
                     ),
                     ft.ListTile(
                         title=ft.Text("Viewed dashboard"),
                         subtitle=ft.Text("Just now"),
-                        leading=ft.Icon(ft.Icons.VISIBILITY, color="#2196F3")
+                        leading=ft.Icon(ft.Icons.VISIBILITY, color=BLUE_500)
                     )
                 ]),
                 padding=ft.padding.all(10),
@@ -362,6 +435,54 @@ class EmployeeScreen(ft.Container):
         self._page.clean()
         self._page.add(AttendanceScreen(
             self._page, self.current_user, view_mode="employee"))
+
+    def _open_chat(self, e):
+        """Open chat screen"""
+        from screens.chat_screen import ChatScreen
+        self._page.clean()
+        self._page.add(ChatScreen(self._page, self.current_user))
+
+    def _open_mail(self, e):
+        """Open mail screen"""
+        from screens.mail_screen import MailScreen
+        self._page.clean()
+        self._page.add(MailScreen(self._page, self.current_user))
+
+    def _open_documents(self, e):
+        """Open documents screen"""
+        from screens.documents_screen import DocumentsScreen
+        self._page.clean()
+        self._page.add(DocumentsScreen(self._page))
+
+    def _view_announcements(self, e):
+        """View announcements"""
+        from screens.announcements_screen import AnnouncementsScreen
+        self._page.clean()
+        self._page.add(AnnouncementsScreen(self._page))
+
+    def _view_teams(self, e):
+        """View teams"""
+        from screens.teams_screen import TeamsScreen
+        self._page.clean()
+        self._page.add(TeamsScreen(self._page, self.current_user))
+
+    def _view_projects(self, e):
+        """View projects"""
+        from screens.projects_screen import ProjectsScreen
+        self._page.clean()
+        self._page.add(ProjectsScreen(self._page, self.current_user))
+
+    def _view_performance(self, e):
+        """View performance"""
+        from screens.performance_screen import PerformanceScreen
+        self._page.clean()
+        self._page.add(PerformanceScreen(self._page))
+
+    def _view_reports(self, e):
+        """View reports"""
+        from screens.reports_screen import ReportsScreen
+        self._page.clean()
+        self._page.add(ReportsScreen(self._page))
 
     def _handle_logout(self, e):
         """Handle logout"""

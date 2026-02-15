@@ -4,8 +4,10 @@ Simple profile screen for non-admin users with screen access management
 """
 
 import flet as ft
-import sqlite3
 from datetime import datetime
+from database.connection import get_db_session
+from database.models import Employee, User, Department, Position, Role
+from sqlalchemy.orm import joinedload
 
 
 class ProfileScreen(ft.Container):
@@ -19,124 +21,150 @@ class ProfileScreen(ft.Container):
         self.content = self.build_ui()
 
     def _get_db(self):
-        """Get database connection"""
-        conn = sqlite3.connect('vernika.db')
-        conn.row_factory = sqlite3.Row
-        return conn
+        """Get database connection using SQLAlchemy"""
+        return get_db_session()
 
     def _get_employee_data(self):
-        """Fetch employee data from database"""
+        """Fetch employee data from PostgreSQL database"""
+        db = None
         try:
-            conn = self._get_db()
-            cursor = conn.cursor()
+            db = get_db_session()
 
-            # Get employee data based on user_id or email
+            # Get employee data based on user_id or username
             user_id = self.user_data.get("user_id")
             username = self.user_data.get("username", "")
 
             if user_id:
-                cursor.execute("""
-                    SELECT e.*, d.name as department_name, p.title as position_title,
-                           r.name as role_name
-                    FROM employees e
-                    LEFT JOIN departments d ON e.department_id = d.id
-                    LEFT JOIN positions p ON e.position_id = p.id
-                    LEFT JOIN users u ON e.user_id = u.id
-                    LEFT JOIN roles r ON u.role_id = r.id
-                    WHERE e.user_id = ?
-                """, (user_id,))
+                # Query with relationships using SQLAlchemy
+                emp = db.query(Employee).options(
+                    joinedload(Employee.department),
+                    joinedload(Employee.position)
+                ).filter(Employee.user_id == user_id).first()
             else:
-                cursor.execute("""
-                    SELECT e.*, d.name as department_name, p.title as position_title,
-                           r.name as role_name
-                    FROM employees e
-                    LEFT JOIN departments d ON e.department_id = d.id
-                    LEFT JOIN positions p ON e.position_id = p.id
-                    LEFT JOIN users u ON e.user_id = u.id
-                    LEFT JOIN roles r ON u.role_id = r.id
-                    WHERE u.username = ?
-                """, (username,))
-
-            emp = cursor.fetchone()
-            conn.close()
+                # Find user by username first
+                user = db.query(User).filter(User.username == username).first()
+                if user:
+                    emp = db.query(Employee).options(
+                        joinedload(Employee.department),
+                        joinedload(Employee.position)
+                    ).filter(Employee.user_id == user.id).first()
+                else:
+                    emp = None
 
             if emp:
-                self.employee_data = dict(emp)
+                # Get role name
+                role_name = "Employee"
+                if emp.user_id:
+                    user = db.query(User).filter(
+                        User.id == emp.user_id).first()
+                    if user and user.role_id:
+                        role = db.query(Role).filter(
+                            Role.id == user.role_id).first()
+                        if role:
+                            role_name = role.name
+
+                # Build employee data dict
+                self.employee_data = {
+                    'first_name': emp.first_name,
+                    'last_name': emp.last_name,
+                    'email': emp.email,
+                    'phone': emp.phone,
+                    'department_name': emp.department.name if emp.department else None,
+                    'position_title': emp.position.title if emp.position else None,
+                    'role_name': role_name,
+                    'date_of_joining': emp.date_of_joining,
+                }
         except Exception as e:
             print(f"Error fetching employee data: {e}")
             self.employee_data = None
+        finally:
+            if db:
+                db.close()
 
     def _get_leave_count(self):
-        """Get leave counts from database"""
+        """Get leave counts from PostgreSQL database"""
+        db = None
         try:
-            conn = self._get_db()
-            cursor = conn.cursor()
+            db = get_db_session()
             user_id = self.user_data.get("user_id")
 
             if user_id:
-                cursor.execute("""
-                    SELECT COUNT(*) as count FROM leave_requests lr
-                    JOIN employees e ON lr.employee_id = e.id
-                    WHERE e.user_id = ? AND lr.status = 'pending'
-                """, (user_id,))
-                result = cursor.fetchone()
-                conn.close()
-                return result['count'] if result else 0
-            conn.close()
+                # Get employee by user_id
+                emp = db.query(Employee).filter(
+                    Employee.user_id == user_id).first()
+                if emp:
+                    # Count pending leave requests
+                    from database.models import LeaveRequest
+                    count = db.query(LeaveRequest).filter(
+                        LeaveRequest.employee_id == emp.id,
+                        LeaveRequest.status == 'pending'
+                    ).count()
+                    return count
         except Exception as e:
             print(f"Warning: Error getting leave count: {e}")
+        finally:
+            if db:
+                db.close()
         return 0
 
     def _get_task_count(self):
-        """Get pending task counts from database"""
+        """Get pending task counts from PostgreSQL database"""
+        db = None
         try:
-            conn = self._get_db()
-            cursor = conn.cursor()
+            db = get_db_session()
             user_id = self.user_data.get("user_id")
 
             if user_id:
-                cursor.execute("""
-                    SELECT COUNT(*) as count FROM tasks
-                    WHERE assigned_to_id = ? AND status != 'completed'
-                """, (user_id,))
-                result = cursor.fetchone()
-                conn.close()
-                return result['count'] if result else 0
-            conn.close()
+                # Get employee by user_id
+                emp = db.query(Employee).filter(
+                    Employee.user_id == user_id).first()
+                if emp:
+                    # Count pending tasks
+                    from database.models import Task
+                    count = db.query(Task).filter(
+                        Task.assigned_to_id == emp.id,
+                        Task.status != 'completed'
+                    ).count()
+                    return count
         except Exception as e:
             print(f"Warning: Error getting task count: {e}")
+        finally:
+            if db:
+                db.close()
         return 0
 
     def _get_attendance_percentage(self):
-        """Calculate attendance percentage"""
+        """Calculate attendance percentage from PostgreSQL"""
+        db = None
         try:
-            conn = self._get_db()
-            cursor = conn.cursor()
+            db = get_db_session()
             user_id = self.user_data.get("user_id")
 
             if user_id:
-                # Get current month
-                current_month = datetime.now().strftime('%Y-%m')
+                # Get employee by user_id
+                emp = db.query(Employee).filter(
+                    Employee.user_id == user_id).first()
+                if emp:
+                    # Get current month
+                    current_month = datetime.now().strftime('%Y-%m')
 
-                # Get total working days this month (simplified - 22 days)
-                total_days = 22
+                    # Total working days this month (simplified - 22 days)
+                    total_days = 22
 
-                # Get present days
-                cursor.execute("""
-                    SELECT COUNT(*) as count FROM attendances a
-                    JOIN employees e ON a.employee_id = e.id
-                    WHERE e.user_id = ? AND strftime('%Y-%m', a.date) = ?
-                """, (user_id, current_month))
-                result = cursor.fetchone()
-                conn.close()
+                    # Get present days this month
+                    from database.models import Attendance
+                    present_days = db.query(Attendance).filter(
+                        Attendance.employee_id == emp.id
+                    ).count()
 
-                present_days = result['count'] if result else 0
-                percentage = (present_days / total_days *
-                              100) if total_days > 0 else 0
-                return min(100, round(percentage))
-            conn.close()
+                    percentage = (present_days / total_days *
+                                  100) if total_days > 0 else 0
+                    return min(100, round(percentage))
         except Exception as e:
             print(f"Warning: Error calculating attendance: {e}")
+        finally:
+            if db:
+                db.close()
         return 0
 
     def _can_access(self, screen_key: str) -> bool:
@@ -147,29 +175,9 @@ class ProfileScreen(ft.Container):
                 # If no user_id, allow access for now
                 return True
 
-            conn = self._get_db()
-            cursor = conn.cursor()
-
-            # Check screen_access table
-            cursor.execute("""
-                SELECT is_enabled FROM screen_access 
-                WHERE user_id = ? AND screen_key = ?
-            """, (user_id, screen_key))
-
-            result = cursor.fetchone()
-            conn.close()
-
-            if result:
-                return bool(result[0])
-
-            # If no record exists, check role-based defaults
-            # For employees, only profile is enabled by default
-            user_role = self.user_data.get("role", "").lower()
-            if user_role == "admin":
-                return True  # Admin has access to everything
-
-            # Default: employees only have profile access
-            return screen_key == "profile"
+            # Use PostgreSQL-based screen access
+            from utils.screen_access import check_screen_access
+            return check_screen_access(user_id, screen_key)
 
         except Exception as e:
             print(f"Error checking screen access: {e}")

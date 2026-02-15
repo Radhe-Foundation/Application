@@ -1,11 +1,21 @@
 """
 Vernika HRA - Projects Management Screen
-Placeholder screen for projects management
+PostgreSQL/SQLAlchemy based projects management
 """
 
 import flet as ft
-import sqlite3
 from datetime import datetime
+from database.connection import get_db_session
+from database.models import Project
+
+
+# Theme colors
+PRIMARY = "#E65100"
+SUCCESS = "#4CAF50"
+ERROR = "#F44336"
+WARNING = "#FF9800"
+BACKGROUND = "#F5F5F5"
+SURFACE = "#FFFFFF"
 
 
 class ProjectsScreen(ft.Container):
@@ -14,18 +24,13 @@ class ProjectsScreen(ft.Container):
         self._page = page
         self.user = user
         self.expand = True
-        self.bgcolor = "#F5F5F5"
+        self.bgcolor = BACKGROUND
         self.content = self._build_content()
-
-    def _get_db(self):
-        conn = sqlite3.connect('vernika.db')
-        conn.row_factory = sqlite3.Row
-        return conn
 
     def _build_content(self):
         header = ft.Container(
             padding=15,
-            bgcolor="#E65100",
+            bgcolor=PRIMARY,
             content=ft.Row([
                 ft.IconButton(
                     icon=ft.Icons.ARROW_BACK,
@@ -64,17 +69,22 @@ class ProjectsScreen(ft.Container):
     def on_create(self, e):
         self._show_create_dialog()
 
-    def _build_projects_list(self):
-        """Build projects list"""
+    def _get_projects(self):
+        """Get all projects from PostgreSQL"""
+        db = get_db_session()
         try:
-            conn = self._get_db()
-            cursor = conn.cursor()
-            cursor.execute("SELECT * FROM projects ORDER BY created_at DESC")
-            projects = cursor.fetchall()
-            conn.close()
+            projects = db.query(Project).order_by(
+                Project.created_at.desc()).all()
+            return projects
         except Exception as e:
             print(f"Error loading projects: {e}")
-            projects = []
+            return []
+        finally:
+            db.close()
+
+    def _build_projects_list(self):
+        """Build projects list"""
+        projects = self._get_projects()
 
         if not projects:
             return ft.Container(
@@ -86,7 +96,7 @@ class ProjectsScreen(ft.Container):
                     ft.ElevatedButton(
                         "Create First Project",
                         on_click=self.on_create,
-                        style=ft.ButtonStyle(bgcolor="#E65100", color="WHITE")
+                        style=ft.ButtonStyle(bgcolor=PRIMARY, color="WHITE")
                     )
                 ], horizontal_alignment=ft.CrossAxisAlignment.CENTER),
                 alignment=ft.alignment.Alignment(0, 0),
@@ -102,19 +112,22 @@ class ProjectsScreen(ft.Container):
                 "completed": "#2196F3",
                 "cancelled": "#F44336"
             }
-            status = project['status'] or "planning"
+            status = project.status or "planning"
             color = status_colors.get(status, "#9E9E9E")
+
+            start_date_str = project.start_date.strftime(
+                '%Y-%m-%d') if project.start_date else "-"
+            end_date_str = project.end_date.strftime(
+                '%Y-%m-%d') if project.end_date else "-"
 
             rows.append(
                 ft.DataRow(
                     cells=[
-                        ft.DataCell(ft.Text(str(project['id']))),
-                        ft.DataCell(ft.Text(project['name'] or "")),
-                        ft.DataCell(ft.Text(project['client_name'] or "-")),
-                        ft.DataCell(
-                            ft.Text(str(project['start_date']) if project['start_date'] else "-")),
-                        ft.DataCell(
-                            ft.Text(str(project['end_date']) if project['end_date'] else "-")),
+                        ft.DataCell(ft.Text(str(project.id))),
+                        ft.DataCell(ft.Text(project.name or "")),
+                        ft.DataCell(ft.Text(project.client_name or "-")),
+                        ft.DataCell(ft.Text(start_date_str)),
+                        ft.DataCell(ft.Text(end_date_str)),
                         ft.DataCell(
                             ft.Container(
                                 ft.Text(status.replace("_", " ").title(),
@@ -127,14 +140,14 @@ class ProjectsScreen(ft.Container):
                                 ft.IconButton(
                                     icon=ft.Icons.EDIT,
                                     icon_color="#1976D2",
-                                    on_click=lambda e, proj_id=project['id']: self._show_edit_dialog(
+                                    on_click=lambda e, proj_id=project.id: self._show_edit_dialog(
                                         proj_id),
                                     tooltip="Edit"
                                 ),
                                 ft.IconButton(
                                     icon=ft.Icons.DELETE,
                                     icon_color="#D32F2F",
-                                    on_click=lambda e, proj_id=project['id']: self._show_delete_dialog(
+                                    on_click=lambda e, proj_id=project.id: self._show_delete_dialog(
                                         proj_id),
                                     tooltip="Delete"
                                 ),
@@ -189,6 +202,7 @@ class ProjectsScreen(ft.Container):
                 self._page.update()
                 return
 
+            db = get_db_session()
             try:
                 budget_val = 0
                 try:
@@ -196,16 +210,35 @@ class ProjectsScreen(ft.Container):
                 except (ValueError, TypeError) as e:
                     print(f"Warning: Invalid budget value: {e}")
 
-                conn = self._get_db()
-                cursor = conn.cursor()
-                cursor.execute("""INSERT INTO projects 
-                    (name, description, client_name, start_date, end_date, budget, status, created_at) 
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?)""",
-                               (name.value, description.value or None, client_name.value or None,
-                                start_date.value or None, end_date.value or None, budget_val,
-                                status.value, datetime.now()))
-                conn.commit()
-                conn.close()
+                # Parse dates
+                start_date_val = None
+                end_date_val = None
+                try:
+                    if start_date.value:
+                        start_date_val = datetime.strptime(
+                            start_date.value, '%Y-%m-%d').date()
+                except ValueError:
+                    pass
+                try:
+                    if end_date.value:
+                        end_date_val = datetime.strptime(
+                            end_date.value, '%Y-%m-%d').date()
+                except ValueError:
+                    pass
+
+                # Create new project
+                new_project = Project(
+                    name=name.value,
+                    description=description.value or None,
+                    client_name=client_name.value or None,
+                    start_date=start_date_val,
+                    end_date=end_date_val,
+                    budget=budget_val,
+                    status=status.value or "planning"
+                )
+                db.add(new_project)
+                db.commit()
+
                 self._close_dialog()
                 self._show_success("Project created successfully!")
                 self._refresh()
@@ -213,6 +246,8 @@ class ProjectsScreen(ft.Container):
                 error.value = str(ex)
                 error.visible = True
                 self._page.update()
+            finally:
+                db.close()
 
         dialog = ft.AlertDialog(
             modal=True,
@@ -227,7 +262,7 @@ class ProjectsScreen(ft.Container):
                 ft.TextButton(
                     "Cancel", on_click=lambda e: self._close_dialog()),
                 ft.ElevatedButton("Create", on_click=save, style=ft.ButtonStyle(
-                    bgcolor="#E65100", color="WHITE"))
+                    bgcolor=PRIMARY, color="WHITE"))
             ]
         )
         self._page.overlay.append(dialog)
@@ -236,28 +271,32 @@ class ProjectsScreen(ft.Container):
 
     def _show_edit_dialog(self, project_id):
         """Show edit project dialog"""
-        conn = self._get_db()
-        cursor = conn.cursor()
-        cursor.execute("SELECT * FROM projects WHERE id=?", (project_id,))
-        project = cursor.fetchone()
-        conn.close()
+        db = get_db_session()
+        try:
+            project = db.query(Project).filter(
+                Project.id == project_id).first()
+        except Exception as e:
+            self._show_error(f"Error: {e}")
+            return
+        finally:
+            db.close()
 
         if not project:
             self._show_error("Project not found!")
             return
 
         name = ft.TextField(label="Project Name *",
-                            width=300, value=project['name'] or "")
+                            width=300, value=project.name or "")
         description = ft.TextField(label="Description", width=400, multiline=True,
-                                   value=project['description'] or "")
+                                   value=project.description or "")
         client_name = ft.TextField(
-            label="Client Name", width=300, value=project['client_name'] or "")
+            label="Client Name", width=300, value=project.client_name or "")
         start_date = ft.TextField(label="Start Date", width=200,
-                                  value=str(project['start_date']) if project['start_date'] else "")
+                                  value=project.start_date.strftime('%Y-%m-%d') if project.start_date else "")
         end_date = ft.TextField(label="End Date", width=200,
-                                value=str(project['end_date']) if project['end_date'] else "")
+                                value=project.end_date.strftime('%Y-%m-%d') if project.end_date else "")
         budget = ft.TextField(label="Budget (Rs.)", width=150,
-                              value=str(project['budget'] or 0))
+                              value=str(project.budget or 0))
 
         status_options = [
             ft.dropdown.Option("planning", "Planning"),
@@ -267,9 +306,10 @@ class ProjectsScreen(ft.Container):
             ft.dropdown.Option("cancelled", "Cancelled"),
         ]
         status = ft.Dropdown(width=150, options=status_options, label="Status",
-                             value=project['status'] or "planning")
+                             value=project.status or "planning")
 
         def update(e):
+            db = get_db_session()
             try:
                 budget_val = 0
                 try:
@@ -277,21 +317,40 @@ class ProjectsScreen(ft.Container):
                 except (ValueError, TypeError) as e:
                     print(f"Warning: Invalid budget value: {e}")
 
-                conn = self._get_db()
-                cursor = conn.cursor()
-                cursor.execute("""UPDATE projects SET 
-                    name=?, description=?, client_name=?, start_date=?, end_date=?, budget=?, status=? 
-                    WHERE id=?""",
-                               (name.value, description.value or None, client_name.value or None,
-                                start_date.value or None, end_date.value or None, budget_val,
-                                status.value, project_id))
-                conn.commit()
-                conn.close()
+                # Parse dates
+                start_date_val = None
+                end_date_val = None
+                try:
+                    if start_date.value:
+                        start_date_val = datetime.strptime(
+                            start_date.value, '%Y-%m-%d').date()
+                except ValueError:
+                    pass
+                try:
+                    if end_date.value:
+                        end_date_val = datetime.strptime(
+                            end_date.value, '%Y-%m-%d').date()
+                except ValueError:
+                    pass
+
+                db.query(Project).filter(Project.id == project_id).update({
+                    Project.name: name.value,
+                    Project.description: description.value or None,
+                    Project.client_name: client_name.value or None,
+                    Project.start_date: start_date_val,
+                    Project.end_date: end_date_val,
+                    Project.budget: budget_val,
+                    Project.status: status.value
+                })
+                db.commit()
+
                 self._close_dialog()
                 self._show_success("Project updated successfully!")
                 self._refresh()
             except Exception as ex:
                 self._show_error(str(ex))
+            finally:
+                db.close()
 
         dialog = ft.AlertDialog(
             modal=True,
@@ -314,34 +373,38 @@ class ProjectsScreen(ft.Container):
 
     def _show_delete_dialog(self, project_id):
         """Show delete confirmation dialog"""
-        conn = self._get_db()
-        cursor = conn.cursor()
-        cursor.execute("SELECT name FROM projects WHERE id=?", (project_id,))
-        project = cursor.fetchone()
-        conn.close()
+        db = get_db_session()
+        try:
+            project = db.query(Project).filter(
+                Project.id == project_id).first()
+        except Exception as e:
+            self._show_error(f"Error: {e}")
+            return
+        finally:
+            db.close()
 
         if not project:
             self._show_error("Project not found!")
             return
 
         def confirm(e):
+            db = get_db_session()
             try:
-                conn = self._get_db()
-                cursor = conn.cursor()
-                cursor.execute(
-                    "DELETE FROM projects WHERE id=?", (project_id,))
-                conn.commit()
-                conn.close()
+                db.query(Project).filter(Project.id == project_id).delete()
+                db.commit()
+
                 self._close_dialog()
                 self._show_success("Project deleted!")
                 self._refresh()
             except Exception as ex:
                 self._show_error(str(ex))
+            finally:
+                db.close()
 
         dialog = ft.AlertDialog(
             modal=True,
             title=ft.Text("Delete Project?", color="#F44336"),
-            content=ft.Text(f"Delete '{project['name']}'?"),
+            content=ft.Text(f"Delete '{project.name}'?"),
             actions=[
                 ft.TextButton(
                     "Cancel", on_click=lambda e: self._close_dialog()),

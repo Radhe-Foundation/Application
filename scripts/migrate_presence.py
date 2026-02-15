@@ -1,407 +1,202 @@
 #!/usr/bin/env python3
 """
-Vernika - Database Migration Script
-Add user presence tracking columns for multi-user support
-Supports both SQLite and PostgreSQL databases
+Vernika - Database Migration Script (SQLAlchemy-backed)
+
+This revised migration script uses the application's SQLAlchemy engine
+from `database.connection` so it works for both SQLite and PostgreSQL
+backends configured via `config.py`.
+
+It avoids direct `sqlite3` or `psycopg2` imports and performs schema
+updates using raw SQL `ALTER TABLE` statements appropriate for the
+current dialect. Always take backups before running migrations.
 """
 
-import sqlite3
-from config import DATABASE_TYPE, DATABASE_URL
+from database.connection import get_engine
 import os
 import sys
+from sqlalchemy import text, inspect
 
-# CRITICAL: Add the project root to the path FIRST, before any other imports
-# This ensures we import from the local config.py, not the Python config package
+# Ensure project root is on path
 PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, PROJECT_ROOT)
 
-# Now import from local config module
 
+def migrate_with_sqlalchemy():
+    engine = get_engine()
+    dialect = engine.dialect.name
+    print(f"Using SQLAlchemy engine - dialect: {dialect}")
 
-def migrate_sqlite():
-    """Add presence tracking columns to users table for SQLite"""
-    db_path = os.path.join(os.path.dirname(__file__), '..', 'vernika.db')
-    db_path = os.path.abspath(db_path)
+    # Determine column types per dialect
+    if dialect == 'sqlite':
+        col_types = {
+            'last_seen': 'DATETIME',
+            'is_online': 'BOOLEAN DEFAULT 0',
+            'session_token': 'TEXT',
+            'last_login': 'DATETIME',
+            'last_ip': 'TEXT',
+        }
+    else:
+        # default to postgres-compatible types
+        col_types = {
+            'last_seen': 'TIMESTAMP',
+            'is_online': 'BOOLEAN DEFAULT FALSE',
+            'session_token': 'VARCHAR(255)',
+            'last_login': 'TIMESTAMP',
+            'last_ip': 'VARCHAR(50)',
+        }
 
-    print(f"📂 SQLite Database path: {db_path}")
+    inspector = inspect(engine)
+    existing_tables = inspector.get_table_names()
 
-    conn = sqlite3.connect(db_path)
-    cursor = conn.cursor()
-
-    # Check current schema
-    cursor.execute("PRAGMA table_info(users)")
-    columns = {row[1]: row for row in cursor.fetchall()}
-    print(f"📋 Current users table columns: {list(columns.keys())}")
-
-    # Add new columns if they don't exist
-    migrations = [
-        ("last_seen", "DATETIME"),
-        ("is_online", "BOOLEAN DEFAULT 0"),
-        ("session_token", "TEXT"),
-        ("last_login", "DATETIME"),
-        ("last_ip", "TEXT"),
-    ]
-
-    for col_name, col_type in migrations:
-        if col_name not in columns:
-            try:
-                cursor.execute(
-                    f"ALTER TABLE users ADD COLUMN {col_name} {col_type}")
-                print(f"  ✅ Added column: {col_name}")
-            except Exception as e:
-                print(f"  ❌ Error adding {col_name}: {e}")
-        else:
-            print(f"  ✅ Column already exists: {col_name}")
-
-    # Also ensure roles table exists and has proper structure
-    cursor.execute("""CREATE TABLE IF NOT EXISTS roles (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        name TEXT UNIQUE NOT NULL,
-        display_name TEXT NOT NULL,
-        description TEXT,
-        is_active BOOLEAN DEFAULT 1,
-        level INTEGER DEFAULT 1,
-        permissions TEXT
-    )""")
-
-    # Ensure default roles exist
-    cursor.execute("SELECT COUNT(*) FROM roles")
-    result = cursor.fetchone()
-    if result and result[0] == 0:
-        roles = [
-            ("admin", "Administrator", "Full system access", 100,
-             '{"manage_users": true, "manage_employees": true, "manage_departments": true, "view_reports": true}'),
-            ("employee", "Employee", "Basic employee access",
-             10, '{"view_profile": true, "apply_leave": true}'),
-        ]
-        for name, display_name, description, level, permissions in roles:
-            cursor.execute(
-                "INSERT INTO roles (name, display_name, description, level, permissions) VALUES (?, ?, ?, ?, ?)",
-                (name, display_name, description, level, permissions)
-            )
-        print("  ✅ Added default roles")
-
-    conn.commit()
-    conn.close()
-    print("✅ SQLite migration completed successfully!")
-
-
-def migrate_postgresql():
-    """Add presence tracking columns to users table for PostgreSQL"""
-    try:
-        import psycopg2
-    except ImportError:
-        print("❌ psycopg2 not installed. Install it with: pip install psycopg2-binary")
-        return False
-
-    print(f"📂 PostgreSQL Database URL: {DATABASE_URL[:50]}...")
-
-    # Parse the DATABASE_URL to get connection parameters
-    # Format: postgresql://username:password@host:port/database
-    try:
-        # Use urllib to properly parse the URL
-        from urllib.parse import urlparse
-        parsed = urlparse(DATABASE_URL)
-
-        user = parsed.username
-        password = parsed.password
-        host = parsed.hostname
-        port = parsed.port or 5432
-        database = parsed.path.strip('/')
-    except Exception as e:
-        print(f"❌ Error parsing DATABASE_URL: {e}")
-        return False
-
-    print(f"   Host: {host}, Port: {port}, Database: {database}, User: {user}")
-
-    try:
-        conn = psycopg2.connect(
-            host=host,
-            port=port,
-            database=database,
-            user=user,
-            password=password
+    # Ensure roles table exists
+    if 'roles' not in existing_tables:
+        print("Creating roles table")
+        create_roles_sql = (
+            "CREATE TABLE roles ("
+            "id SERIAL PRIMARY KEY,"
+            "name VARCHAR(50) UNIQUE NOT NULL,"
+            "display_name VARCHAR(100) NOT NULL,"
+            "description TEXT,"
+            "is_active BOOLEAN DEFAULT TRUE,"
+            "level INTEGER DEFAULT 1,"
+            "permissions TEXT"
+            ")"
         )
-        conn.autocommit = True
-        cursor = conn.cursor()
+        # For sqlite, SERIAL is not supported; use INTEGER PRIMARY KEY AUTOINCREMENT
+        if dialect == 'sqlite':
+            create_roles_sql = (
+                "CREATE TABLE roles ("
+                "id INTEGER PRIMARY KEY AUTOINCREMENT,"
+                "name TEXT UNIQUE NOT NULL,"
+                "display_name TEXT NOT NULL,"
+                "description TEXT,"
+                "is_active BOOLEAN DEFAULT 1,"
+                "level INTEGER DEFAULT 1,"
+                "permissions TEXT"
+                ")"
+            )
 
-        # Check current schema
-        cursor.execute("""
-            SELECT column_name FROM information_schema.columns
-            WHERE table_name = 'users'
-        """)
-        columns = [row[0] for row in cursor.fetchall()]
-        print(f"📋 Current users table columns: {columns}")
+        with engine.begin() as conn:
+            conn.execute(text(create_roles_sql))
+        print("  ✅ Roles table ensured")
 
-        # Add new columns if they don't exist
-        migrations = [
-            ("last_seen", "TIMESTAMP"),
-            ("is_online", "BOOLEAN DEFAULT FALSE"),
-            ("session_token", "VARCHAR(255)"),
-            ("last_login", "TIMESTAMP"),
-            ("last_ip", "VARCHAR(50)"),
-        ]
+    # Ensure users table has new columns
+    if 'users' not in existing_tables:
+        print("Warning: 'users' table not found. Create tables via migrations before running this script.")
+        return
 
-        for col_name, col_type in migrations:
+    columns = {col['name'] for col in inspector.get_columns('users')}
+    print(f"Current users columns: {sorted(columns)}")
+
+    with engine.begin() as conn:
+        for col_name, col_type in col_types.items():
             if col_name not in columns:
                 try:
-                    cursor.execute(
-                        f"ALTER TABLE users ADD COLUMN {col_name} {col_type}")
+                    # SQLite has limited ALTER TABLE support but ADD COLUMN works
+                    alter_sql = f"ALTER TABLE users ADD COLUMN {col_name} {col_type}"
+                    conn.execute(text(alter_sql))
                     print(f"  ✅ Added column: {col_name}")
                 except Exception as e:
                     print(f"  ❌ Error adding {col_name}: {e}")
             else:
                 print(f"  ✅ Column already exists: {col_name}")
 
-        # Ensure roles table exists and has proper structure
-        cursor.execute("""
-            SELECT EXISTS (
-                SELECT FROM information_schema.tables 
-                WHERE table_name = 'roles'
-            )
-        """)
-        result = cursor.fetchone()
-        if result and not result[0]:
-            print("  📋 Creating roles table...")
-            cursor.execute("""
-                CREATE TABLE roles (
-                    id SERIAL PRIMARY KEY,
-                    name VARCHAR(50) UNIQUE NOT NULL,
-                    display_name VARCHAR(100) NOT NULL,
+    print("✅ Migration completed")
+
+
+def create_sample_groups():
+    engine = get_engine()
+    inspector = inspect(engine)
+    existing_tables = inspector.get_table_names()
+
+    with engine.begin() as conn:
+        # Create chat_groups if missing
+        if 'chat_groups' not in existing_tables:
+            if engine.dialect.name == 'sqlite':
+                conn.execute(text('''
+                CREATE TABLE chat_groups (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    name TEXT NOT NULL,
                     description TEXT,
+                    created_by INTEGER NOT NULL,
+                    is_active BOOLEAN DEFAULT 1,
+                    created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+                )
+                '''))
+            else:
+                conn.execute(text('''
+                CREATE TABLE chat_groups (
+                    id SERIAL PRIMARY KEY,
+                    name VARCHAR(100) NOT NULL,
+                    description TEXT,
+                    created_by INTEGER NOT NULL REFERENCES users(id),
                     is_active BOOLEAN DEFAULT TRUE,
-                    level INTEGER DEFAULT 1,
-                    permissions JSONB DEFAULT '{}'
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
                 )
-            """)
-            print("  ✅ Created roles table")
+                '''))
+            print("  ✅ chat_groups created")
 
-        # Ensure default roles exist
-        cursor.execute("SELECT COUNT(*) FROM roles")
-        result = cursor.fetchone()
-        if result and result[0] == 0:
-            roles = [
-                ("admin", "Administrator", "Full system access", 100,
-                 '{"manage_users": true, "manage_employees": true, "manage_departments": true, "view_reports": true}'),
-                ("employee", "Employee", "Basic employee access",
-                 10, '{"view_profile": true, "apply_leave": true}'),
-            ]
-            for name, display_name, description, level, permissions in roles:
-                cursor.execute(
-                    "INSERT INTO roles (name, display_name, description, level, permissions) VALUES (%s, %s, %s, %s, %s)",
-                    (name, display_name, description, level, permissions)
+        if 'chat_group_members' not in existing_tables:
+            if engine.dialect.name == 'sqlite':
+                conn.execute(text('''
+                CREATE TABLE chat_group_members (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    group_id INTEGER NOT NULL,
+                    user_id INTEGER NOT NULL,
+                    role TEXT DEFAULT 'member',
+                    joined_at DATETIME DEFAULT CURRENT_TIMESTAMP
                 )
-            print("  ✅ Added default roles")
+                '''))
+            else:
+                conn.execute(text('''
+                CREATE TABLE chat_group_members (
+                    id SERIAL PRIMARY KEY,
+                    group_id INTEGER NOT NULL REFERENCES chat_groups(id),
+                    user_id INTEGER NOT NULL REFERENCES users(id),
+                    role VARCHAR(20) DEFAULT 'member',
+                    joined_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                )
+                '''))
+            print("  ✅ chat_group_members created")
 
-        conn.close()
-        print("✅ PostgreSQL migration completed successfully!")
-        return True
+        if 'chat_messages' not in existing_tables:
+            if engine.dialect.name == 'sqlite':
+                conn.execute(text('''
+                CREATE TABLE chat_messages (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    sender_id INTEGER NOT NULL,
+                    group_id INTEGER,
+                    receiver_id INTEGER,
+                    content TEXT NOT NULL,
+                    message_type TEXT DEFAULT 'text',
+                    is_read BOOLEAN DEFAULT 0,
+                    has_attachment BOOLEAN DEFAULT 0,
+                    attachment_path TEXT,
+                    created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+                )
+                '''))
+            else:
+                conn.execute(text('''
+                CREATE TABLE chat_messages (
+                    id SERIAL PRIMARY KEY,
+                    sender_id INTEGER NOT NULL REFERENCES users(id),
+                    group_id INTEGER REFERENCES chat_groups(id),
+                    receiver_id INTEGER REFERENCES users(id),
+                    content TEXT NOT NULL,
+                    message_type VARCHAR(20) DEFAULT 'text',
+                    is_read BOOLEAN DEFAULT FALSE,
+                    has_attachment BOOLEAN DEFAULT FALSE,
+                    attachment_path VARCHAR(500),
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                )
+                '''))
+            print("  ✅ chat_messages created")
 
-    except Exception as e:
-        print(f"❌ PostgreSQL migration failed: {e}")
-        return False
-
-
-def create_sample_groups_sqlite():
-    """Create sample chat groups for SQLite"""
-
-    db_path = os.path.join(os.path.dirname(__file__), '..', 'vernika.db')
-    db_path = os.path.abspath(db_path)
-
-    conn = sqlite3.connect(db_path)
-    cursor = conn.cursor()
-
-    # Create chat_groups table
-    cursor.execute("""CREATE TABLE IF NOT EXISTS chat_groups (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        name TEXT NOT NULL,
-        description TEXT,
-        created_by INTEGER NOT NULL,
-        is_active BOOLEAN DEFAULT 1,
-        created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-        FOREIGN KEY (created_by) REFERENCES users(id)
-    )""")
-
-    # Create chat_group_members table
-    cursor.execute("""CREATE TABLE IF NOT EXISTS chat_group_members (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        group_id INTEGER NOT NULL,
-        user_id INTEGER NOT NULL,
-        role TEXT DEFAULT 'member',
-        joined_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-        FOREIGN KEY (group_id) REFERENCES chat_groups(id),
-        FOREIGN KEY (user_id) REFERENCES users(id)
-    )""")
-
-    # Create chat_messages table
-    cursor.execute("""CREATE TABLE IF NOT EXISTS chat_messages (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        sender_id INTEGER NOT NULL,
-        group_id INTEGER,
-        receiver_id INTEGER,
-        content TEXT NOT NULL,
-        message_type TEXT DEFAULT 'text',
-        is_read BOOLEAN DEFAULT 0,
-        has_attachment BOOLEAN DEFAULT 0,
-        attachment_path TEXT,
-        created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-        FOREIGN KEY (sender_id) REFERENCES users(id),
-        FOREIGN KEY (group_id) REFERENCES chat_groups(id),
-        FOREIGN KEY (receiver_id) REFERENCES users(id)
-    )""")
-
-    # Create sample groups if none exist
-    cursor.execute("SELECT COUNT(*) FROM chat_groups")
-    result = cursor.fetchone()
-    if result and result[0] == 0:
-        # Create General group
-        cursor.execute(
-            "INSERT INTO chat_groups (name, description, created_by) VALUES (?, ?, ?)",
-            ("General", "General discussion for all employees", 1)
-        )
-        group_id = cursor.lastrowid
-
-        # Add all users to General group
-        cursor.execute("SELECT id FROM users")
-        for (user_id,) in cursor.fetchall():
-            role = "admin" if user_id == 1 else "member"
-            cursor.execute(
-                "INSERT INTO chat_group_members (group_id, user_id, role) VALUES (?, ?, ?)",
-                (group_id, user_id, role)
-            )
-
-        # Create IT Team group
-        cursor.execute(
-            "INSERT INTO chat_groups (name, description, created_by) VALUES (?, ?, ?)",
-            ("IT Team", "Discussion for IT department members", 1)
-        )
-        group_id = cursor.lastrowid
-
-        # Add admin and some members
-        for user_id in [1, 2, 3]:
-            role = "admin" if user_id == 1 else "member"
-            cursor.execute(
-                "INSERT INTO chat_group_members (group_id, user_id, role) VALUES (?, ?, ?)",
-                (group_id, user_id, role)
-            )
-
-        print("✅ Created sample chat groups")
-
-    conn.commit()
-    conn.close()
-    print("✅ Chat tables created successfully!")
+    print("✅ Chat tables ensured")
 
 
-def create_sample_groups_postgresql():
-    """Create sample chat groups for PostgreSQL"""
-    try:
-        import psycopg2
-    except ImportError:
-        print("❌ psycopg2 not installed. Install it with: pip install psycopg2-binary")
-        return False
-
-    # Parse the DATABASE_URL
-    try:
-        from urllib.parse import urlparse
-        parsed = urlparse(DATABASE_URL)
-
-        user = parsed.username
-        password = parsed.password
-        host = parsed.hostname
-        port = parsed.port or 5432
-        database = parsed.path.strip('/')
-    except Exception as e:
-        print(f"❌ Error parsing DATABASE_URL: {e}")
-        return False
-
-    try:
-        conn = psycopg2.connect(
-            host=host,
-            port=port,
-            database=database,
-            user=user,
-            password=password
-        )
-        conn.autocommit = True
-        cursor = conn.cursor()
-
-        # Create chat_groups table
-        cursor.execute("""
-            CREATE TABLE IF NOT EXISTS chat_groups (
-                id SERIAL PRIMARY KEY,
-                name VARCHAR(100) NOT NULL,
-                description TEXT,
-                created_by INTEGER NOT NULL REFERENCES users(id),
-                is_active BOOLEAN DEFAULT TRUE,
-                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-            )
-        """)
-
-        # Create chat_group_members table
-        cursor.execute("""
-            CREATE TABLE IF NOT EXISTS chat_group_members (
-                id SERIAL PRIMARY KEY,
-                group_id INTEGER NOT NULL REFERENCES chat_groups(id),
-                user_id INTEGER NOT NULL REFERENCES users(id),
-                role VARCHAR(20) DEFAULT 'member',
-                joined_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-            )
-        """)
-
-        # Create chat_messages table
-        cursor.execute("""
-            CREATE TABLE IF NOT EXISTS chat_messages (
-                id SERIAL PRIMARY KEY,
-                sender_id INTEGER NOT NULL REFERENCES users(id),
-                group_id INTEGER REFERENCES chat_groups(id),
-                receiver_id INTEGER REFERENCES users(id),
-                content TEXT NOT NULL,
-                message_type VARCHAR(20) DEFAULT 'text',
-                is_read BOOLEAN DEFAULT FALSE,
-                has_attachment BOOLEAN DEFAULT FALSE,
-                attachment_path VARCHAR(500),
-                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-            )
-        """)
-
-        # Create sample groups if none exist
-        cursor.execute("SELECT COUNT(*) FROM chat_groups")
-        result = cursor.fetchone()
-        if result and result[0] == 0:
-            # Create General group
-            cursor.execute(
-                "INSERT INTO chat_groups (name, description, created_by) VALUES (%s, %s, %s) RETURNING id",
-                ("General", "General discussion for all employees", 1)
-            )
-            group_id_result = cursor.fetchone()
-            if group_id_result:
-                group_id = group_id_result[0]
-
-                # Add all users to General group
-                cursor.execute("SELECT id FROM users")
-                for (user_id,) in cursor.fetchall():
-                    role = "admin" if user_id == 1 else "member"
-                    cursor.execute(
-                        "INSERT INTO chat_group_members (group_id, user_id, role) VALUES (%s, %s, %s)",
-                        (group_id, user_id, role)
-                    )
-
-            # Create IT Team group
-            cursor.execute(
-                "INSERT INTO chat_groups (name, description, created_by) VALUES (%s, %s, %s) RETURNING id",
-                ("IT Team", "Discussion for IT department members", 1)
-            )
-            group_id_result = cursor.fetchone()
-            if group_id_result:
-                group_id = group_id_result[0]
-
-                # Add admin and some members
-                for user_id in [1, 2, 3]:
-                    role = "admin" if user_id == 1 else "member"
-                    cursor.execute(
-                        "INSERT INTO chat_group_members (group_id, user_id, role) VALUES (%s, %s, %s)",
-                        (group_id, user_id, role)
-                    )
+if __name__ == '__main__':
+    migrate_with_sqlalchemy()
 
             print("✅ Created sample chat groups")
 

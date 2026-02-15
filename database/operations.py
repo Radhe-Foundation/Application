@@ -1011,23 +1011,25 @@ def send_email(db: Session, sender_id: int, subject: str, body: str,
 
 def get_user_emails(db: Session, user_id: int, folder: str = "inbox", limit: int = 50):
     """Get emails for a user by folder"""
+    from sqlalchemy.orm import joinedload
+
     if folder == "inbox":
-        return db.query(EmailMessage).join(EmailRecipient).filter(
+        return db.query(EmailMessage).options(joinedload(EmailMessage.sender)).join(EmailRecipient).filter(
             EmailRecipient.recipient_id == user_id,
             EmailMessage.is_draft == False
         ).order_by(EmailMessage.created_at.desc()).limit(limit).all()
     elif folder == "sent":
-        return db.query(EmailMessage).filter(
+        return db.query(EmailMessage).options(joinedload(EmailMessage.sender)).filter(
             EmailMessage.sender_id == user_id,
             EmailMessage.is_draft == False
         ).order_by(EmailMessage.created_at.desc()).limit(limit).all()
     elif folder == "drafts":
-        return db.query(EmailMessage).filter(
+        return db.query(EmailMessage).options(joinedload(EmailMessage.sender)).filter(
             EmailMessage.sender_id == user_id,
             EmailMessage.is_draft == True
         ).order_by(EmailMessage.created_at.desc()).limit(limit).all()
     elif folder == "announcements":
-        return db.query(EmailMessage).filter(
+        return db.query(EmailMessage).options(joinedload(EmailMessage.sender)).filter(
             EmailMessage.sender_id == user_id,
             EmailMessage.category == EmailCategory.ANNOUNCEMENT
         ).order_by(EmailMessage.created_at.desc()).limit(limit).all()

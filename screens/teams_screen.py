@@ -1,10 +1,23 @@
 """
 Vernika HRA - Teams Management Screen
-Placeholder screen for teams management
+PostgreSQL/SQLAlchemy based teams management
 """
 
 import flet as ft
-import sqlite3
+from sqlalchemy.orm import Session
+from database.connection import get_db_session
+from database.models import Team
+
+
+# Theme colors
+PRIMARY = "#7B1FA2"
+SUCCESS = "#4CAF50"
+ERROR = "#F44336"
+WARNING = "#FF9800"
+BACKGROUND = "#F5F5F5"
+SURFACE = "#FFFFFF"
+TEXT_PRIMARY = "#1A1C1E"
+TEXT_SECONDARY = "#6C757D"
 
 
 class TeamsScreen(ft.Container):
@@ -13,18 +26,13 @@ class TeamsScreen(ft.Container):
         self._page = page
         self.user = user
         self.expand = True
-        self.bgcolor = "#F5F5F5"
+        self.bgcolor = BACKGROUND
         self.content = self._build_content()
-
-    def _get_db(self):
-        conn = sqlite3.connect('vernika.db')
-        conn.row_factory = sqlite3.Row
-        return conn
 
     def _build_content(self):
         header = ft.Container(
             padding=15,
-            bgcolor="#7B1FA2",
+            bgcolor=PRIMARY,
             content=ft.Row([
                 ft.IconButton(
                     icon=ft.Icons.ARROW_BACK,
@@ -63,17 +71,21 @@ class TeamsScreen(ft.Container):
     def on_create(self, e):
         self._show_create_dialog()
 
-    def _build_teams_list(self):
-        """Build teams list"""
+    def _get_teams(self):
+        """Get all teams from PostgreSQL"""
+        db = get_db_session()
         try:
-            conn = self._get_db()
-            cursor = conn.cursor()
-            cursor.execute("SELECT * FROM teams ORDER BY name")
-            teams = cursor.fetchall()
-            conn.close()
+            teams = db.query(Team).order_by(Team.name).all()
+            return teams
         except Exception as e:
             print(f"Error loading teams: {e}")
-            teams = []
+            return []
+        finally:
+            db.close()
+
+    def _build_teams_list(self):
+        """Build teams list"""
+        teams = self._get_teams()
 
         if not teams:
             return ft.Container(
@@ -84,7 +96,7 @@ class TeamsScreen(ft.Container):
                     ft.ElevatedButton(
                         "Create First Team",
                         on_click=self.on_create,
-                        style=ft.ButtonStyle(bgcolor="#7B1FA2", color="WHITE")
+                        style=ft.ButtonStyle(bgcolor=PRIMARY, color="WHITE")
                     )
                 ], horizontal_alignment=ft.CrossAxisAlignment.CENTER),
                 alignment=ft.alignment.Alignment(0, 0),
@@ -96,22 +108,22 @@ class TeamsScreen(ft.Container):
             rows.append(
                 ft.DataRow(
                     cells=[
-                        ft.DataCell(ft.Text(str(team['id']))),
-                        ft.DataCell(ft.Text(team['name'] or "")),
-                        ft.DataCell(ft.Text(team['description'] or "-")),
+                        ft.DataCell(ft.Text(str(team.id))),
+                        ft.DataCell(ft.Text(team.name or "")),
+                        ft.DataCell(ft.Text(team.description or "-")),
                         ft.DataCell(
                             ft.Row([
                                 ft.IconButton(
                                     icon=ft.Icons.EDIT,
                                     icon_color="#1976D2",
-                                    on_click=lambda e, team_id=team['id']: self._show_edit_dialog(
+                                    on_click=lambda e, team_id=team.id: self._show_edit_dialog(
                                         team_id),
                                     tooltip="Edit"
                                 ),
                                 ft.IconButton(
                                     icon=ft.Icons.DELETE,
                                     icon_color="#D32F2F",
-                                    on_click=lambda e, team_id=team['id']: self._show_delete_dialog(
+                                    on_click=lambda e, team_id=team.id: self._show_delete_dialog(
                                         team_id),
                                     tooltip="Delete"
                                 ),
@@ -148,14 +160,25 @@ class TeamsScreen(ft.Container):
                 self._page.update()
                 return
 
+            db = get_db_session()
             try:
-                conn = self._get_db()
-                cursor = conn.cursor()
-                cursor.execute(
-                    "INSERT INTO teams (name, description) VALUES (?, ?)",
-                    (name.value, description.value or None))
-                conn.commit()
-                conn.close()
+                # Check if team name exists
+                existing = db.query(Team).filter(
+                    Team.name == name.value).first()
+                if existing:
+                    error.value = "Team name already exists!"
+                    error.visible = True
+                    self._page.update()
+                    return
+
+                # Create new team
+                new_team = Team(
+                    name=name.value,
+                    description=description.value or None
+                )
+                db.add(new_team)
+                db.commit()
+
                 self._close_dialog()
                 self._show_success("Team created successfully!")
                 self._refresh()
@@ -163,6 +186,8 @@ class TeamsScreen(ft.Container):
                 error.value = str(ex)
                 error.visible = True
                 self._page.update()
+            finally:
+                db.close()
 
         dialog = ft.AlertDialog(
             modal=True,
@@ -173,7 +198,7 @@ class TeamsScreen(ft.Container):
                 ft.TextButton(
                     "Cancel", on_click=lambda e: self._close_dialog()),
                 ft.ElevatedButton("Create", on_click=save, style=ft.ButtonStyle(
-                    bgcolor="#7B1FA2", color="WHITE"))
+                    bgcolor=PRIMARY, color="WHITE"))
             ]
         )
         self._page.overlay.append(dialog)
@@ -182,34 +207,40 @@ class TeamsScreen(ft.Container):
 
     def _show_edit_dialog(self, team_id):
         """Show edit team dialog"""
-        conn = self._get_db()
-        cursor = conn.cursor()
-        cursor.execute("SELECT * FROM teams WHERE id=?", (team_id,))
-        team = cursor.fetchone()
-        conn.close()
+        db = get_db_session()
+        try:
+            team = db.query(Team).filter(Team.id == team_id).first()
+        except Exception as e:
+            self._show_error(f"Error: {e}")
+            return
+        finally:
+            db.close()
 
         if not team:
             self._show_error("Team not found!")
             return
 
         name = ft.TextField(label="Team Name *", width=300,
-                            value=team['name'] or "")
+                            value=team.name or "")
         description = ft.TextField(label="Description", width=400, multiline=True,
-                                   value=team['description'] or "")
+                                   value=team.description or "")
 
         def update(e):
+            db = get_db_session()
             try:
-                conn = self._get_db()
-                cursor = conn.cursor()
-                cursor.execute("UPDATE teams SET name=?, description=? WHERE id=?",
-                               (name.value, description.value or None, team_id))
-                conn.commit()
-                conn.close()
+                db.query(Team).filter(Team.id == team_id).update({
+                    Team.name: name.value,
+                    Team.description: description.value or None
+                })
+                db.commit()
+
                 self._close_dialog()
                 self._show_success("Team updated successfully!")
                 self._refresh()
             except Exception as ex:
                 self._show_error(str(ex))
+            finally:
+                db.close()
 
         dialog = ft.AlertDialog(
             modal=True,
@@ -228,33 +259,37 @@ class TeamsScreen(ft.Container):
 
     def _show_delete_dialog(self, team_id):
         """Show delete confirmation dialog"""
-        conn = self._get_db()
-        cursor = conn.cursor()
-        cursor.execute("SELECT name FROM teams WHERE id=?", (team_id,))
-        team = cursor.fetchone()
-        conn.close()
+        db = get_db_session()
+        try:
+            team = db.query(Team).filter(Team.id == team_id).first()
+        except Exception as e:
+            self._show_error(f"Error: {e}")
+            return
+        finally:
+            db.close()
 
         if not team:
             self._show_error("Team not found!")
             return
 
         def confirm(e):
+            db = get_db_session()
             try:
-                conn = self._get_db()
-                cursor = conn.cursor()
-                cursor.execute("DELETE FROM teams WHERE id=?", (team_id,))
-                conn.commit()
-                conn.close()
+                db.query(Team).filter(Team.id == team_id).delete()
+                db.commit()
+
                 self._close_dialog()
                 self._show_success("Team deleted!")
                 self._refresh()
             except Exception as ex:
                 self._show_error(str(ex))
+            finally:
+                db.close()
 
         dialog = ft.AlertDialog(
             modal=True,
             title=ft.Text("Delete Team?", color="#F44336"),
-            content=ft.Text(f"Delete '{team['name']}'?"),
+            content=ft.Text(f"Delete '{team.name}'?"),
             actions=[
                 ft.TextButton(
                     "Cancel", on_click=lambda e: self._close_dialog()),

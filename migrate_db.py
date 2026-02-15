@@ -1,168 +1,28 @@
 """
-Database Migration Script
-Creates missing tables and fixes schema issues
+Database Migration Runner
+This script now delegates table creation to SQLAlchemy model metadata.
+It is safer and ensures the database schema matches the application's
+ORM models in `database.models`.
 """
 
-import sqlite3
-import sys
+from database.connection import init_db, get_db_info
 
 
 def run_migration():
-    """Run database migrations to add missing tables"""
+    print("Initializing database from model metadata...")
+    init_db()
+    info = get_db_info()
+    print(
+        f"Database initialized using dialect: {info.get('dialect')}, url: {str(info.get('url'))}")
 
-    conn = sqlite3.connect('vernika.db')
-    cursor = conn.cursor()
 
-    # List of tables that should exist based on models.py
-    required_tables = [
-        # Core tables
-        "companies",
-        "roles",
-        "users",
-        "departments",
-        "positions",
-        "employees",
-
-        # Attendance & Leave
-        "attendance",
-        "attendances",  # Alternative name
-        "leave_type_configs",
-        "leave_balances",
-        "leave_requests",
-
-        # Tasks
-        "tasks",
-        "task_comments",
-
-        # Communication
-        "chat_groups",
-        "chat_group_members",
-        "chat_messages",
-        "messages",
-        "email_messages",
-        "email_recipients",
-        "meetings",
-        "meeting_participants",
-        "documents",
-        "user_permissions",
-
-        # Announcements (NEW)
-        "announcements",
-
-        # Audit
-        "audit_logs",
-        "time_off_requests",
-
-        # Screen Access (NEW)
-        "screen_access",
-
-        # ETL Tables (NEW)
-        "etl_jobs",
-        "data_import_logs",
-        "powerbi_refresh_logs",
-        "excel_templates",
-    ]
-
-    # Check existing tables
-    cursor.execute(
-        "SELECT name FROM sqlite_master WHERE type='table' ORDER BY name;")
-    existing_tables = [row[0] for row in cursor.fetchall()]
-    print(f"Existing tables: {existing_tables}")
-
-    # Create missing tables
-    created_tables = []
-
-    # Attendance table (main one used by attendance_screen.py)
-    if "attendance" not in existing_tables:
-        try:
-            cursor.execute("""
-                CREATE TABLE IF NOT EXISTS attendance (
-                    id INTEGER PRIMARY KEY AUTOINCREMENT,
-                    employee_id INTEGER NOT NULL,
-                    date TEXT NOT NULL,
-                    check_in TEXT,
-                    check_out TEXT,
-                    status TEXT NOT NULL DEFAULT 'present',
-                    working_hours REAL,
-                    created_at TEXT DEFAULT CURRENT_TIMESTAMP,
-                    FOREIGN KEY (employee_id) REFERENCES employees(id),
-                    UNIQUE(employee_id, date)
-                )
-            """)
-            created_tables.append("attendance")
-            print("✅ Created 'attendance' table")
-        except Exception as e:
-            print(f"❌ Error creating attendance table: {e}")
-
-    # Leave requests table
-    if "leave_requests" not in existing_tables:
-        try:
-            cursor.execute("""
-                CREATE TABLE IF NOT EXISTS leave_requests (
-                    id INTEGER PRIMARY KEY AUTOINCREMENT,
-                    employee_id INTEGER NOT NULL,
-                    leave_type_id INTEGER NOT NULL,
-                    start_date TEXT NOT NULL,
-                    end_date TEXT NOT NULL,
-                    days_requested REAL NOT NULL,
-                    reason TEXT NOT NULL,
-                    status TEXT DEFAULT 'pending',
-                    created_at TEXT DEFAULT CURRENT_TIMESTAMP,
-                    FOREIGN KEY (employee_id) REFERENCES employees(id),
-                    FOREIGN KEY (leave_type_id) REFERENCES leave_type_configs(id)
-                )
-            """)
-            created_tables.append("leave_requests")
-            print("✅ Created 'leave_requests' table")
-        except Exception as e:
-            print(f"❌ Error creating leave_requests table: {e}")
-
-    # Leave type configs table
-    if "leave_type_configs" not in existing_tables:
-        try:
-            cursor.execute("""
-                CREATE TABLE IF NOT EXISTS leave_type_configs (
-                    id INTEGER PRIMARY KEY AUTOINCREMENT,
-                    name TEXT UNIQUE NOT NULL,
-                    display_name TEXT NOT NULL,
-                    max_days_per_year INTEGER DEFAULT 0,
-                    is_paid INTEGER DEFAULT 1,
-                    color TEXT DEFAULT '#2E86AB'
-                )
-            """)
-            created_tables.append("leave_type_configs")
-            print("✅ Created 'leave_type_configs' table")
-
-            # Insert default leave types
-            cursor.executemany(
-                "INSERT OR IGNORE INTO leave_type_configs (name, display_name, max_days_per_year, is_paid, color) VALUES (?, ?, ?, ?, ?)",
-                [
-                    ("annual", "Annual Leave", 20, 1, "#4CAF50"),
-                    ("sick", "Sick Leave", 10, 1, "#F44336"),
-                    ("personal", "Personal Leave", 5, 1, "#FF9800"),
-                    ("maternity", "Maternity Leave", 90, 1, "#E91E63"),
-                    ("paternity", "Paternity Leave", 14, 1, "#2196F3"),
-                    ("bereavement", "Bereavement Leave", 5, 1, "#9C27B0"),
-                    ("unpaid", "Unpaid Leave", 0, 0, "#607D8B"),
-                ]
-            )
-            print("✅ Inserted default leave types")
-        except Exception as e:
-            print(f"❌ Error creating leave_type_configs table: {e}")
-
-    # Leave balances table
-    if "leave_balances" not in existing_tables:
-        try:
-            cursor.execute("""
-                CREATE TABLE IF NOT EXISTS leave_balances (
-                    id INTEGER PRIMARY KEY AUTOINCREMENT,
-                    employee_id INTEGER NOT NULL,
-                    leave_type_id INTEGER NOT NULL,
+if __name__ == '__main__':
+    run_migration()
                     year INTEGER NOT NULL,
                     total_days REAL DEFAULT 0,
                     used_days REAL DEFAULT 0,
-                    FOREIGN KEY (employee_id) REFERENCES employees(id),
-                    FOREIGN KEY (leave_type_id) REFERENCES leave_type_configs(id)
+                    FOREIGN KEY(employee_id) REFERENCES employees(id),
+                    FOREIGN KEY(leave_type_id) REFERENCES leave_type_configs(id)
                 )
             """)
             created_tables.append("leave_balances")

@@ -1,163 +1,29 @@
 #!/usr/bin/env python3
 """
-Vernika HRA - Application Fix Script
-Run this to fix common issues and initialize the database
+Vernika HRA - Application Fix Script (SQLAlchemy-backed)
+
+This script initializes the database using the project's SQLAlchemy
+`init_db()` function and provides a safe place to run maintenance tasks.
 """
 
-import sqlite3
-import os
-import bcrypt
-
-DB_PATH = '/Users/shashankrajput/Desktop/Vernika/vernika.db'
+from database.connection import init_db
 
 
 def fix_database():
-    """Fix database issues and ensure all tables exist"""
+    """Initialize/verify database schema using SQLAlchemy models."""
     print("=" * 60)
-    print("Vernika HRA - Database Fix Script")
+    print("Vernika HRA - Database Fix Script (SQLAlchemy)")
     print("=" * 60)
     print()
 
-    # Create database connection
-    conn = sqlite3.connect(DB_PATH)
-    cursor = conn.cursor()
+    # Initialize DB (create tables defined in models)
+    init_db()
 
-    # Enable foreign keys
-    cursor.execute("PRAGMA foreign_keys=ON")
+    print("Database initialized/verified via SQLAlchemy.\n")
 
-    # Create companies table
-    cursor.execute("""
-        CREATE TABLE IF NOT EXISTS companies (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            name VARCHAR(200) NOT NULL,
-            email VARCHAR(100),
-            phone VARCHAR(20),
-            address TEXT
-        )
-    """)
 
-    # Create roles table
-    cursor.execute("""
-        CREATE TABLE IF NOT EXISTS roles (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            name VARCHAR(50) UNIQUE NOT NULL,
-            display_name VARCHAR(100) NOT NULL,
-            description TEXT,
-            is_active BOOLEAN DEFAULT 1,
-            level INTEGER DEFAULT 1,
-            permissions TEXT DEFAULT '{}'
-        )
-    """)
-
-    # Create users table
-    cursor.execute("""
-        CREATE TABLE IF NOT EXISTS users (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            username VARCHAR(50) UNIQUE NOT NULL,
-            email VARCHAR(100) UNIQUE NOT NULL,
-            password_hash VARCHAR(255) NOT NULL,
-            role_id INTEGER NOT NULL,
-            status VARCHAR(20) DEFAULT 'active',
-            created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-            FOREIGN KEY (role_id) REFERENCES roles(id)
-        )
-    """)
-
-    # Create departments table
-    cursor.execute("""
-        CREATE TABLE IF NOT EXISTS departments (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            name VARCHAR(100) NOT NULL,
-            code VARCHAR(20) UNIQUE NOT NULL,
-            description TEXT,
-            head_id INTEGER,
-            is_active BOOLEAN DEFAULT 1,
-            created_at DATETIME DEFAULT CURRENT_TIMESTAMP
-        )
-    """)
-
-    # Create positions table
-    cursor.execute("""
-        CREATE TABLE IF NOT EXISTS positions (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            title VARCHAR(100) NOT NULL,
-            code VARCHAR(20) UNIQUE NOT NULL,
-            description TEXT,
-            department_id INTEGER,
-            is_active BOOLEAN DEFAULT 1,
-            min_salary REAL,
-            max_salary REAL,
-            created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-            FOREIGN KEY (department_id) REFERENCES departments(id)
-        )
-    """)
-
-    # Create employees table
-    cursor.execute("""
-        CREATE TABLE IF NOT EXISTS employees (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            employee_code VARCHAR(20) UNIQUE NOT NULL,
-            user_id INTEGER UNIQUE,
-            company_id INTEGER,
-            first_name VARCHAR(100) NOT NULL,
-            last_name VARCHAR(100) NOT NULL,
-            date_of_birth DATE,
-            gender VARCHAR(20),
-            email VARCHAR(100),
-            phone VARCHAR(20),
-            department_id INTEGER,
-            position_id INTEGER,
-            date_of_joining DATE,
-            is_active BOOLEAN DEFAULT 1,
-            created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-            employment_type VARCHAR(50) DEFAULT 'full_time',
-            employment_status VARCHAR(50) DEFAULT 'active',
-            address TEXT,
-            city VARCHAR(100),
-            state VARCHAR(100),
-            pincode VARCHAR(20),
-            emergency_contact_name VARCHAR(200),
-            emergency_phone VARCHAR(20),
-            emergency_relation VARCHAR(50),
-            bank_name VARCHAR(200),
-            account_number VARCHAR(50),
-            ifsc_code VARCHAR(50),
-            branch_name VARCHAR(200),
-            basic_salary REAL DEFAULT 0,
-            allowance REAL DEFAULT 0,
-            deduction REAL DEFAULT 0,
-            FOREIGN KEY (user_id) REFERENCES users(id),
-            FOREIGN KEY (company_id) REFERENCES companies(id),
-            FOREIGN KEY (department_id) REFERENCES departments(id),
-            FOREIGN KEY (position_id) REFERENCES positions(id)
-        )
-    """)
-
-    # Create leave_type_configs table
-    cursor.execute("""
-        CREATE TABLE IF NOT EXISTS leave_type_configs (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            name VARCHAR(50) UNIQUE NOT NULL,
-            display_name VARCHAR(50) NOT NULL,
-            max_days_per_year INTEGER DEFAULT 0,
-            is_paid BOOLEAN DEFAULT 1,
-            color VARCHAR(20) DEFAULT '#2E86AB'
-        )
-    """)
-
-    # Create leave_balances table
-    cursor.execute("""
-        CREATE TABLE IF NOT EXISTS leave_balances (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            employee_id INTEGER NOT NULL,
-            leave_type_id INTEGER NOT NULL,
-            year INTEGER NOT NULL,
-            total_days REAL DEFAULT 0,
-            used_days REAL DEFAULT 0,
-            FOREIGN KEY (employee_id) REFERENCES employees(id),
-            FOREIGN KEY (leave_type_id) REFERENCES leave_type_configs(id)
-        )
-    """)
+if __name__ == '__main__':
+    fix_database()
 
     # Create leave_requests table
     cursor.execute("""

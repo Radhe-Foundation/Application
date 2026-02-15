@@ -575,7 +575,7 @@ def get_user_role(user_data) -> str:
 def navigate_to_home(page: ft.Page, user_data):
     """
     Navigate user to their home screen based on role.
-    Admin users go to AdminScreen, employees go to DashboardScreen.
+    Admin users go to AdminScreen, employees go to EmployeeScreen.
 
     Args:
         page: Flet page object
@@ -588,9 +588,9 @@ def navigate_to_home(page: ft.Page, user_data):
         page.clean()
         page.add(AdminScreen(page, user_data))
     else:
-        from screens.dashboard_screen import DashboardScreen
+        from screens.employee_screen import EmployeeScreen
         page.clean()
-        page.add(DashboardScreen(page, user_data))
+        page.add(EmployeeScreen(page, user_data))
 
 
 def navigate_to_admin(page: ft.Page, user_data):

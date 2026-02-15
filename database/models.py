@@ -203,6 +203,51 @@ class Department(Base):
     created_at = Column(DateTime, default=datetime.utcnow)
 
 
+class Team(Base):
+    """Team model for team management"""
+    __tablename__ = "teams"
+
+    id = Column(Integer, primary_key=True, index=True)
+    name = Column(String(100), nullable=False)
+    description = Column(Text)
+    is_active = Column(Boolean, default=True)
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+
+class Announcement(Base):
+    """Announcement model for company announcements"""
+    __tablename__ = "announcements"
+
+    id = Column(Integer, primary_key=True, index=True)
+    title = Column(String(200), nullable=False)
+    content = Column(Text, nullable=False)
+    # general, important, event, policy
+    type = Column(String(50), default="general")
+    # low, normal, important, high
+    priority = Column(String(50), default="normal")
+    author = Column(String(100), default="Admin")
+    views = Column(Integer, default=0)
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow,
+                        onupdate=datetime.utcnow)
+
+
+class Project(Base):
+    """Project model for project management"""
+    __tablename__ = "projects"
+
+    id = Column(Integer, primary_key=True, index=True)
+    name = Column(String(200), nullable=False)
+    description = Column(Text)
+    client_name = Column(String(200))
+    start_date = Column(Date)
+    end_date = Column(Date)
+    budget = Column(Float, default=0)
+    # planning, active, on_hold, completed, cancelled
+    status = Column(String(50), default="planning")
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+
 class Position(Base):
     __tablename__ = "positions"
 
@@ -621,6 +666,26 @@ class ScreenAccess(Base):
 
     user = relationship("User", foreign_keys=[
                         user_id], backref="screen_access")
+    granter = relationship("User", foreign_keys=[granted_by])
+
+
+class ButtonAccess(Base):
+    """Button-level access permissions for employees"""
+    __tablename__ = "button_access"
+
+    id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=False)
+    # buttons like employees_add, employees_edit, leaves_apply, etc.
+    button_key = Column(String(100), nullable=False)
+    is_enabled = Column(Boolean, default=True)
+    granted_by = Column(Integer, ForeignKey("users.id"), nullable=True)
+    granted_at = Column(DateTime, nullable=True)
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow,
+                        onupdate=datetime.utcnow)
+
+    user = relationship("User", foreign_keys=[
+                        user_id], backref="button_access")
     granter = relationship("User", foreign_keys=[granted_by])
 
 

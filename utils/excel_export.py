@@ -7,20 +7,15 @@ import csv
 import io
 from datetime import datetime
 from typing import List, Dict, Any, Optional
-import sqlite3
+from sqlalchemy import text
+from database.connection import get_db_session
 
 
 class ExcelExporter:
-    """Export data to Excel-compatible CSV format"""
+    """Export data to Excel-compatible CSV format using SQLAlchemy sessions"""
 
-    def __init__(self, db_path: str = 'vernika.db'):
-        self.db_path = db_path
-
-    def get_connection(self):
-        """Get database connection"""
-        conn = sqlite3.connect(self.db_path)
-        conn.row_factory = sqlite3.Row
-        return conn
+    def __init__(self):
+        pass
 
     def export_employees(self, include_salary: bool = False) -> str:
         """
@@ -32,11 +27,9 @@ class ExcelExporter:
         Returns:
             CSV formatted string
         """
-        conn = self.get_connection()
-        cursor = conn.cursor()
-
-        query = """
-            SELECT 
+        session = get_db_session()
+        query = text("""
+            SELECT
                 e.id,
                 e.employee_code,
                 e.first_name,
@@ -57,8 +50,8 @@ class ExcelExporter:
         """
 
         if include_salary:
-            query = """
-                SELECT 
+            query=text("""
+                SELECT
                     e.id,
                     e.employee_code,
                     e.first_name,
@@ -81,25 +74,23 @@ class ExcelExporter:
                 LEFT JOIN positions p ON e.position_id = p.id
                 ORDER BY e.id ASC
             """
-
-        cursor.execute(query)
-        employees = cursor.fetchall()
-        conn.close()
+        result=session.execute(query)
+        employees=result.mappings().all()
 
         # Generate CSV
-        output = io.StringIO()
-        writer = csv.writer(output)
+        output=io.StringIO()
+        writer=csv.writer(output)
 
         # Write header
         if include_salary:
-            headers = [
+            headers=[
                 'ID', 'Employee Code', 'First Name', 'Last Name', 'Email', 'Phone',
                 'Department', 'Position', 'Employment Type', 'Employment Status',
                 'Date of Joining', 'Active', 'Basic Salary', 'Allowance',
                 'Deduction', 'Net Salary', 'Created At'
             ]
         else:
-            headers = [
+            headers=[
                 'ID', 'Employee Code', 'First Name', 'Last Name', 'Email', 'Phone',
                 'Department', 'Position', 'Employment Type', 'Employment Status',
                 'Date of Joining', 'Active', 'Created At'
@@ -109,7 +100,7 @@ class ExcelExporter:
 
         # Write data rows
         for emp in employees:
-            row = [
+            row=[
                 emp['id'],
                 emp['employee_code'],
                 emp['first_name'],
@@ -137,7 +128,7 @@ class ExcelExporter:
 
         return output.getvalue()
 
-    def export_attendance(self, start_date: str = None, end_date: str = None) -> str:
+    def export_attendance(self, start_date: str=None, end_date: str=None) -> str:
         """
         Export attendance records to CSV format.
 
@@ -145,11 +136,9 @@ class ExcelExporter:
             start_date: Start date (YYYY-MM-DD format)
             end_date: End date (YYYY-MM-DD format)
         """
-        conn = self.get_connection()
-        cursor = conn.cursor()
-
-        query = """
-            SELECT 
+        session=get_db_session()
+        query="""
+            SELECT
                 a.id,
                 a.employee_id,
                 e.employee_code,
@@ -165,26 +154,24 @@ class ExcelExporter:
             LEFT JOIN departments d ON e.department_id = d.id
         """
 
-        params = []
+        sql_text=query
+        conditions=[]
+        params: Dict[str, Any]={}
         if start_date:
-            query += " WHERE a.date >= ?"
-            params.append(start_date)
-
+            conditions.append("a.date >= :start_date")
+            params['start_date']=start_date
         if end_date:
-            if 'WHERE' in query:
-                query += " AND a.date <= ?"
-            else:
-                query += " WHERE a.date <= ?"
-            params.append(end_date)
+            conditions.append("a.date <= :end_date")
+            params['end_date']=end_date
+        if conditions:
+            sql_text += " WHERE " + " AND ".join(conditions)
+        sql_text += " ORDER BY a.date DESC, e.id ASC"
 
-        query += " ORDER BY a.date DESC, e.id ASC"
+        result=session.execute(text(sql_text), params)
+        records=result.mappings().all()
 
-        cursor.execute(query, params)
-        records = cursor.fetchall()
-        conn.close()
-
-        output = io.StringIO()
-        writer = csv.writer(output)
+        output=io.StringIO()
+        writer=csv.writer(output)
 
         writer.writerow([
             'ID', 'Employee ID', 'Employee Code', 'Employee Name', 'Department',
@@ -209,11 +196,9 @@ class ExcelExporter:
 
     def export_leave_requests(self) -> str:
         """Export leave requests to CSV format."""
-        conn = self.get_connection()
-        cursor = conn.cursor()
-
-        cursor.execute("""
-            SELECT 
+        session=get_db_session()
+        result=session.execute(text("""
+            SELECT
                 l.id,
                 e.employee_code,
                 e.first_name || ' ' || e.last_name as employee_name,
@@ -229,12 +214,10 @@ class ExcelExporter:
             LEFT JOIN departments d ON e.department_id = d.id
             ORDER BY l.created_at DESC, l.id DESC
         """)
+        records=result.mappings().all()
 
-        records = cursor.fetchall()
-        conn.close()
-
-        output = io.StringIO()
-        writer = csv.writer(output)
+        output=io.StringIO()
+        writer=csv.writer(output)
 
         writer.writerow([
             'ID', 'Employee Code', 'Employee Name', 'Department',
@@ -259,11 +242,9 @@ class ExcelExporter:
 
     def export_departments(self) -> str:
         """Export departments to CSV format."""
-        conn = self.get_connection()
-        cursor = conn.cursor()
-
-        cursor.execute("""
-            SELECT 
+        session=get_db_session()
+        result=session.execute(text("""
+            SELECT
                 d.id,
                 d.name,
                 d.code,
@@ -278,12 +259,10 @@ class ExcelExporter:
             LEFT JOIN employees e ON d.head_id = e.id
             ORDER BY d.id ASC
         """)
+        records=result.mappings().all()
 
-        records = cursor.fetchall()
-        conn.close()
-
-        output = io.StringIO()
-        writer = csv.writer(output)
+        output=io.StringIO()
+        writer=csv.writer(output)
 
         writer.writerow([
             'ID', 'Name', 'Code', 'Description', 'Budget', 'Location',
@@ -308,11 +287,9 @@ class ExcelExporter:
 
     def export_positions(self) -> str:
         """Export positions to CSV format."""
-        conn = self.get_connection()
-        cursor = conn.cursor()
-
-        cursor.execute("""
-            SELECT 
+        session=get_db_session()
+        result=session.execute(text("""
+            SELECT
                 p.id,
                 p.code,
                 p.title,
@@ -326,12 +303,10 @@ class ExcelExporter:
             LEFT JOIN departments d ON p.department_id = d.id
             ORDER BY p.id ASC
         """)
+        records=result.mappings().all()
 
-        records = cursor.fetchall()
-        conn.close()
-
-        output = io.StringIO()
-        writer = csv.writer(output)
+        output=io.StringIO()
+        writer=csv.writer(output)
 
         writer.writerow([
             'ID', 'Code', 'Title', 'Description', 'Department',
@@ -355,11 +330,9 @@ class ExcelExporter:
 
     def export_tasks(self) -> str:
         """Export tasks to CSV format."""
-        conn = self.get_connection()
-        cursor = conn.cursor()
-
-        cursor.execute("""
-            SELECT 
+        session=get_db_session()
+        result=session.execute(text("""
+            SELECT
                 t.id,
                 t.title,
                 t.description,
@@ -376,12 +349,10 @@ class ExcelExporter:
             LEFT JOIN employees e_created ON t.created_by_id = e_created.id
             ORDER BY t.created_at DESC, t.id DESC
         """)
+        records=result.mappings().all()
 
-        records = cursor.fetchall()
-        conn.close()
-
-        output = io.StringIO()
-        writer = csv.writer(output)
+        output=io.StringIO()
+        writer=csv.writer(output)
 
         writer.writerow([
             'ID', 'Title', 'Description', 'Priority', 'Status', 'Due Date',
@@ -419,12 +390,12 @@ class ExcelExporter:
         from pathlib import Path
 
         # Create reports directory if it doesn't exist
-        reports_dir = Path('reports')
+        reports_dir=Path('reports')
         reports_dir.mkdir(exist_ok=True)
 
         # Generate filename with timestamp
-        timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
-        filepath = reports_dir / f"{filename}_{timestamp}.csv"
+        timestamp=datetime.now().strftime('%Y%m%d_%H%M%S')
+        filepath=reports_dir / f"{filename}_{timestamp}.csv"
 
         # Write content
         with open(filepath, 'w', newline='', encoding='utf-8') as f:
@@ -433,13 +404,13 @@ class ExcelExporter:
         return str(filepath)
 
 
-def get_exporter(db_path: str = 'vernika.db') -> ExcelExporter:
+def get_exporter(db_path: str='vernika.db') -> ExcelExporter:
     """Get Excel exporter instance"""
     return ExcelExporter(db_path)
 
 
 if __name__ == "__main__":
-    exporter = get_exporter()
+    exporter=get_exporter()
 
     # Test exports
     print("Testing Excel Export...")
@@ -447,37 +418,37 @@ if __name__ == "__main__":
 
     # Export employees
     print("1. Exporting employees...")
-    employees_csv = exporter.export_employees()
-    filepath = exporter.save_to_file(employees_csv, "employees")
+    employees_csv=exporter.export_employees()
+    filepath=exporter.save_to_file(employees_csv, "employees")
     print(f"   Saved to: {filepath}")
     print(f"   Preview (first 500 chars): {employees_csv[:500]}...")
     print()
 
     # Export departments
     print("2. Exporting departments...")
-    depts_csv = exporter.export_departments()
-    filepath = exporter.save_to_file(depts_csv, "departments")
+    depts_csv=exporter.export_departments()
+    filepath=exporter.save_to_file(depts_csv, "departments")
     print(f"   Saved to: {filepath}")
     print()
 
     # Export attendance
     print("3. Exporting attendance...")
-    attendance_csv = exporter.export_attendance()
-    filepath = exporter.save_to_file(attendance_csv, "attendance")
+    attendance_csv=exporter.export_attendance()
+    filepath=exporter.save_to_file(attendance_csv, "attendance")
     print(f"   Saved to: {filepath}")
     print()
 
     # Export leave requests
     print("4. Exporting leave requests...")
-    leaves_csv = exporter.export_leave_requests()
-    filepath = exporter.save_to_file(leaves_csv, "leave_requests")
+    leaves_csv=exporter.export_leave_requests()
+    filepath=exporter.save_to_file(leaves_csv, "leave_requests")
     print(f"   Saved to: {filepath}")
     print()
 
     # Export with salary
     print("5. Exporting employees with salary...")
-    salary_csv = exporter.export_employees(include_salary=True)
-    filepath = exporter.save_to_file(salary_csv, "employees_salary")
+    salary_csv=exporter.export_employees(include_salary=True)
+    filepath=exporter.save_to_file(salary_csv, "employees_salary")
     print(f"   Saved to: {filepath}")
     print()
 
