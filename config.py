@@ -37,11 +37,12 @@ DB_PASSWORD = os.getenv("DB_PASSWORD", "Bv5EETFz7Hl5XoQv")
 DB_SSL_MODE = os.getenv("DB_SSL_MODE", "require")
 DB_SSL_CERT = os.getenv("DB_SSL_CERT", "None")
 
-# Database pool settings
-DB_POOL_SIZE = int(os.getenv("DB_POOL_SIZE", "2"))  # Reduced from 5
-DB_MAX_OVERFLOW = int(os.getenv("DB_MAX_OVERFLOW", "5"))  # Reduced from 10
-DB_POOL_RECYCLE = int(os.getenv("DB_POOL_RECYCLE", "1800")
-                      )  # Reduced from 3600
+# Database pool settings - optimized for cloud PostgreSQL
+# Increased for better concurrency
+DB_POOL_SIZE = int(os.getenv("DB_POOL_SIZE", "5"))
+DB_MAX_OVERFLOW = int(os.getenv("DB_MAX_OVERFLOW", "10")
+                      )  # Increased for burst traffic
+DB_POOL_RECYCLE = int(os.getenv("DB_POOL_RECYCLE", "1800"))  # 30 minutes
 DB_ECHO = os.getenv("DB_ECHO", "false").lower() == "true"
 
 # ==================== SECURITY CONFIGURATION ====================

@@ -17,7 +17,7 @@ from core.theme import theme
 from core.colors_compat import colors
 from database.connection import get_db_session
 from database.models import Employee, User, Task, TaskStatus, TaskPriority
-from datetime import datetime, date
+from datetime import datetime, date, timedelta
 
 
 class PerformanceScreen(Container):
@@ -365,7 +365,110 @@ class PerformanceScreen(Container):
 
     def _create_review_cycle(self, e: ft.ControlEvent):
         """Create a new review cycle"""
-        self.show_info("Review cycle creation coming soon!")
+        # Get all employees for the review cycle
+        db = get_db_session()
+        try:
+            employees = db.query(Employee).filter(
+                Employee.is_active == True).all()
+
+            cycle_name = ft.TextField(
+                label="Cycle Name",
+                width=300,
+                hint_text="e.g., Q1 2024 Review"
+            )
+
+            start_date = ft.TextField(
+                label="Start Date (YYYY-MM-DD)",
+                width=200,
+                value=datetime.now().strftime("%Y-%m-%d")
+            )
+
+            end_date = ft.TextField(
+                label="End Date (YYYY-MM-DD)",
+                width=200,
+                value=(datetime.now() + timedelta(days=30)).strftime("%Y-%m-%d")
+            )
+
+            description = ft.TextField(
+                label="Description",
+                width=300,
+                multiline=True,
+                min_lines=2,
+            )
+
+            error_text = ft.Text("", color=colors.ERROR,
+                                 size=12, visible=False)
+
+            def save_cycle(ef):
+                if not cycle_name.value:
+                    error_text.value = "Cycle name is required!"
+                    error_text.visible = True
+                    self._page.update()
+                    return
+
+                try:
+                    # Create tasks as placeholders for review cycles
+                    for emp in employees:
+                        task = Task(
+                            title=f"Performance Review - {cycle_name.value}",
+                            description=f"Review cycle: {description.value or 'N/A'}",
+                            assigned_to_id=emp.id,
+                            created_by_id=1,  # Default admin
+                            due_date=datetime.strptime(
+                                end_date.value, "%Y-%m-%d").date(),
+                            status=TaskStatus.TODO,
+                            priority=TaskPriority.MEDIUM,
+                        )
+                        db.add(task)
+
+                    db.commit()
+                    self.show_success(
+                        f"Review cycle '{cycle_name.value}' created for {len(employees)} employees!")
+                    self._close_dlg(None)
+                    self._load_reviews()
+
+                except Exception as ex:
+                    error_text.value = f"Error: {str(ex)}"
+                    error_text.visible = True
+                    self._page.update()
+
+            def close_dlg(ef):
+                self._close_dlg(ef)
+                db.close()
+
+            dialog = ft.AlertDialog(
+                title=ft.Text("Create Review Cycle"),
+                content=ft.Column([
+                    cycle_name,
+                    ft.Row([start_date, end_date], spacing=15),
+                    description,
+                    error_text,
+                ], spacing=15),
+                actions=[
+                    ft.TextButton("Cancel", on_click=close_dlg),
+                    ft.ElevatedButton(
+                        "Create",
+                        on_click=save_cycle,
+                        style=ft.ButtonStyle(
+                            bgcolor=theme.primary, color=colors.ON_PRIMARY),
+                    ),
+                ],
+            )
+
+            self._page.dialog = dialog
+            dialog.open = True
+            self._page.update()
+
+        except Exception as ex:
+            print(f"Error creating review cycle: {ex}")
+            self.show_error(f"Error: {str(ex)}")
+            db.close()
+
+    def _close_dlg(self, e):
+        """Close dialog"""
+        if self._page.dialog:
+            self._page.dialog.open = False
+        self._page.update()
 
     def _show_add_dialog(self, e: ft.ControlEvent):
         """Show add review dialog"""

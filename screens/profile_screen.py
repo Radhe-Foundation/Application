@@ -484,13 +484,171 @@ class ProfileScreen(ft.Container):
         self._page.add(LoginScreen(self._page))
 
     def edit_profile(self, e):
-        snack = ft.SnackBar(
-            content=ft.Text("Profile editing coming soon!"),
-            duration=3000
-        )
-        self._page.overlay.append(snack)
-        snack.open = True
+        """Edit user profile"""
+        if not self.employee_data:
+            self._show_snackbar(
+                "Profile data not available", bgcolor="#DC3545")
+            return
+
+        emp = self.employee_data
+
+        # Get current user data
+        db = get_db_session()
+        try:
+            user_id = self.user_data.get("user_id")
+            user = db.query(User).filter(User.id == user_id).first()
+            employee = db.query(Employee).filter(
+                Employee.user_id == user_id).first()
+
+            if not employee:
+                self._show_snackbar(
+                    "Employee record not found", bgcolor="#DC3545")
+                return
+
+            # Get departments and positions for dropdowns
+            departments = db.query(Department).all()
+            positions = db.query(Position).all()
+
+            # Build form fields
+            first_name = ft.TextField(
+                label="First Name",
+                value=emp.get('first_name', ''),
+                width=200
+            )
+            last_name = ft.TextField(
+                label="Last Name",
+                value=emp.get('last_name', ''),
+                width=200
+            )
+            email = ft.TextField(
+                label="Email",
+                value=emp.get('email', ''),
+                width=200,
+                disabled=True  # Email typically can't be changed
+            )
+            phone = ft.TextField(
+                label="Phone",
+                value=emp.get('phone', ''),
+                width=200
+            )
+
+            # Department dropdown
+            dept_options = [ft.dropdown.Option("", "Select Department")]
+            current_dept_id = None
+            for dept in departments:
+                dept_options.append(
+                    ft.dropdown.Option(str(dept.id), dept.name))
+                if emp.get('department_name') == dept.name:
+                    current_dept_id = str(dept.id)
+
+            department = ft.Dropdown(
+                label="Department",
+                width=200,
+                options=dept_options,
+                value=current_dept_id or "",
+            )
+
+            # Position dropdown
+            pos_options = [ft.dropdown.Option("", "Select Position")]
+            current_pos_id = None
+            for pos in positions:
+                pos_options.append(ft.dropdown.Option(str(pos.id), pos.title))
+                if emp.get('position_title') == pos.title:
+                    current_pos_id = str(pos.id)
+
+            position = ft.Dropdown(
+                label="Position",
+                width=200,
+                options=pos_options,
+                value=current_pos_id or "",
+            )
+
+            error_text = ft.Text("", color="#DC3545", size=12, visible=False)
+
+            def save_profile(ef):
+                if not first_name.value or not last_name.value:
+                    error_text.value = "First name and last name are required!"
+                    error_text.visible = True
+                    self._page.update()
+                    return
+
+                try:
+                    employee.first_name = first_name.value
+                    employee.last_name = last_name.value
+                    employee.phone = phone.value or None
+
+                    if department.value:
+                        employee.department_id = int(department.value)
+                    if position.value:
+                        employee.position_id = int(position.value)
+
+                    db.commit()
+
+                    # Refresh employee data
+                    self._get_employee_data()
+
+                    self._show_snackbar(
+                        "Profile updated successfully!", bgcolor="#28A745")
+                    self._close_dialog()
+                    self._refresh()
+
+                except Exception as ex:
+                    error_text.value = f"Error: {str(ex)}"
+                    error_text.visible = True
+                    self._page.update()
+
+            def close_dlg(ef):
+                self._close_dialog()
+                db.close()
+
+            dialog = ft.AlertDialog(
+                title=ft.Text("Edit Profile"),
+                content=ft.Column([
+                    ft.Row([first_name, last_name], spacing=15),
+                    email,
+                    phone,
+                    ft.Row([department, position], spacing=15),
+                    error_text,
+                ], spacing=10),
+                actions=[
+                    ft.TextButton("Cancel", on_click=close_dlg),
+                    ft.ElevatedButton(
+                        "Save",
+                        on_click=save_profile,
+                        style=ft.ButtonStyle(bgcolor="#2E86AB", color="WHITE"),
+                    ),
+                ],
+            )
+
+            self._page.dialog = dialog
+            dialog.open = True
+            self._page.update()
+
+        except Exception as ex:
+            print(f"Error loading profile: {ex}")
+            self._show_snackbar(f"Error: {str(ex)}", bgcolor="#DC3545")
+            db.close()
+
+    def _close_dialog(self):
+        """Close dialog"""
+        if self._page.dialog:
+            self._page.dialog.open = False
         self._page.update()
+
+    def _refresh(self):
+        """Refresh the UI"""
+        self.content = self.build_ui()
+        self._page.update()
+
+    def _show_snackbar(self, message, bgcolor="#323232"):
+        """Show snackbar message"""
+        try:
+            snack = ft.SnackBar(content=ft.Text(message), bgcolor=bgcolor)
+            self._page.overlay.append(snack)
+            snack.open = True
+            self._page.update()
+        except Exception as e:
+            print(f"Snackbar error: {e}")
 
 
 def show_profile_screen(page, user_data):

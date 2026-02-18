@@ -18,7 +18,7 @@ class SettingsScreen(Column):
     def __init__(self, page, user):
         # Store page reference before super().__init__() to avoid conflict
         self._page = page
-        self._user = user
+        self.user = user
 
         super().__init__()
         self.expand = True
@@ -277,7 +277,7 @@ class SettingsScreen(Column):
 
     def go_back(self, e):
         from core.navigation import navigate_to_home
-        navigate_to_home(self._page, self._user)
+        navigate_to_home(self._page, self.user)
 
     def save_company_settings(self, e):
         """Save company settings"""
@@ -402,7 +402,123 @@ class SettingsScreen(Column):
 
     def edit_user(self, user_id):
         """Edit existing user"""
-        self.show_snackbar("User edit feature coming soon!", Colors.BLUE)
+        session = get_db_session()
+        try:
+            user = session.query(User).filter(User.id == user_id).first()
+            if not user:
+                self.show_snackbar("User not found!", Colors.RED)
+                return
+
+            # Get roles for dropdown
+            roles = get_all_roles(session)
+
+            # Get current role
+            current_role_id = str(user.role_id) if user.role_id else ""
+
+            username_field = ft.TextField(
+                label="Username",
+                value=user.username,
+                width=300,
+                disabled=True  # Username typically can't be changed
+            )
+
+            email_field = ft.TextField(
+                label="Email",
+                value=user.email,
+                width=300,
+            )
+
+            # Role dropdown
+            role_options = [ft.dropdown.Option(
+                str(r.id), r.display_name) for r in roles]
+            role_dropdown = ft.Dropdown(
+                label="Role",
+                width=300,
+                options=role_options,
+                value=current_role_id,
+            )
+
+            # Status dropdown
+            status_options = [
+                ft.dropdown.Option("active", "Active"),
+                ft.dropdown.Option("inactive", "Inactive"),
+                ft.dropdown.Option("locked", "Locked"),
+            ]
+            current_status = user.status.value if user.status else "active"
+            status_dropdown = ft.Dropdown(
+                label="Status",
+                width=300,
+                options=status_options,
+                value=current_status,
+            )
+
+            error_text = ft.Text("", color=Colors.RED, size=12, visible=False)
+
+            def save_changes(e):
+                if not email_field.value:
+                    error_text.value = "Email is required!"
+                    error_text.visible = True
+                    self._page.update()
+                    return
+
+                try:
+                    from database.models import UserStatus
+
+                    user.email = email_field.value
+                    if role_dropdown.value:
+                        user.role_id = int(role_dropdown.value)
+                    if status_dropdown.value:
+                        user.status = UserStatus(status_dropdown.value)
+
+                    session.commit()
+                    self.show_snackbar(
+                        "User updated successfully!", Colors.GREEN)
+                    self._close_dialog(None)
+                    self.refresh_users_list()
+
+                except Exception as ex:
+                    error_text.value = f"Error: {str(ex)}"
+                    error_text.visible = True
+                    self._page.update()
+
+            def close_dlg(e):
+                self._close_dialog(e)
+                session.close()
+
+            dialog = ft.AlertDialog(
+                title=ft.Text("Edit User"),
+                content=ft.Column([
+                    username_field,
+                    email_field,
+                    role_dropdown,
+                    status_dropdown,
+                    error_text,
+                ], spacing=15),
+                actions=[
+                    ft.TextButton("Cancel", on_click=close_dlg),
+                    ft.ElevatedButton(
+                        "Save Changes",
+                        on_click=save_changes,
+                        style=ft.ButtonStyle(
+                            bgcolor=Colors.PRIMARY, color=Colors.WHITE),
+                    ),
+                ],
+            )
+
+            self._page.dialog = dialog
+            dialog.open = True
+            self._page.update()
+
+        except Exception as ex:
+            print(f"Error editing user: {ex}")
+            self.show_snackbar(f"Error: {str(ex)}", Colors.RED)
+            session.close()
+
+    def _close_dialog(self, e):
+        """Close dialog"""
+        if self._page.dialog:
+            self._page.dialog.open = False
+        self._page.update()
 
     def save_preferences(self, e):
         """Save system preferences"""

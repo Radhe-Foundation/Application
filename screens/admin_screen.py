@@ -48,6 +48,9 @@ class AdminScreen(ft.Container):
         # State variable to track if refresh is needed
         self._needs_refresh = False
 
+        # Navigation rail state
+        self._nav_rail_visible = True
+
         # Verify admin access
         if not check_admin_access(current_user):
             self._handle_access_denied()
@@ -103,93 +106,119 @@ class AdminScreen(ft.Container):
 
     def _build_content(self):
         """Build the main content with tabs"""
-        # Create tabs with NavigationRail for sidebar navigation
+
+        # Create toggle button for navigation rail
+        def toggle_nav_rail(e):
+            self._nav_rail_visible = not self._nav_rail_visible
+            self.content.content.controls[0].visible = self._nav_rail_visible
+            self.content.content.controls[1].visible = self._nav_rail_visible
+            self._page.update()
+
+        self.nav_toggle_btn = ft.IconButton(
+            icon=ft.Icons.MENU_OPEN if self._nav_rail_visible else ft.Icons.MENU,
+            tooltip="Toggle Navigation",
+            on_click=toggle_nav_rail,
+            icon_color=PRIMARY
+        )
+
+        # Custom Navigation Sidebar - compact with proper icon-text alignment
+        nav_items = []
+
+        # Define navigation items with icon and label
+        # FIXED: Corrected navigation order and added missing screens
+        nav_data = [
+            (0, "Dashboard", ft.Icons.DASHBOARD, ft.Icons.DASHBOARD_OUTLINED),
+            (1, "Chat", ft.Icons.CHAT, ft.Icons.CHAT_OUTLINED),
+            (2, "Mail", ft.Icons.EMAIL, ft.Icons.EMAIL_OUTLINED),
+            (3, "Tasks", ft.Icons.TASK, ft.Icons.TASK_OUTLINED),
+            (4, "Todo", ft.Icons.LIST_ALT, ft.Icons.LIST_ALT_OUTLINED),
+            (5, "Employees", ft.Icons.BADGE, ft.Icons.BADGE_OUTLINED),
+            (6, "Depts", ft.Icons.BUSINESS, ft.Icons.BUSINESS_OUTLINED),
+            (7, "Positions", ft.Icons.WORK, ft.Icons.WORK_OUTLINED),
+            (8, "Attendance", ft.Icons.EVENT, ft.Icons.EVENT_OUTLINED),
+            (9, "Leave", ft.Icons.EVENT_BUSY, ft.Icons.EVENT_BUSY_OUTLINED),
+            (10, "Teams", ft.Icons.GROUP, ft.Icons.GROUP_OUTLINED),
+            (11, "Projects", ft.Icons.FOLDER_SPECIAL,
+             ft.Icons.FOLDER_SPECIAL_OUTLINED),
+            (12, "Holidays", ft.Icons.CALENDAR_TODAY,
+             ft.Icons.CALENDAR_TODAY_OUTLINED),
+            (13, "Meetings", ft.Icons.VIDEO_CALL, ft.Icons.VIDEO_CALL_OUTLINED),
+            (14, "News", ft.Icons.CAMPAIGN, ft.Icons.CAMPAIGN_OUTLINED),
+            (15, "Docs", ft.Icons.FOLDER, ft.Icons.FOLDER_OUTLINED),
+            (16, "Performance", ft.Icons.TRENDING_UP, ft.Icons.TRENDING_UP_OUTLINED),
+            (17, "Reports", ft.Icons.ASSESSMENT, ft.Icons.ASSESSMENT_OUTLINED),
+            (18, "Settings", ft.Icons.SETTINGS, ft.Icons.SETTINGS_OUTLINED),
+            (19, "Audit", ft.Icons.HISTORY, ft.Icons.HISTORY_OUTLINED),
+            (20, "ETL", ft.Icons.STORAGE, ft.Icons.STORAGE_OUTLINED),
+            (21, "Org Tree", ft.Icons.ACCOUNT_TREE, ft.Icons.ACCOUNT_TREE_OUTLINED),
+            (22, "Data Entry", ft.Icons.TABLE_ROWS, ft.Icons.TABLE_ROWS_OUTLINED),
+            (23, "Inventory", ft.Icons.INVENTORY, ft.Icons.INVENTORY_OUTLINED),
+            (24, "Transactions", ft.Icons.PAYMENT, ft.Icons.PAYMENT_OUTLINED),
+        ]
+
+        # Track selected index
+        self._selected_nav_index = 0
+
+        def create_nav_item(index, label, selected_icon, unselected_icon):
+            def on_click(e):
+                self._selected_nav_index = index
+                # Update all nav items visual state
+                for item in nav_items:
+                    item.bgcolor = "transparent" if item != nav_items[index] else PRIMARY + "15"
+                content = self.content.content.controls[2]
+                content.content = self._get_tab_content_lazy(index)
+                self._page.update()
+
+            is_selected = (index == self._selected_nav_index)
+
+            return ft.Container(
+                content=ft.Row([
+                    ft.Icon(
+                        selected_icon if is_selected else unselected_icon,
+                        size=20,
+                        color=PRIMARY if is_selected else TEXT_SECONDARY,
+                    ),
+                    ft.Text(
+                        label,
+                        size=13,
+                        weight=ft.FontWeight.W_500 if is_selected else ft.FontWeight.W_400,
+                        color=PRIMARY if is_selected else TEXT_SECONDARY,
+                    ),
+                ], spacing=8, alignment=ft.MainAxisAlignment.START),
+                padding=ft.padding.symmetric(horizontal=12, vertical=10),
+                border_radius=8,
+                bgcolor=PRIMARY + "15" if is_selected else "transparent",
+                on_click=on_click,
+                ink=True,
+            )
+
+        # Create nav items
+        for idx, label, sel_icon, unsel_icon in nav_data:
+            nav_items.append(create_nav_item(idx, label, sel_icon, unsel_icon))
+
+        # Build sidebar with scroll
+        sidebar = ft.Container(
+            width=160,
+            bgcolor=SURFACE,
+            content=ft.ListView(
+                controls=nav_items,
+                spacing=2,
+                padding=10,
+            ),
+            visible=self._nav_rail_visible,
+        )
+
+        # Create tabs with custom sidebar navigation
         return ft.Container(
             content=ft.Row([
-                # Navigation Rail (sidebar)
-                ft.NavigationRail(
-                    selected_index=0,
-                    destinations=[
-                        ft.NavigationRailDestination(
-                            icon=ft.Icons.DASHBOARD,
-                            label="Dashboard"
-                        ),
-                        ft.NavigationRailDestination(
-                            icon=ft.Icons.CHAT,
-                            label="Chat"
-                        ),
-                        ft.NavigationRailDestination(
-                            icon=ft.Icons.EMAIL,
-                            label="Mail"
-                        ),
-                        ft.NavigationRailDestination(
-                            icon=ft.Icons.TASK,
-                            label="Tasks"
-                        ),
-                        ft.NavigationRailDestination(
-                            icon=ft.Icons.LIST_ALT,
-                            label="Todo"
-                        ),
-                        ft.NavigationRailDestination(
-                            icon=ft.Icons.BUSINESS,
-                            label="Departments"
-                        ),
-                        ft.NavigationRailDestination(
-                            icon=ft.Icons.EVENT,
-                            label="Attendance"
-                        ),
-                        ft.NavigationRailDestination(
-                            icon=ft.Icons.EVENT_BUSY,
-                            label="Leave"
-                        ),
-                        ft.NavigationRailDestination(
-                            icon=ft.Icons.BADGE,
-                            label="Employees"
-                        ),
-                        ft.NavigationRailDestination(
-                            icon=ft.Icons.WORK,
-                            label="Positions"
-                        ),
-                        ft.NavigationRailDestination(
-                            icon=ft.Icons.CAMPAIGN,
-                            label="News"
-                        ),
-                        ft.NavigationRailDestination(
-                            icon=ft.Icons.FOLDER,
-                            label="Documents"
-                        ),
-                        ft.NavigationRailDestination(
-                            icon=ft.Icons.TRENDING_UP,
-                            label="Performance"
-                        ),
-                        ft.NavigationRailDestination(
-                            icon=ft.Icons.ASSESSMENT,
-                            label="Reports"
-                        ),
-                        ft.NavigationRailDestination(
-                            icon=ft.Icons.SETTINGS,
-                            label="Settings"
-                        ),
-                        ft.NavigationRailDestination(
-                            icon=ft.Icons.HISTORY,
-                            label="Audit"
-                        ),
-                        ft.NavigationRailDestination(
-                            icon=ft.Icons.STORAGE,
-                            label="ETL"
-                        ),
-                    ],
-                    on_change=self._on_nav_change,
-                    extended=True,
-                    bgcolor=SURFACE,
-                    min_width=100,
-                    label_type=ft.NavigationRailLabelType.ALL,
-                ),
-                ft.VerticalDivider(width=1),
+                # Custom Navigation Sidebar
+                sidebar,
+                # Vertical divider
+                ft.VerticalDivider(width=1, visible=self._nav_rail_visible),
                 # Main content area
                 ft.Container(
                     content=ft.Column([
-                        # Header
+                        # Header with toggle button
                         self._create_header(),
                         # Content container
                         ft.Container(
@@ -231,39 +260,63 @@ class AdminScreen(ft.Container):
             from screens.todo_screen import TodoScreen
             return ft.Container(content=TodoScreen(self.page, self.current_user), expand=True)
         elif index == 5:
+            return self._create_employees_tab()
+        elif index == 6:
             from screens.departments_screen import DepartmentsScreen
             return ft.Container(content=DepartmentsScreen(self.page, self.current_user), expand=True)
-        elif index == 6:
-            from screens.attendance_screen import AttendanceScreen
-            return ft.Container(content=AttendanceScreen(self.page, self.current_user, view_mode="admin"), expand=True)
         elif index == 7:
-            from screens.leaves_screen import LeavesScreen
-            return ft.Container(content=LeavesScreen(self.page, self.current_user, view_mode="admin"), expand=True)
-        elif index == 8:
-            return self._create_employees_tab()
-        elif index == 9:
             from screens.positions_screen import PositionsScreen
             return ft.Container(content=PositionsScreen(self.page, self.current_user), expand=True)
+        elif index == 8:
+            from screens.attendance_screen import AttendanceScreen
+            return ft.Container(content=AttendanceScreen(self.page, self.current_user, view_mode="admin"), expand=True)
+        elif index == 9:
+            from screens.leaves_screen import LeavesScreen
+            return ft.Container(content=LeavesScreen(self.page, self.current_user, view_mode="admin"), expand=True)
         elif index == 10:
+            from screens.teams_screen import TeamsScreen
+            return ft.Container(content=TeamsScreen(self.page, self.current_user), expand=True)
+        elif index == 11:
+            from screens.projects_screen import ProjectsScreen
+            return ft.Container(content=ProjectsScreen(self.page, self.current_user), expand=True)
+        elif index == 12:
+            from screens.holidays_screen import HolidaysScreen
+            return ft.Container(content=HolidaysScreen(self.page, self.current_user), expand=True)
+        elif index == 13:
+            from screens.meetings_screen import MeetingsScreen
+            return ft.Container(content=MeetingsScreen(self.page, self.current_user), expand=True)
+        elif index == 14:
             from screens.announcements_screen import AnnouncementsScreen
             return ft.Container(content=AnnouncementsScreen(self.page), expand=True)
-        elif index == 11:
+        elif index == 15:
             from screens.documents_screen import DocumentsScreen
             return ft.Container(content=DocumentsScreen(self.page), expand=True)
-        elif index == 12:
+        elif index == 16:
             from screens.performance_screen import PerformanceScreen
             return ft.Container(content=PerformanceScreen(self.page), expand=True)
-        elif index == 13:
+        elif index == 17:
             from screens.reports_screen import ReportsScreen
             return ft.Container(content=ReportsScreen(self.page), expand=True)
-        elif index == 14:
+        elif index == 18:
             from screens.settings_screen import SettingsScreen
             return ft.Container(content=SettingsScreen(self.page, self.current_user), expand=True)
-        elif index == 15:
+        elif index == 19:
             return self._create_audit_tab()
-        elif index == 16:
+        elif index == 20:
             from screens.etl_screen import ETLScreen
             return ft.Container(content=ETLScreen(self.page, self.current_user), expand=True)
+        elif index == 21:
+            from screens.organization_tree_screen import OrganizationTreeScreen
+            return ft.Container(content=OrganizationTreeScreen(self.page, self.current_user), expand=True)
+        elif index == 22:
+            from screens.data_entry_screen import DataEntryScreen
+            return ft.Container(content=DataEntryScreen(self.page, self.current_user), expand=True)
+        elif index == 23:
+            from screens.inventory_screen import InventoryScreen
+            return ft.Container(content=InventoryScreen(self.page, self.current_user), expand=True)
+        elif index == 24:
+            from screens.transactions_screen import TransactionsScreen
+            return ft.Container(content=TransactionsScreen(self.page, self.current_user), expand=True)
         return self._create_dashboard_tab()
 
     def _get_tab_content(self, index):
@@ -274,11 +327,15 @@ class AdminScreen(ft.Container):
             self._create_mail_tab,
             self._create_tasks_tab,
             self._create_todo_tab,
+            self._create_employees_tab,
             self._create_departments_tab,
+            self._create_positions_tab,
             self._create_attendance_tab,
             self._create_leaves_tab,
-            self._create_employees_tab,
-            self._create_positions_tab,
+            self._create_teams_tab,
+            self._create_projects_tab,
+            self._create_holidays_tab,
+            self._create_meetings_tab,
             self._create_announcements_tab,
             self._create_documents_tab,
             self._create_performance_tab,
@@ -286,15 +343,22 @@ class AdminScreen(ft.Container):
             self._create_settings_tab,
             self._create_audit_tab,
             self._create_etl_tab,
+            self._create_org_tree_tab,
+            self._create_data_entry_tab,
+            self._create_inventory_tab,
+            self._create_transactions_tab,
         ]
         if 0 <= index < len(tab_methods):
             return tab_methods[index]()
         return self._create_dashboard_tab()
 
     def _create_header(self):
-        """Create header with user info and logout"""
+        """Create header with user info, toggle button and logout"""
         return ft.Container(
             content=ft.Row([
+                # Navigation toggle button
+                self.nav_toggle_btn,
+                ft.Container(width=10),
                 ft.Text(
                     "Vernika HRA - Admin Dashboard",
                     size=20,
@@ -1687,6 +1751,38 @@ class AdminScreen(ft.Container):
             expand=True
         )
 
+    def _create_org_tree_tab(self):
+        """Create Organization Tree tab"""
+        from screens.organization_tree_screen import OrganizationTreeScreen
+        return ft.Container(
+            content=OrganizationTreeScreen(self.page, self.current_user),
+            expand=True
+        )
+
+    def _create_data_entry_tab(self):
+        """Create Data Entry/Spreadsheet tab"""
+        from screens.data_entry_screen import DataEntryScreen
+        return ft.Container(
+            content=DataEntryScreen(self.page, self.current_user),
+            expand=True
+        )
+
+    def _create_inventory_tab(self):
+        """Create Inventory tab"""
+        from screens.inventory_screen import InventoryScreen
+        return ft.Container(
+            content=InventoryScreen(self.page, self.current_user),
+            expand=True
+        )
+
+    def _create_transactions_tab(self):
+        """Create Transactions/Payments tab"""
+        from screens.transactions_screen import TransactionsScreen
+        return ft.Container(
+            content=TransactionsScreen(self.page, self.current_user),
+            expand=True
+        )
+
     # ============ NEW TAB METHODS FOR ALL SCREENS ============
 
     def _create_chat_tab(self):
@@ -1792,6 +1888,38 @@ class AdminScreen(ft.Container):
         from screens.settings_screen import SettingsScreen
         return ft.Container(
             content=SettingsScreen(self.page, self.current_user),
+            expand=True
+        )
+
+    def _create_teams_tab(self):
+        """Create teams management tab"""
+        from screens.teams_screen import TeamsScreen
+        return ft.Container(
+            content=TeamsScreen(self.page, self.current_user),
+            expand=True
+        )
+
+    def _create_projects_tab(self):
+        """Create projects management tab"""
+        from screens.projects_screen import ProjectsScreen
+        return ft.Container(
+            content=ProjectsScreen(self.page, self.current_user),
+            expand=True
+        )
+
+    def _create_holidays_tab(self):
+        """Create holidays management tab"""
+        from screens.holidays_screen import HolidaysScreen
+        return ft.Container(
+            content=HolidaysScreen(self.page, self.current_user),
+            expand=True
+        )
+
+    def _create_meetings_tab(self):
+        """Create meetings management tab"""
+        from screens.meetings_screen import MeetingsScreen
+        return ft.Container(
+            content=MeetingsScreen(self.page, self.current_user),
             expand=True
         )
 

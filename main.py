@@ -1,6 +1,6 @@
 """
 Vernika HRA - Main Entry Point
-Fixed version with proper initialization
+Fixed version with proper initialization and responsive design
 """
 import flet as ft
 import logging
@@ -47,6 +47,10 @@ def main(page: ft.Page):
         page.window.min_height = WINDOW_MIN_HEIGHT
         page.window.resizable = WINDOW_RESIZABLE
         page.window.maximized = WINDOW_MAXIMIZED  # Always start maximized
+
+        # Center window on startup
+        # page.window.center()
+
         page.fonts = {
             "Roboto": "https://fonts.googleapis.com/css2?family=Roboto:wght@400;500;700&display=swap"}
 

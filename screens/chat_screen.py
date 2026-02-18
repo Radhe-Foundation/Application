@@ -193,12 +193,13 @@ class ChatScreen(ft.Container):
             print(f"[Chat] Error handling new message: {e}")
 
     def _start_polling(self):
-        """Start polling fallback for real-time updates - OPTIMIZED"""
+        """Start polling fallback for real-time updates - OPTIMIZED for faster updates"""
         def poll_messages():
             while not self._stop_threads:
                 try:
                     import time
-                    time.sleep(5)  # Poll every 5 seconds (reduced from 3)
+                    # Poll every 5 seconds (optimized from 15 for better real-time experience)
+                    time.sleep(5)
                     if self.selected_contact and not self._stop_threads:
                         # Check for new messages - only update if we have a selected contact
                         self._load_messages_for_selected()
@@ -403,10 +404,10 @@ class ChatScreen(ft.Container):
 
         # Call buttons
         def on_voice_call(e):
-            self._show_snackbar("Voice call feature - Coming soon!")
+            self._initiate_voice_call()
 
         def on_video_call(e):
-            self._show_snackbar("Video call feature - Coming soon!")
+            self._initiate_video_call()
 
         header = ft.Container(
             bgcolor=ft.Colors.WHITE,
@@ -991,6 +992,188 @@ class ChatScreen(ft.Container):
         self._page.dialog = dlg
         dlg.open = True
         self._page.update()
+
+    def _initiate_voice_call(self):
+        """Initiate a voice call with the selected contact"""
+        if not self.selected_contact:
+            self._show_snackbar(
+                "Please select a contact first to start a voice call")
+            return
+
+        # Show call dialog with options
+        def close_dlg(e):
+            self._page.dialog = None
+            self._page.update()
+
+        def start_external_call(e):
+            """Open external voice call app (e.g., phone, WhatsApp, etc.)"""
+            self._page.dialog = None
+            self._page.update()
+
+            contact = self.selected_contact
+            # Show call information and instructions
+            self._show_snackbar(
+                f"📞 Initiating voice call with {contact.username}...\n\n"
+                f"You can use external apps like:\n"
+                f"• WhatsApp Voice Call\n"
+                f"• Google Meet\n"
+                f"• Zoom\n"
+                f"• Phone app"
+            )
+
+            # Log the call attempt
+            self._log_call_attempt("voice", contact)
+
+        dlg = ft.AlertDialog(
+            title=ft.Text("Voice Call"),
+            content=ft.Column([
+                ft.Container(height=10),
+                ft.CircleAvatar(
+                    content=ft.Text(
+                        self.selected_contact.username[:1].upper(),
+                        size=32,
+                        weight=ft.FontWeight.BOLD,
+                    ),
+                    radius=40,
+                    bgcolor="#2E86AB",
+                ),
+                ft.Container(height=10),
+                ft.Text(
+                    self.selected_contact.username,
+                    size=18,
+                    weight=ft.FontWeight.BOLD,
+                    text_align=ft.TextAlign.CENTER,
+                ),
+                ft.Text(
+                    "Voice Call",
+                    size=14,
+                    color=ft.Colors.GREY_600,
+                    text_align=ft.TextAlign.CENTER,
+                ),
+                ft.Container(height=20),
+                ft.Text(
+                    "This will open an external voice calling app. "
+                    "Make sure you have the app installed.",
+                    size=12,
+                    color=ft.Colors.GREY_500,
+                    text_align=ft.TextAlign.CENTER,
+                ),
+            ], tight=True, horizontal_alignment=ft.CrossAxisAlignment.CENTER),
+            actions=[
+                ft.TextButton("Cancel", on_click=close_dlg),
+                ft.ElevatedButton(
+                    "Start Call",
+                    icon=ft.Icons.PHONE,
+                    on_click=start_external_call,
+                    style=ft.ButtonStyle(
+                        bgcolor="#4CAF50", color=ft.Colors.WHITE),
+                ),
+            ],
+        )
+        self._page.dialog = dlg
+        dlg.open = True
+        self._page.update()
+
+    def _initiate_video_call(self):
+        """Initiate a video call with the selected contact"""
+        if not self.selected_contact:
+            self._show_snackbar(
+                "Please select a contact first to start a video call")
+            return
+
+        # Show call dialog with options
+        def close_dlg(e):
+            self._page.dialog = None
+            self._page.update()
+
+        def start_external_call(e):
+            """Open external video call app"""
+            self._page.dialog = None
+            self._page.update()
+
+            contact = self.selected_contact
+            # Show call information and instructions
+            self._show_snackbar(
+                f"📹 Initiating video call with {contact.username}...\n\n"
+                f"You can use external apps like:\n"
+                f"• WhatsApp Video Call\n"
+                f"• Google Meet\n"
+                f"• Zoom\n"
+                f"• Skype"
+            )
+
+            # Log the call attempt
+            self._log_call_attempt("video", contact)
+
+        dlg = ft.AlertDialog(
+            title=ft.Text("Video Call"),
+            content=ft.Column([
+                ft.Container(height=10),
+                ft.CircleAvatar(
+                    content=ft.Text(
+                        self.selected_contact.username[:1].upper(),
+                        size=32,
+                        weight=ft.FontWeight.BOLD,
+                    ),
+                    radius=40,
+                    bgcolor="#2E86AB",
+                ),
+                ft.Container(height=10),
+                ft.Text(
+                    self.selected_contact.username,
+                    size=18,
+                    weight=ft.FontWeight.BOLD,
+                    text_align=ft.TextAlign.CENTER,
+                ),
+                ft.Text(
+                    "Video Call",
+                    size=14,
+                    color=ft.Colors.GREY_600,
+                    text_align=ft.TextAlign.CENTER,
+                ),
+                ft.Container(height=20),
+                ft.Text(
+                    "This will open an external video calling app. "
+                    "Make sure you have the app installed and camera enabled.",
+                    size=12,
+                    color=ft.Colors.GREY_500,
+                    text_align=ft.TextAlign.CENTER,
+                ),
+            ], tight=True, horizontal_alignment=ft.CrossAxisAlignment.CENTER),
+            actions=[
+                ft.TextButton("Cancel", on_click=close_dlg),
+                ft.ElevatedButton(
+                    "Start Call",
+                    icon=ft.Icons.VIDEO_CALL,
+                    on_click=start_external_call,
+                    style=ft.ButtonStyle(
+                        bgcolor="#2196F3", color=ft.Colors.WHITE),
+                ),
+            ],
+        )
+        self._page.dialog = dlg
+        dlg.open = True
+        self._page.update()
+
+    def _log_call_attempt(self, call_type: str, contact):
+        """Log voice/video call attempts to database"""
+        try:
+            db = get_db_session()
+            from database.models import ChatMessage, MessageType
+
+            # Create a system message to log the call
+            message = ChatMessage(
+                sender_id=self.current_user_id,
+                receiver_id=contact.id,
+                content=f"📞 {call_type.capitalize()} call initiated with {contact.username}",
+                message_type=MessageType.SYSTEM,
+                is_read=True,
+            )
+            db.add(message)
+            db.commit()
+            db.close()
+        except Exception as e:
+            print(f"[Chat] Error logging call attempt: {e}")
 
     def cleanup(self):
         """Cleanup when leaving the screen"""

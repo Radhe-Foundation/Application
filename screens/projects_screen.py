@@ -1,12 +1,13 @@
 """
 Vernika HRA - Projects Management Screen
-PostgreSQL/SQLAlchemy based projects management
+Enhanced with employee members, roles, task assignment, and budget tracking
 """
 
 import flet as ft
 from datetime import datetime
 from database.connection import get_db_session
-from database.models import Project
+from database.models import Project, ProjectMember, Employee
+from sqlalchemy.orm import joinedload
 
 
 # Theme colors
@@ -16,6 +17,8 @@ ERROR = "#F44336"
 WARNING = "#FF9800"
 BACKGROUND = "#F5F5F5"
 SURFACE = "#FFFFFF"
+TEXT_PRIMARY = "#1A1C1E"
+TEXT_SECONDARY = "#6C757D"
 
 
 class ProjectsScreen(ft.Container):
@@ -70,7 +73,7 @@ class ProjectsScreen(ft.Container):
         self._show_create_dialog()
 
     def _get_projects(self):
-        """Get all projects from PostgreSQL"""
+        """Get all projects from database"""
         db = get_db_session()
         try:
             projects = db.query(Project).order_by(
@@ -82,8 +85,36 @@ class ProjectsScreen(ft.Container):
         finally:
             db.close()
 
+    def _get_project_members(self, project_id):
+        """Get project members with details"""
+        db = get_db_session()
+        try:
+            members = db.query(ProjectMember).options(
+                joinedload(ProjectMember.employee)
+            ).filter(ProjectMember.project_id == project_id).all()
+            return members
+        except Exception as e:
+            print(f"Error loading project members: {e}")
+            return []
+        finally:
+            db.close()
+
+    def _get_all_employees(self):
+        """Get all active employees"""
+        db = get_db_session()
+        try:
+            employees = db.query(Employee).filter(
+                Employee.is_active == True
+            ).order_by(Employee.first_name).all()
+            return employees
+        except Exception as e:
+            print(f"Error loading employees: {e}")
+            return []
+        finally:
+            db.close()
+
     def _build_projects_list(self):
-        """Build projects list"""
+        """Build projects list with member counts"""
         projects = self._get_projects()
 
         if not projects:
@@ -115,6 +146,18 @@ class ProjectsScreen(ft.Container):
             status = project.status or "planning"
             color = status_colors.get(status, "#9E9E9E")
 
+            # Get member count
+            member_count = 0
+            try:
+                db = get_db_session()
+                member_count = db.query(ProjectMember).filter(
+                    ProjectMember.project_id == project.id,
+                    ProjectMember.is_active == True
+                ).count()
+                db.close()
+            except:
+                pass
+
             start_date_str = project.start_date.strftime(
                 '%Y-%m-%d') if project.start_date else "-"
             end_date_str = project.end_date.strftime(
@@ -135,8 +178,22 @@ class ProjectsScreen(ft.Container):
                                 bgcolor=color, padding=5, border_radius=4
                             )
                         ),
+                        ft.DataCell(ft.Container(
+                            content=ft.Text(
+                                f"{member_count} members", size=12),
+                            bgcolor=PRIMARY if member_count > 0 else "#9E9E9E",
+                            padding=5,
+                            border_radius=4,
+                        )),
                         ft.DataCell(
                             ft.Row([
+                                ft.IconButton(
+                                    icon=ft.Icons.GROUP_ADD,
+                                    icon_color=SUCCESS,
+                                    on_click=lambda e, proj_id=project.id: self._manage_members_dialog(
+                                        proj_id),
+                                    tooltip="Manage Team"
+                                ),
                                 ft.IconButton(
                                     icon=ft.Icons.EDIT,
                                     icon_color="#1976D2",
@@ -165,6 +222,7 @@ class ProjectsScreen(ft.Container):
                 ft.DataColumn(label=ft.Text("Start")),
                 ft.DataColumn(label=ft.Text("End")),
                 ft.DataColumn(label=ft.Text("Status")),
+                ft.DataColumn(label=ft.Text("Team")),
                 ft.DataColumn(label=ft.Text("Actions")),
             ],
             rows=rows,
@@ -172,6 +230,269 @@ class ProjectsScreen(ft.Container):
         )
 
         return ft.Container(content=table, expand=True)
+
+    def _manage_members_dialog(self, project_id):
+        """Show dialog to manage project members"""
+        db = get_db_session()
+        try:
+            project = db.query(Project).filter(
+                Project.id == project_id).first()
+            members = db.query(ProjectMember).options(
+                joinedload(ProjectMember.employee)
+            ).filter(ProjectMember.project_id == project_id).all()
+            employees = db.query(Employee).filter(
+                Employee.is_active == True).all()
+        except Exception as e:
+            self._show_error(f"Error: {e}")
+            return
+        finally:
+            db.close()
+
+        if not project:
+            self._show_error("Project not found!")
+            return
+
+        # Employee options
+        emp_options = []
+        for emp in employees:
+            name = f"{emp.first_name} {emp.last_name}"
+            emp_options.append(ft.dropdown.Option(str(emp.id), name))
+
+        # Role options
+        role_options = [
+            ft.dropdown.Option("project_manager", "Project Manager"),
+            ft.dropdown.Option("team_lead", "Team Lead"),
+            ft.dropdown.Option("developer", "Developer"),
+            ft.dropdown.Option("designer", "Designer"),
+            ft.dropdown.Option("tester", "Tester"),
+            ft.dropdown.Option("consultant", "Consultant"),
+        ]
+
+        # Add member section
+        emp_dropdown = ft.Dropdown(
+            label="Select Employee", options=emp_options, width=250)
+        role_dropdown = ft.Dropdown(
+            label="Role", options=role_options, width=180, value="developer")
+        hourly_rate = ft.TextField(label="Hourly Rate", width=120, value="0")
+
+        def add_member(e):
+            if not emp_dropdown.value:
+                self._show_error("Please select an employee")
+                return
+
+            emp_id = int(emp_dropdown.value)
+
+            db = get_db_session()
+            try:
+                existing = db.query(ProjectMember).filter(
+                    ProjectMember.project_id == project_id,
+                    ProjectMember.employee_id == emp_id
+                ).first()
+
+                if existing:
+                    self._show_error("Employee is already in this project!")
+                    return
+
+                new_member = ProjectMember(
+                    project_id=project_id,
+                    employee_id=emp_id,
+                    role=role_dropdown.value or "developer",
+                    hourly_rate=float(
+                        hourly_rate.value) if hourly_rate.value else 0
+                )
+                db.add(new_member)
+                db.commit()
+
+                self._show_success("Team member added!")
+                self._close_dialog()
+                self._refresh()
+            except Exception as ex:
+                self._show_error(f"Error: {str(ex)}")
+            finally:
+                db.close()
+
+        # Current members list
+        members_list = ft.Column()
+        for member in members:
+            emp_name = f"{member.employee.first_name} {member.employee.last_name}" if member.employee else "Unknown"
+
+            # Role color
+            role_colors = {
+                "project_manager": "#D32F2F",
+                "team_lead": "#FF9800",
+                "developer": "#2196F3",
+                "designer": "#9C27B0",
+                "tester": "#4CAF50",
+                "consultant": "#607D8B"
+            }
+            role_color = role_colors.get(member.role, PRIMARY)
+
+            members_list.controls.append(
+                ft.Container(
+                    padding=10,
+                    bgcolor="#F5F5F5",
+                    border_radius=8,
+                    margin=ft.margin.only(bottom=5),
+                    content=ft.Row([
+                        ft.Container(
+                            width=35, height=35,
+                            bgcolor=role_color,
+                            border_radius=17,
+                            content=ft.Text(
+                                emp_name[0], color="WHITE", weight=ft.FontWeight.BOLD),
+                            alignment=ft.alignment.Alignment(0, 0),
+                        ),
+                        ft.Column([
+                            ft.Text(
+                                emp_name, weight=ft.FontWeight.BOLD, size=13),
+                            ft.Text(
+                                f"Role: {member.role.replace('_', ' ').title()}", size=11, color=TEXT_SECONDARY),
+                            ft.Text(
+                                f"Rate: ₹{member.hourly_rate}/hr" if member.hourly_rate else "Rate: N/A", size=10, color=TEXT_SECONDARY),
+                        ], expand=True),
+                        ft.IconButton(
+                            icon=ft.Icons.EDIT,
+                            icon_color=PRIMARY,
+                            on_click=lambda e, mid=member.id: self._edit_project_member_dialog(
+                                mid),
+                            scale=0.7
+                        ),
+                        ft.IconButton(
+                            icon=ft.Icons.DELETE,
+                            icon_color=ERROR,
+                            on_click=lambda e, mid=member.id: self._remove_project_member(
+                                mid),
+                            scale=0.7
+                        ),
+                    ], spacing=10)
+                )
+            )
+
+        dialog = ft.AlertDialog(
+            modal=True,
+            title=ft.Text(f"Manage Project Team - {project.name}"),
+            content=ft.Container(
+                content=ft.Column([
+                    ft.Text("Add Team Member", size=14,
+                            weight=ft.FontWeight.BOLD),
+                    ft.Row([emp_dropdown, role_dropdown,
+                           hourly_rate], spacing=10),
+                    ft.ElevatedButton("Add Member", on_click=add_member, style=ft.ButtonStyle(
+                        bgcolor=SUCCESS, color="WHITE")),
+                    ft.Divider(),
+                    ft.Text("Current Team", size=14,
+                            weight=ft.FontWeight.BOLD),
+                    ft.Container(height=10),
+                    members_list,
+                ], scroll=ft.ScrollMode.AUTO),
+                width=550,
+                height=500,
+            ),
+            actions=[
+                ft.TextButton(
+                    "Close", on_click=lambda e: self._close_dialog()),
+            ]
+        )
+
+        self._page.overlay.append(dialog)
+        dialog.open = True
+        self._page.update()
+
+    def _edit_project_member_dialog(self, member_id):
+        """Edit project member details"""
+        db = get_db_session()
+        try:
+            member = db.query(ProjectMember).filter(
+                ProjectMember.id == member_id).first()
+            if not member:
+                self._show_error("Member not found")
+                return
+        finally:
+            db.close()
+
+        # Role options
+        role_options = [
+            ft.dropdown.Option("project_manager", "Project Manager"),
+            ft.dropdown.Option("team_lead", "Team Lead"),
+            ft.dropdown.Option("developer", "Developer"),
+            ft.dropdown.Option("designer", "Designer"),
+            ft.dropdown.Option("tester", "Tester"),
+            ft.dropdown.Option("consultant", "Consultant"),
+        ]
+
+        role_dropdown = ft.Dropdown(
+            label="Role", options=role_options, width=180, value=member.role)
+        hourly_rate = ft.TextField(
+            label="Hourly Rate", width=120, value=str(member.hourly_rate or 0))
+        tasks_field = ft.TextField(
+            label="Assigned Tasks", width=400, value=member.assigned_tasks or "", multiline=True)
+
+        def save_changes(e):
+            db = get_db_session()
+            try:
+                db.query(ProjectMember).filter(ProjectMember.id == member_id).update({
+                    ProjectMember.role: role_dropdown.value,
+                    ProjectMember.hourly_rate: float(hourly_rate.value) if hourly_rate.value else 0,
+                    ProjectMember.assigned_tasks: tasks_field.value
+                })
+                db.commit()
+                self._show_success("Member updated!")
+                self._close_dialog()
+                self._refresh()
+            except Exception as ex:
+                self._show_error(f"Error: {str(ex)}")
+            finally:
+                db.close()
+
+        dialog = ft.AlertDialog(
+            modal=True,
+            title=ft.Text("Edit Team Member"),
+            content=ft.Column(
+                [role_dropdown, hourly_rate, tasks_field], spacing=10),
+            actions=[
+                ft.TextButton(
+                    "Cancel", on_click=lambda e: self._close_dialog()),
+                ft.ElevatedButton("Save", on_click=save_changes, style=ft.ButtonStyle(
+                    bgcolor=SUCCESS, color="WHITE")),
+            ]
+        )
+
+        self._page.overlay.append(dialog)
+        dialog.open = True
+        self._page.update()
+
+    def _remove_project_member(self, member_id):
+        """Remove member from project"""
+        def confirm(e):
+            db = get_db_session()
+            try:
+                db.query(ProjectMember).filter(
+                    ProjectMember.id == member_id).delete()
+                db.commit()
+                self._show_success("Member removed!")
+                self._close_dialog()
+                self._refresh()
+            except Exception as ex:
+                self._show_error(f"Error: {str(ex)}")
+            finally:
+                db.close()
+
+        dialog = ft.AlertDialog(
+            modal=True,
+            title=ft.Text("Remove Member?"),
+            content=ft.Text(
+                "Are you sure you want to remove this member from the project?"),
+            actions=[
+                ft.TextButton(
+                    "Cancel", on_click=lambda e: self._close_dialog()),
+                ft.ElevatedButton("Remove", on_click=confirm, style=ft.ButtonStyle(
+                    bgcolor=ERROR, color="WHITE")),
+            ]
+        )
+
+        self._page.overlay.append(dialog)
+        dialog.open = True
+        self._page.update()
 
     def _show_create_dialog(self):
         """Show create project dialog"""
@@ -226,7 +547,6 @@ class ProjectsScreen(ft.Container):
                 except ValueError:
                     pass
 
-                # Create new project
                 new_project = Project(
                     name=name.value,
                     description=description.value or None,
@@ -287,16 +607,16 @@ class ProjectsScreen(ft.Container):
 
         name = ft.TextField(label="Project Name *",
                             width=300, value=project.name or "")
-        description = ft.TextField(label="Description", width=400, multiline=True,
-                                   value=project.description or "")
+        description = ft.TextField(
+            label="Description", width=400, multiline=True, value=project.description or "")
         client_name = ft.TextField(
             label="Client Name", width=300, value=project.client_name or "")
-        start_date = ft.TextField(label="Start Date", width=200,
-                                  value=project.start_date.strftime('%Y-%m-%d') if project.start_date else "")
-        end_date = ft.TextField(label="End Date", width=200,
-                                value=project.end_date.strftime('%Y-%m-%d') if project.end_date else "")
-        budget = ft.TextField(label="Budget (Rs.)", width=150,
-                              value=str(project.budget or 0))
+        start_date = ft.TextField(label="Start Date", width=200, value=project.start_date.strftime(
+            '%Y-%m-%d') if project.start_date else "")
+        end_date = ft.TextField(label="End Date", width=200, value=project.end_date.strftime(
+            '%Y-%m-%d') if project.end_date else "")
+        budget = ft.TextField(label="Budget (Rs.)",
+                              width=150, value=str(project.budget or 0))
 
         status_options = [
             ft.dropdown.Option("planning", "Planning"),
@@ -305,8 +625,8 @@ class ProjectsScreen(ft.Container):
             ft.dropdown.Option("completed", "Completed"),
             ft.dropdown.Option("cancelled", "Cancelled"),
         ]
-        status = ft.Dropdown(width=150, options=status_options, label="Status",
-                             value=project.status or "planning")
+        status = ft.Dropdown(width=150, options=status_options,
+                             label="Status", value=project.status or "planning")
 
         def update(e):
             db = get_db_session()
@@ -390,6 +710,10 @@ class ProjectsScreen(ft.Container):
         def confirm(e):
             db = get_db_session()
             try:
+                # Delete members first
+                db.query(ProjectMember).filter(
+                    ProjectMember.project_id == project_id).delete()
+                # Delete project
                 db.query(Project).filter(Project.id == project_id).delete()
                 db.commit()
 
@@ -404,7 +728,8 @@ class ProjectsScreen(ft.Container):
         dialog = ft.AlertDialog(
             modal=True,
             title=ft.Text("Delete Project?", color="#F44336"),
-            content=ft.Text(f"Delete '{project.name}'?"),
+            content=ft.Text(
+                f"Delete '{project.name}'? This will also remove all team members."),
             actions=[
                 ft.TextButton(
                     "Cancel", on_click=lambda e: self._close_dialog()),

@@ -1609,6 +1609,29 @@ def get_user_with_employee(db: Session, user_id: int):
     return user, employee
 
 
+def update_user_password(db: Session, email: str, new_password: str):
+    """
+    Update user password by email.
+
+    Args:
+        db: Database session
+        email: User's email address
+        new_password: New password (plain text)
+
+    Returns:
+        bool: True if successful, False otherwise
+    """
+    user = get_user_by_email(db, email)
+    if not user:
+        return False
+
+    # Hash the new password
+    user.password_hash = bcrypt.hashpw(
+        new_password.encode(), bcrypt.gensalt()).decode()
+    db.commit()
+    return True
+
+
 def get_all_users_with_employees(db: Session):
     """
     Get all users with their employee profiles.

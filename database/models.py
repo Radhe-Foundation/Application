@@ -1062,3 +1062,342 @@ DEFAULT_COLUMN_MAPPINGS = {
         "Check Out": "check_out",
     },
 }
+
+
+# ==================== NEW MODELS FOR ENHANCED FEATURES ====================
+
+# ==================== Organization Hierarchy ====================
+
+class OrgHierarchy(Base):
+    """Organization hierarchy for org chart display"""
+    __tablename__ = "org_hierarchy"
+
+    id = Column(Integer, primary_key=True, index=True)
+    employee_id = Column(Integer, ForeignKey("employees.id"), nullable=False)
+    reports_to_id = Column(Integer, ForeignKey("employees.id"), nullable=True)
+    # 1=CEO, 2=Head, 3=Manager, 4=TeamLead, 5=Employee
+    hierarchy_level = Column(Integer, default=5)
+    is_active = Column(Boolean, default=True)
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow,
+                        onupdate=datetime.utcnow)
+
+    employee = relationship("Employee", foreign_keys=[employee_id])
+    manager = relationship("Employee", foreign_keys=[reports_to_id])
+
+
+# ==================== Team Members ====================
+
+class TeamMember(Base):
+    """Team members with roles and status"""
+    __tablename__ = "team_members"
+
+    id = Column(Integer, primary_key=True, index=True)
+    team_id = Column(Integer, ForeignKey("teams.id"), nullable=False)
+    employee_id = Column(Integer, ForeignKey("employees.id"), nullable=False)
+    role = Column(String(50), default="member")  # team_lead, member
+    # work status: active, on_break, on_leave, offline
+    work_status = Column(String(50), default="active")
+    assigned_tasks = Column(Text)  # JSON string of tasks
+    joined_date = Column(Date, default=datetime.utcnow().date)
+    is_active = Column(Boolean, default=True)
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+    team = relationship("Team", backref="members")
+    employee = relationship("Employee", backref="team_memberships")
+
+
+# ==================== Project Members ====================
+
+class ProjectMember(Base):
+    """Project members with roles"""
+    __tablename__ = "project_members"
+
+    id = Column(Integer, primary_key=True, index=True)
+    project_id = Column(Integer, ForeignKey("projects.id"), nullable=False)
+    employee_id = Column(Integer, ForeignKey("employees.id"), nullable=False)
+    # project_manager, team_lead, developer, designer, tester, consultant
+    role = Column(String(50), default="developer")
+    assigned_tasks = Column(Text)  # JSON string of tasks
+    hourly_rate = Column(Float, default=0)
+    is_active = Column(Boolean, default=True)
+    joined_date = Column(Date, default=datetime.utcnow().date)
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+    project = relationship("Project", backref="members")
+    employee = relationship("Employee", backref="project_memberships")
+
+
+# ==================== Inventory Management ====================
+
+class InventoryCategory(Base):
+    """Inventory product categories"""
+    __tablename__ = "inventory_categories"
+
+    id = Column(Integer, primary_key=True, index=True)
+    name = Column(String(100), nullable=False)
+    description = Column(Text)
+    parent_id = Column(Integer, ForeignKey(
+        "inventory_categories.id"), nullable=True)
+    is_active = Column(Boolean, default=True)
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+    parent = relationship("InventoryCategory", remote_side=[
+                          id], backref="children")
+
+
+class Product(Base):
+    """Inventory products/items"""
+    __tablename__ = "products"
+
+    id = Column(Integer, primary_key=True, index=True)
+    name = Column(String(200), nullable=False)
+    sku = Column(String(50), unique=True, nullable=False)
+    description = Column(Text)
+    category_id = Column(Integer, ForeignKey("inventory_categories.id"))
+    unit = Column(String(20), default="pcs")  # pcs, kg, liter, etc.
+    min_stock = Column(Integer, default=0)
+    max_stock = Column(Integer, default=1000)
+    current_stock = Column(Integer, default=0)
+    purchase_price = Column(Float, default=0)
+    sale_price = Column(Float, default=0)
+    is_active = Column(Boolean, default=True)
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow,
+                        onupdate=datetime.utcnow)
+
+    category = relationship("InventoryCategory", backref="products")
+
+
+class ProductImage(Base):
+    """Product images"""
+    __tablename__ = "product_images"
+
+    id = Column(Integer, primary_key=True, index=True)
+    product_id = Column(Integer, ForeignKey("products.id"), nullable=False)
+    image_path = Column(String(500), nullable=False)
+    is_primary = Column(Boolean, default=False)
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+    product = relationship("Product", backref="images")
+
+
+class InventoryTransaction(Base):
+    """Inventory in/out transactions"""
+    __tablename__ = "inventory_transactions"
+
+    id = Column(Integer, primary_key=True, index=True)
+    product_id = Column(Integer, ForeignKey("products.id"), nullable=False)
+    # purchase, sale, adjustment, return
+    transaction_type = Column(String(20), nullable=False)
+    quantity = Column(Integer, nullable=False)
+    quantity_before = Column(Integer, default=0)
+    quantity_after = Column(Integer, default=0)
+    notes = Column(Text)
+    created_by_id = Column(Integer, ForeignKey("users.id"))
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+    product = relationship("Product", backref="transactions")
+    created_by = relationship("User")
+
+
+# ==================== Payment & Transactions ====================
+
+class TransactionCategory(str, enum.Enum):
+    """Transaction categories"""
+    INCOME = "income"
+    EXPENSE = "expense"
+    SALARY = "salary"
+    VENDOR = "vendor"
+    CLIENT = "client"
+    OTHER = "other"
+
+
+class PaymentMethod(str, enum.Enum):
+    """Payment methods"""
+    CASH = "cash"
+    BANK_TRANSFER = "bank_transfer"
+    UPI = "upi"
+    CREDIT_CARD = "credit_card"
+    DEBIT_CARD = "debit_card"
+    CHEQUE = "cheque"
+    OTHER = "other"
+
+
+class TransactionStatus(str, enum.Enum):
+    """Transaction status"""
+    PENDING = "pending"
+    COMPLETED = "completed"
+    CANCELLED = "cancelled"
+    FAILED = "failed"
+
+
+class Transaction(Base):
+    """Payment and transaction records"""
+    __tablename__ = "transactions"
+
+    id = Column(Integer, primary_key=True, index=True)
+    transaction_type = Column(String(20), nullable=False)  # income, expense
+    amount = Column(Float, nullable=False)
+    currency = Column(String(10), default="INR")
+    # salary, vendor, client, etc.
+    category = Column(String(50), nullable=False)
+    description = Column(Text)
+    transaction_date = Column(Date, nullable=False)
+    payment_method = Column(String(50), default="cash")
+    reference_number = Column(String(100))
+    status = Column(String(20), default="completed")
+    created_by_id = Column(Integer, ForeignKey("users.id"))
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow,
+                        onupdate=datetime.utcnow)
+
+    created_by = relationship("User", backref="transactions")
+
+
+class TransactionAttachment(Base):
+    """Transaction file attachments (max 500KB per file)"""
+    __tablename__ = "transaction_attachments"
+
+    id = Column(Integer, primary_key=True, index=True)
+    transaction_id = Column(Integer, ForeignKey(
+        "transactions.id"), nullable=False)
+    file_path = Column(String(500), nullable=False)
+    file_name = Column(String(200), nullable=False)
+    file_size = Column(Integer, nullable=False)  # in bytes, max 512000 (500KB)
+    uploaded_by_id = Column(Integer, ForeignKey("users.id"))
+    uploaded_at = Column(DateTime, default=datetime.utcnow)
+
+    transaction = relationship("Transaction", backref="attachments")
+    uploaded_by = relationship("User")
+
+
+# ==================== Custom Data Sheets ====================
+
+class DataSheet(Base):
+    """Custom spreadsheet-like data sheets"""
+    __tablename__ = "data_sheets"
+
+    id = Column(Integer, primary_key=True, index=True)
+    name = Column(String(100), nullable=False)
+    description = Column(Text)
+    created_by_id = Column(Integer, ForeignKey("users.id"))
+    is_public = Column(Boolean, default=False)
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow,
+                        onupdate=datetime.utcnow)
+
+    created_by = relationship("User", backref="data_sheets")
+
+
+class DataSheetColumn(Base):
+    """Columns for custom data sheets"""
+    __tablename__ = "data_sheet_columns"
+
+    id = Column(Integer, primary_key=True, index=True)
+    sheet_id = Column(Integer, ForeignKey("data_sheets.id"), nullable=False)
+    column_name = Column(String(100), nullable=False)
+    # text, number, date, image, file, link
+    column_type = Column(String(20), nullable=False)
+    width = Column(Integer, default=150)
+    sort_order = Column(Integer, default=0)
+    is_required = Column(Boolean, default=False)
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+    sheet = relationship("DataSheet", backref="columns")
+
+
+class DataSheetRow(Base):
+    """Rows for custom data sheets"""
+    __tablename__ = "data_sheet_rows"
+
+    id = Column(Integer, primary_key=True, index=True)
+    sheet_id = Column(Integer, ForeignKey("data_sheets.id"), nullable=False)
+    row_data = Column(JSON, default=dict)  # {column_id: value}
+    created_by_id = Column(Integer, ForeignKey("users.id"))
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow,
+                        onupdate=datetime.utcnow)
+
+    sheet = relationship("DataSheet", backref="rows")
+    created_by = relationship("User")
+
+
+# ==================== Helper Functions ====================
+
+def get_org_hierarchy_tree():
+    """Get organization hierarchy as tree structure"""
+    from database.connection import get_db_session
+    session = get_db_session()
+    try:
+        hierarchy = session.query(OrgHierarchy).filter(
+            OrgHierarchy.is_active == True
+        ).all()
+
+        # Build tree
+        tree = {}
+        for h in hierarchy:
+            emp = session.query(Employee).filter(
+                Employee.id == h.employee_id).first()
+            if emp:
+                tree[h.employee_id] = {
+                    'id': h.id,
+                    'employee_id': h.employee_id,
+                    'name': f"{emp.first_name} {emp.last_name}",
+                    'employee_code': emp.employee_code,
+                    'reports_to_id': h.reports_to_id,
+                    'level': h.hierarchy_level,
+                    'position': emp.position.title if emp.position else "Employee",
+                    'department': emp.department.name if emp.department else "",
+                    'children': []
+                }
+
+        # Build parent-child relationships
+        for emp_id, node in tree.items():
+            if node['reports_to_id'] and node['reports_to_id'] in tree:
+                tree[node['reports_to_id']]['children'].append(node)
+
+        return tree
+    finally:
+        session.close()
+
+
+def get_low_stock_products(threshold=None):
+    """Get products with low stock"""
+    from database.connection import get_db_session
+    session = get_db_session()
+    try:
+        query = session.query(Product).filter(Product.is_active == True)
+        if threshold:
+            query = query.filter(Product.current_stock <= threshold)
+        else:
+            query = query.filter(Product.current_stock <= Product.min_stock)
+        return query.all()
+    finally:
+        session.close()
+
+
+def get_transaction_summary(start_date=None, end_date=None):
+    """Get transaction summary"""
+    from database.connection import get_db_session
+    from sqlalchemy import func
+    session = get_db_session()
+    try:
+        query = session.query(Transaction)
+        if start_date:
+            query = query.filter(Transaction.transaction_date >= start_date)
+        if end_date:
+            query = query.filter(Transaction.transaction_date <= end_date)
+
+        total_income = query.filter(Transaction.transaction_type == "income",
+                                    Transaction.status == "completed").func.sum(Transaction.amount) or 0
+        total_expense = query.filter(Transaction.transaction_type == "expense",
+                                     Transaction.status == "completed").func.sum(Transaction.amount) or 0
+
+        return {
+            'total_income': float(total_income),
+            'total_expense': float(total_expense),
+            'balance': float(total_income) - float(total_expense)
+        }
+    finally:
+        session.close()

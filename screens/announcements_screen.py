@@ -64,9 +64,10 @@ class AnnouncementsScreen(ft.Container):
         ], expand=True)
 
     def _on_back(self, e):
-        """Go back to dashboard"""
-        from core.navigation import navigate_to_home
-        navigate_to_home(self._page, self.user)
+        """Go back to dashboard - just reload the admin screen"""
+        from screens.admin_screen import AdminScreen
+        self._page.clean()
+        self._page.add(AdminScreen(self._page, self.user))
 
     def _get_announcements(self):
         """Get all announcements from PostgreSQL"""

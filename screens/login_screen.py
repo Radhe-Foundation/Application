@@ -1,6 +1,6 @@
 """
-Vernika HRA - Login Screen - Fixed
-Proper user handling and navigation
+Vernika HRA - Login Screen - Updated
+Proper user handling and navigation with responsive design
 """
 
 import flet as ft
@@ -28,59 +28,76 @@ class LoginScreen(ft.Container):
     def _init_components(self):
         """Initialize UI components"""
 
-        # Logo - show image or text fallback
-        if os.path.exists("/assets/logo/logo.jpeg"):
-            logo_content = ft.Image(
-                src="/assets/logo/logo.jpeg",
-                width=80,
-                height=80,
-            )
-        else:
+        # Logo - BIG size as requested - use absolute path for reliability
+        import os
+
+        # Try multiple path options to find the logo
+        base_path = os.path.dirname(os.path.abspath(__file__))
+        project_root = os.path.dirname(base_path)
+
+        possible_paths = [
+            os.path.join(project_root, "assets", "logo", "Vernikalogo.png"),
+            os.path.join(os.path.dirname(os.path.abspath(__file__)),
+                         "..", "assets", "logo", "Vernikalogo.png"),
+            "assets/logo/Vernikalogo.png",
+        ]
+
+        logo_content = None
+        for logo_path in possible_paths:
+            if os.path.exists(logo_path):
+                # Use forward slashes for Flet
+                flet_path = logo_path.replace("\\", "/")
+                if not flet_path.startswith("/"):
+                    flet_path = "/" + flet_path
+                logo_content = ft.Image(
+                    src=flet_path,
+                    width=250,
+                    height=250,
+                )
+                print(f"Logo found at: {logo_path}")
+                break
+
+        if logo_content is None:
+            # Fallback - show big V letter
             logo_content = ft.Text(
-                "VH", size=32, color="white", weight=ft.FontWeight.BOLD)
+                "V", size=100, color="white", weight=ft.FontWeight.BOLD)
 
         self.logo = ft.Container(
-            width=80,
-            height=80,
+            width=250,
+            height=250,
             content=logo_content,
-            border_radius=16,
-            bgcolor="#2E86AB",
+            border_radius=30,
+            bgcolor=ft.Colors.with_opacity(0.15, ft.Colors.WHITE),
             alignment=ft.alignment.Alignment(0, 0),
+            margin=0,
         )
 
-        # App title
+        # App title - VERNIKASTORE
         self.app_title = ft.Text(
-            "Vernika HRA",
-            size=28,
-            weight=ft.FontWeight.BOLD,
+            "VERNIKASTORE",
+            size=36,
+            weight=ft.FontWeight.W_900,
             color=ft.Colors.WHITE,
         )
 
-        # Tagline
-        self.tagline = ft.Text(
-            "Human Resource Management",
-            size=14,
-            color=ft.Colors.with_opacity(0.9, ft.Colors.WHITE),
-        )
-
-        # Welcome text
+        # Welcome text - WELCOME BACK
         self.welcome_title = ft.Text(
-            "Welcome Back!",
-            size=24,
-            weight=ft.FontWeight.BOLD,
+            "WELCOME BACK",
+            size=28,
+            weight=ft.FontWeight.W_600,
             color=ft.Colors.WHITE,
         )
 
+        # Welcome subtitle - simplified
         self.welcome_subtitle = ft.Text(
-            "Sign in to access your dashboard",
-            size=13,
-            color=ft.Colors.with_opacity(0.85, ft.Colors.WHITE),
+            "Sign in to continue",
+            size=14,
+            color=ft.Colors.with_opacity(0.7, ft.Colors.WHITE),
         )
 
-        # Username field
+        # Username field - responsive (expand instead of fixed width)
         self.username = ft.TextField(
             label="Username or Email",
-            width=320,
             height=52,
             prefix_icon=ft.Icons.PERSON_OUTLINE,
             border_radius=10,
@@ -91,12 +108,12 @@ class LoginScreen(ft.Container):
             label_style=ft.TextStyle(color=ft.Colors.GREY_500, size=11),
             content_padding=ft.padding.symmetric(horizontal=14, vertical=16),
             text_size=14,
+            expand=True,
         )
 
-        # Password field
+        # Password field - responsive
         self.password = ft.TextField(
             label="Password",
-            width=320,
             height=52,
             password=True,
             can_reveal_password=True,
@@ -109,6 +126,7 @@ class LoginScreen(ft.Container):
             label_style=ft.TextStyle(color=ft.Colors.GREY_500, size=11),
             content_padding=ft.padding.symmetric(horizontal=14, vertical=16),
             text_size=14,
+            expand=True,
         )
 
         # Remember me checkbox
@@ -126,17 +144,17 @@ class LoginScreen(ft.Container):
             on_click=self._on_forgot_password
         )
 
-        # Sign in button
+        # Sign in button - responsive
         self.sign_in_btn = ft.Container(
             content=ft.Text("Sign In", size=15,
                             weight=ft.FontWeight.W_500, color=ft.Colors.WHITE),
-            width=320,
             height=50,
             bgcolor=PRIMARY,
             border_radius=10,
             alignment=ft.alignment.Alignment(0, 0),
             on_click=self.login,
             ink=True,
+            expand=True,
         )
 
         # Error message
@@ -159,7 +177,273 @@ class LoginScreen(ft.Container):
                               size=10, color=ft.Colors.GREY_500)
 
     def _on_forgot_password(self, e):
-        self._show_snackbar("Contact administrator to reset password.")
+        """Show forgot password dialog"""
+        self._show_forgot_password_dialog()
+
+    def _show_forgot_password_dialog(self):
+        """Show forgot password dialog with email input"""
+        email_field = ft.TextField(
+            label="Email Address",
+            height=52,
+            prefix_icon=ft.Icons.EMAIL_OUTLINED,
+            border_radius=10,
+            border_color=ft.Colors.with_opacity(0.3, ft.Colors.GREY_500),
+            focused_border_color=PRIMARY,
+            focused_border_width=2,
+            cursor_color=PRIMARY,
+            label_style=ft.TextStyle(color=ft.Colors.GREY_500, size=11),
+            content_padding=ft.padding.symmetric(horizontal=14, vertical=16),
+            text_size=14,
+            expand=True,
+        )
+
+        verification_code_field = ft.TextField(
+            label="Verification Code",
+            height=52,
+            prefix_icon=ft.Icons.PIN_OUTLINED,
+            border_radius=10,
+            border_color=ft.Colors.with_opacity(0.3, ft.Colors.GREY_500),
+            focused_border_color=PRIMARY,
+            focused_border_width=2,
+            cursor_color=PRIMARY,
+            label_style=ft.TextStyle(color=ft.Colors.GREY_500, size=11),
+            content_padding=ft.padding.symmetric(horizontal=14, vertical=16),
+            text_size=14,
+            expand=True,
+            visible=False,
+        )
+
+        new_password_field = ft.TextField(
+            label="New Password",
+            height=52,
+            password=True,
+            can_reveal_password=True,
+            prefix_icon=ft.Icons.LOCK_OUTLINE,
+            border_radius=10,
+            border_color=ft.Colors.with_opacity(0.3, ft.Colors.GREY_500),
+            focused_border_color=PRIMARY,
+            focused_border_width=2,
+            cursor_color=PRIMARY,
+            label_style=ft.TextStyle(color=ft.Colors.GREY_500, size=11),
+            content_padding=ft.padding.symmetric(horizontal=14, vertical=16),
+            text_size=14,
+            expand=True,
+            visible=False,
+        )
+
+        confirm_password_field = ft.TextField(
+            label="Confirm Password",
+            height=52,
+            password=True,
+            can_reveal_password=True,
+            prefix_icon=ft.Icons.LOCK_OUTLINE,
+            border_radius=10,
+            border_color=ft.Colors.with_opacity(0.3, ft.Colors.GREY_500),
+            focused_border_color=PRIMARY,
+            focused_border_width=2,
+            cursor_color=PRIMARY,
+            label_style=ft.TextStyle(color=ft.Colors.GREY_500, size=11),
+            content_padding=ft.padding.symmetric(horizontal=14, vertical=16),
+            text_size=14,
+            expand=True,
+            visible=False,
+        )
+
+        status_text = ft.Text(
+            "",
+            size=12,
+            color=ft.Colors.GREY_600,
+            text_align=ft.TextAlign.CENTER,
+        )
+
+        step = {"value": 1}  # 1: email, 2: code, 3: password
+
+        def close_dlg(e):
+            self._page.dialog = None
+            self._page.update()
+
+        def send_verification(e):
+            """Send verification code to email"""
+            email = email_field.value.strip()
+            if not email:
+                status_text.value = "Please enter your email address"
+                status_text.color = "#DC3545"
+                self._page.update()
+                return
+
+            # Check if email exists in database
+            try:
+                db = get_db_session()
+                from database.operations import get_user_by_email
+                user = get_user_by_email(db, email)
+                db.close()
+
+                if not user:
+                    status_text.value = "Email not found in our system"
+                    status_text.color = "#DC3545"
+                    self._page.update()
+                    return
+
+                # Generate a 6-digit verification code
+                import random
+                code = str(random.randint(100000, 999999))
+
+                # Store the code and email temporarily (in memory for demo)
+                # In production, store in database with expiration
+                self._reset_code = code
+                self._reset_email = email
+                self._reset_code_expiry = None
+
+                import time
+                self._reset_code_expiry = time.time() + 300  # 5 minutes
+
+                # Show success and move to next step
+                status_text.value = f"Demo: Your verification code is {code}\n(This would be sent to your email in production)"
+                status_text.color = "#28A745"
+
+                # Show verification code field
+                verification_code_field.visible = True
+                step["value"] = 2
+                submit_btn.text = "Verify Code"
+                self._page.update()
+
+            except Exception as ex:
+                status_text.value = f"Error: {str(ex)}"
+                status_text.color = "#DC3545"
+                self._page.update()
+
+        def verify_code(e):
+            """Verify the code entered by user"""
+            code = verification_code_field.value.strip()
+            if not code:
+                status_text.value = "Please enter the verification code"
+                status_text.color = "#DC3545"
+                self._page.update()
+                return
+
+            # Verify the code
+            if code == self._reset_code:
+                import time
+                if self._reset_code_expiry and time.time() > self._reset_code_expiry:
+                    status_text.value = "Verification code has expired"
+                    status_text.color = "#DC3545"
+                    self._page.update()
+                    return
+
+                # Show password fields
+                new_password_field.visible = True
+                confirm_password_field.visible = True
+                email_field.visible = False
+                verification_code_field.visible = False
+                status_text.value = "Code verified! Enter your new password"
+                status_text.color = "#28A745"
+                step["value"] = 3
+                submit_btn.text = "Reset Password"
+                self._page.update()
+            else:
+                status_text.value = "Invalid verification code"
+                status_text.color = "#DC3545"
+                self._page.update()
+
+        def reset_password(e):
+            """Reset the password"""
+            new_pass = new_password_field.value
+            confirm_pass = confirm_password_field.value
+
+            if not new_pass or not confirm_pass:
+                status_text.value = "Please enter and confirm your password"
+                status_text.color = "#DC3545"
+                self._page.update()
+                return
+
+            if len(new_pass) < 6:
+                status_text.value = "Password must be at least 6 characters"
+                status_text.color = "#DC3545"
+                self._page.update()
+                return
+
+            if new_pass != confirm_pass:
+                status_text.value = "Passwords do not match"
+                status_text.color = "#DC3545"
+                self._page.update()
+                return
+
+            # Update password in database
+            try:
+                db = get_db_session()
+                from database.operations import get_user_by_email, update_user_password
+
+                success = update_user_password(db, self._reset_email, new_pass)
+                db.close()
+
+                if success:
+                    status_text.value = "Password reset successfully!"
+                    status_text.color = "#28A745"
+                    # Close dialog after a short delay
+                    import time
+                    time.sleep(1)
+                    self._page.dialog = None
+                    self._page.update()
+                    self._show_snackbar(
+                        "Password reset successful! Please login with your new password.")
+                else:
+                    status_text.value = "Failed to reset password"
+                    status_text.color = "#DC3545"
+                    self._page.update()
+
+            except Exception as ex:
+                status_text.value = f"Error: {str(ex)}"
+                status_text.color = "#DC3545"
+                self._page.update()
+
+        # Determine which function to call based on step
+        def on_submit(e):
+            if step["value"] == 1:
+                send_verification(e)
+            elif step["value"] == 2:
+                verify_code(e)
+            else:
+                reset_password(e)
+
+        submit_btn = ft.Container(
+            content=ft.Text("Send Code", size=15,
+                            weight=ft.FontWeight.W_500, color=ft.Colors.WHITE),
+            height=50,
+            bgcolor=PRIMARY,
+            border_radius=10,
+            alignment=ft.alignment.Alignment(0, 0),
+            on_click=on_submit,
+            ink=True,
+            expand=True,
+        )
+
+        dlg = ft.AlertDialog(
+            title=ft.Text("Reset Password"),
+            content=ft.Column([
+                ft.Container(height=10),
+                ft.Text(
+                    "Enter your email address and we'll send you a verification code to reset your password.",
+                    size=13,
+                    color=ft.Colors.GREY_600,
+                ),
+                ft.Container(height=15),
+                email_field,
+                verification_code_field,
+                new_password_field,
+                confirm_password_field,
+                ft.Container(height=10),
+                status_text,
+            ], tight=True, spacing=5),
+            actions=[
+                ft.TextButton("Cancel", on_click=close_dlg),
+                submit_btn,
+            ],
+            actions_alignment=ft.MainAxisAlignment.END,
+        )
+
+        self._page.dialog = dlg
+        dlg.open = True
+        self._page.update()
 
     def _show_snackbar(self, message: str, bgcolor: str = "#323232"):
         """Show a snackbar message"""
@@ -172,52 +456,40 @@ class LoginScreen(ft.Container):
             print(f"Snackbar error: {ex}")
 
     def build_ui(self):
-        """Build the complete UI with everything perfectly centered"""
+        """Build the complete UI with everything perfectly centered and responsive"""
 
-        # Left panel - branded content
+        # Left panel - clean centered design with proper logo centering
         left_panel = ft.Container(
             expand=True,
             gradient=ft.LinearGradient(
                 colors=["#2E86AB", "#A23B72", "#1A3A52"],
-                begin=ft.alignment.Alignment(0, 0),
-                end=ft.alignment.Alignment(1, 1),
+                begin=ft.alignment.Alignment(0, -1),
+                end=ft.alignment.Alignment(0, 1),
             ),
-            content=ft.Stack([
-                # Decorative circles
-                ft.Stack([
-                    ft.Container(width=350, height=350, right=-100, top=-100, border_radius=175,
-                                 bgcolor=ft.Colors.with_opacity(0.1, ft.Colors.WHITE)),
-                    ft.Container(width=200, height=200, left=-50, bottom=-50, border_radius=100,
-                                 bgcolor=ft.Colors.with_opacity(0.08, ft.Colors.WHITE)),
-                    ft.Container(width=120, height=120, right=80, bottom=150, border_radius=60,
-                                 bgcolor=ft.Colors.with_opacity(0.05, ft.Colors.WHITE)),
-                ]),
-                # Centered content in left panel
+            content=ft.Column([
+                # Logo and title section - centered
                 ft.Container(
                     expand=True,
                     content=ft.Column(
                         controls=[
+                            ft.Container(height=40),  # Top spacing
                             self.logo,
                             ft.Container(height=20),
                             self.app_title,
-                            self.tagline,
-                            ft.Container(height=30),
+                            ft.Container(height=15),
                             self.welcome_title,
                             ft.Container(height=8),
                             self.welcome_subtitle,
-                            ft.Container(height=25),
-                            ft.Text("Streamline your HR\noperations efficiently", size=13, color=ft.Colors.with_opacity(
-                                0.85, ft.Colors.WHITE), text_align=ft.TextAlign.CENTER),
                         ],
                         horizontal_alignment=ft.CrossAxisAlignment.CENTER,
+                        spacing=0,
                     ),
                     alignment=ft.alignment.Alignment(0, 0),
-                    padding=ft.padding.symmetric(horizontal=30),
                 ),
-            ]),
+            ], spacing=0),
         )
 
-        # Right panel - form content
+        # Right panel - form content - responsive
         right_panel = ft.Container(
             expand=True,
             bgcolor=ft.Colors.WHITE,
@@ -230,23 +502,28 @@ class LoginScreen(ft.Container):
                         # Form header - centered
                         ft.Text("Sign In", size=28,
                                 weight=ft.FontWeight.BOLD, color="#1A1C1E"),
-                        ft.Text("Enter your credentials", size=13,
+                        ft.Text("Enter your credentials", size=14,
                                 color=ft.Colors.GREY_500),
                         ft.Container(height=25),
-                        # Form fields - centered
-                        self.username,
-                        ft.Container(height=12),
-                        self.password,
-                        ft.Container(height=10),
-                        # Remember + Forgot - centered row
-                        ft.Row([self.remember_me, self.forgot_password], width=320,
-                               alignment=ft.MainAxisAlignment.SPACE_BETWEEN),
-                        ft.Container(height=6),
-                        # Error message
-                        self.error_msg,
-                        ft.Container(height=12),
-                        # Sign in button
-                        self.sign_in_btn,
+                        # Form fields - centered with responsive width
+                        ft.Container(
+                            content=ft.Column([
+                                self.username,
+                                ft.Container(height=12),
+                                self.password,
+                                ft.Container(height=10),
+                                # Remember + Forgot - centered row
+                                ft.Row([self.remember_me, self.forgot_password],
+                                       alignment=ft.MainAxisAlignment.SPACE_BETWEEN),
+                                ft.Container(height=6),
+                                # Error message
+                                self.error_msg,
+                                ft.Container(height=12),
+                                # Sign in button
+                                self.sign_in_btn,
+                            ], spacing=0),
+                            width=320,
+                        ),
                         ft.Container(height=18),
                         # Footer
                         ft.Container(height=25),

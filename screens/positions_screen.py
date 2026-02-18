@@ -28,7 +28,7 @@ class PositionsScreen(ft.Container):
     def __init__(self, page, user):
         super().__init__()
         self._page = page
-        self._user = user
+        self.user = user
         self.expand = True
         self.bgcolor = BACKGROUND
         self.content = self._build_content()
@@ -72,7 +72,7 @@ class PositionsScreen(ft.Container):
     def _on_back(self, e):
         """Go back to dashboard"""
         from core.navigation import navigate_to_home
-        navigate_to_home(self._page, self._user)
+        navigate_to_home(self._page, self.user)
 
     def _on_add(self, e):
         """Show add position dialog"""
