@@ -835,14 +835,16 @@ class ChatScreen(ft.Container):
 
         member_chks = []
         for contact in available_contacts:
-            member_chks.append(
+            # Use Checkbox for selection tracking
+            chk = ft.Checkbox(value=False)
+            member_chks.append(chk)
+
+        # Create display rows with checkboxes
+        member_rows = []
+        for i, contact in enumerate(available_contacts):
+            member_rows.append(
                 ft.ListTile(
-                    leading=ft.CircleAvatar(
-                        content=ft.Text(contact.username[:1].upper(
-                        ), size=16, weight=ft.FontWeight.BOLD),
-                        radius=18,
-                        bgcolor=contact.avatar_color,
-                    ),
+                    leading=member_chks[i],
                     title=ft.Text(contact.username, size=14),
                     subtitle=ft.Text(contact.email, size=11,
                                      color=TEXT_SECONDARY),
@@ -948,9 +950,9 @@ class ChatScreen(ft.Container):
                     ft.Container(
                         expand=True,
                         content=ft.ListView(
-                            controls=member_chks,
+                            controls=member_rows,
                             spacing=0,
-                        ) if member_chks else ft.Text("No contacts available", size=12, color=TEXT_TERTIARY)
+                        ) if member_rows else ft.Text("No contacts available", size=12, color=TEXT_TERTIARY)
                     ),
                     error_txt
                 ], tight=True, scroll=ft.ScrollMode.AUTO)
@@ -1008,17 +1010,18 @@ class ChatScreen(ft.Container):
             self._page.show_dialog(dlg)
             return
 
-        # Member selection
+        # Member selection - use Checkbox for selection tracking
         member_chks = []
         for contact in available_contacts:
-            member_chks.append(
+            chk = ft.Checkbox(value=False)
+            member_chks.append(chk)
+
+        # Create display rows with checkboxes
+        member_rows = []
+        for i, contact in enumerate(available_contacts):
+            member_rows.append(
                 ft.ListTile(
-                    leading=ft.CircleAvatar(
-                        content=ft.Text(contact.username[:1].upper(
-                        ), size=16, weight=ft.FontWeight.BOLD),
-                        radius=18,
-                        bgcolor=contact.avatar_color,
-                    ),
+                    leading=member_chks[i],
                     title=ft.Text(contact.username, size=14),
                     dense=True,
                     content_padding=ft.padding.symmetric(horizontal=8),
@@ -1090,7 +1093,7 @@ class ChatScreen(ft.Container):
                     ft.Container(
                         expand=True,
                         content=ft.ListView(
-                            controls=member_chks,
+                            controls=member_rows,
                             spacing=0,
                         )
                     ),

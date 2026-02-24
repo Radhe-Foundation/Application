@@ -1,55 +1,29 @@
 """
-Vernika HRA - Data Entry/Spreadsheet Screen (Redesigned)
-Tab-based Multi-View Interface with Advanced Features
+Vernika HRA - Data Entry Screen (Professional UI Redesign)
+Modern, clean interface - Compatible with older Flet versions
 """
 
 import flet as ft
 import os
 from datetime import datetime
-from database.session_manager import get_session, get_db_session, check_db_connection
+from database.session_manager import get_db_session
 from database.models import DataSheet, DataSheetColumn, DataSheetRow
 
 
-# Theme colors
-PRIMARY_COLOR = "#2E86AB"
-SUCCESS_COLOR = "#4CAF50"
-ERROR_COLOR = "#F44336"
-WARNING_COLOR = "#FF9800"
+# Professional color palette
+PRIMARY_COLOR = "#1E88E5"
+PRIMARY_DARK = "#1565C0"
+SUCCESS_COLOR = "#43A047"
+ERROR_COLOR = "#E53935"
+WARNING_COLOR = "#FB8C00"
 BG_COLOR = "#F5F7FA"
 SURFACE_COLOR = "#FFFFFF"
-TEXT_COLOR = "#2C3E50"
-TEXT_MUTED = "#7F8C8D"
-
-
-def _safe_navigate_to_home(page, user=None):
-    """Safely navigate to home screen"""
-    try:
-        from screens.admin_screen import AdminScreen
-        from screens.employee_screen import EmployeeScreen
-        page.clean()
-        if user and isinstance(user, dict):
-            role = user.get('role', 'employee').lower()
-        elif user and hasattr(user, 'role'):
-            role = user.role.name.lower() if user.role else 'employee'
-        else:
-            role = 'employee'
-
-        if role == 'admin':
-            page.add(AdminScreen(page, user))
-        else:
-            page.add(EmployeeScreen(page, user))
-    except Exception as e:
-        print(f"Navigation error: {e}")
-        from screens.login_screen import LoginScreen
-        page.clean()
-        page.add(LoginScreen(page))
-
-
-# Import navigate_to_home for compatibility (wrapped)
-try:
-    from core.navigation import navigate_to_home
-except ImportError:
-    navigate_to_home = _safe_navigate_to_home
+TEXT_COLOR = "#212121"
+TEXT_SECONDARY = "#757575"
+BORDER_COLOR = "#E0E0E0"
+HOVER_COLOR = "#F5F5F5"
+SELECTED_COLOR = "#E3F2FD"
+HEADER_BG = "#FAFAFA"
 
 
 class DataEntryScreen(ft.Container):
@@ -60,532 +34,409 @@ class DataEntryScreen(ft.Container):
         self.expand = True
         self.bgcolor = BG_COLOR
 
-        # Tab state
-        # dashboard, sheets, data, templates, import_export, settings
-        self.current_tab = "dashboard"
+        # State
+        self.current_tab = "sheets"
         self.current_sheet = None
-        self.view_mode = "grid"  # grid or list
+        self.editing_cell = None
+        self.selected_row_id = None
+        self.selected_cell = None
+        self.sort_column = None
+        self.sort_ascending = True
+        self.current_page = 1
+        self.rows_per_page = 50
+        self.total_rows = 0
         self.search_query = ""
-        self.auto_save_timer = None
-        self.unsaved_changes = False
-
-        # Undo/Redo stacks
-        self.undo_stack = []
-        self.redo_stack = []
 
         self.content = self._build_content()
 
     def _build_content(self):
         return ft.Column([
-            # Header
             self._build_header(),
-            # Tab navigation
-            self._build_tabs(),
-            # Main content area
-            ft.Container(
-                content=self._build_tab_content(),
-                expand=True,
-                padding=20
-            )
+            self._build_main_content(),
         ], expand=True, spacing=0)
 
     def _build_header(self):
         return ft.Container(
-            padding=15,
-            bgcolor=PRIMARY_COLOR,
-            content=ft.Row([
-                ft.IconButton(
-                    icon=ft.Icons.ARROW_BACK,
-                    icon_color="white",
-                    on_click=self.go_back
-                ),
-                ft.Icon(ft.Icons.TABLE_ROWS, color="white", size=28),
-                ft.Text("Data Entry", size=22, color="white",
-                        weight=ft.FontWeight.BOLD),
-                ft.Container(expand=True),
-                # Auto-save indicator
-                ft.Container(
-                    content=ft.Row([
-                        ft.Icon(ft.Icons.CLOUD_DONE, size=16,
-                                color="white" if not self.unsaved_changes else WARNING_COLOR),
-                        ft.Text("Auto-save on" if not self.unsaved_changes else "Unsaved changes",
-                                size=11, color="white"),
-                    ], spacing=5),
-                    visible=False
-                ),
-                ft.ElevatedButton(
-                    "New Sheet",
-                    icon=ft.Icons.ADD,
-                    on_click=self.show_create_dialog,
-                    style=ft.ButtonStyle(
-                        bgcolor=WARNING_COLOR, color="white"),
-                ),
-            ])
-        )
-
-    def _build_tabs(self):
-        tabs = [
-            ("dashboard", "Dashboard", ft.Icons.DASHBOARD),
-            ("sheets", "My Sheets", ft.Icons.FOLDER),
-            ("data", "Data Entry", ft.Icons.TABLE_CHART),
-            ("templates", "Templates", ft.Icons.WIDGETS),
-            ("import_export", "Import/Export", ft.Icons.IMPORT_EXPORT),
-            ("settings", "Settings", ft.Icons.SETTINGS),
-        ]
-
-        return ft.Container(
+            padding=20,
             bgcolor=SURFACE_COLOR,
-            padding=ft.padding.only(left=10, top=5, bottom=5),
-            content=ft.Row([
-                ft.Container(
-                    content=ft.Row([
-                        ft.Container(
-                            content=ft.Text(
-                                label,
-                                size=13,
-                                color=PRIMARY_COLOR if self.current_tab == key else TEXT_MUTED,
-                                weight=ft.FontWeight.BOLD if self.current_tab == key else ft.FontWeight.NORMAL
-                            ),
-                            padding=ft.padding.symmetric(
-                                horizontal=15, vertical=8),
-                            bgcolor=PRIMARY_COLOR if self.current_tab == key else "transparent",
-                            border_radius=20,
-                            on_click=lambda e, k=key: self._switch_tab(k)
-                        ) for key, label, icon in tabs
-                    ], spacing=5)
-                ),
-                ft.Container(expand=True),
-            ], alignment=ft.MainAxisAlignment.START)
+            content=ft.Column([
+                ft.Row([
+                    ft.Container(
+                        content=ft.Row([
+                            ft.Icon(ft.Icons.TABLE_CHART,
+                                    color=PRIMARY_COLOR, size=32),
+                            ft.Column([
+                                ft.Text(
+                                    "Data Entry", size=24, weight=ft.FontWeight.BOLD, color=TEXT_COLOR),
+                                ft.Text("Manage your spreadsheets and data",
+                                        size=12, color=TEXT_SECONDARY),
+                            ], spacing=0),
+                        ], spacing=15)
+                    ),
+                    ft.Container(expand=True),
+                    ft.ElevatedButton(
+                        "New Sheet",
+                        icon=ft.Icons.ADD,
+                        on_click=self.show_create_dialog,
+                        bgcolor=PRIMARY_COLOR,
+                        color="white",
+                    ),
+                ], alignment=ft.MainAxisAlignment.START),
+                ft.Divider(height=1, color=BORDER_COLOR),
+            ], spacing=0)
         )
 
-    def _switch_tab(self, tab_key):
-        self.current_tab = tab_key
-        self.content = self._build_content()
-        self._page.update()
-
-    def _build_tab_content(self):
-        if self.current_tab == "dashboard":
-            return self._build_dashboard()
-        elif self.current_tab == "sheets":
+    def _build_main_content(self):
+        if not self.current_sheet:
             return self._build_sheets_view()
-        elif self.current_tab == "data":
-            return self._build_data_entry()
-        elif self.current_tab == "templates":
-            return self._build_templates()
-        elif self.current_tab == "import_export":
-            return self._build_import_export()
-        elif self.current_tab == "settings":
-            return self._build_settings()
-        return self._build_dashboard()
-
-    def _build_dashboard(self):
-        stats = self._get_dashboard_stats()
-        recent_sheets = self._get_recent_sheets(5)
-
-        return ft.Row([
-            # Left panel - Stats
-            ft.Container(
-                width=280,
-                content=ft.Column([
-                    ft.Text("Overview", size=18, weight=ft.FontWeight.BOLD),
-                    ft.Container(height=20),
-                    self._stat_card("Total Sheets", str(stats['total_sheets']),
-                                    ft.Icons.FOLDER, PRIMARY_COLOR),
-                    self._stat_card("Total Rows", str(stats['total_rows']),
-                                    ft.Icons.LIST, SUCCESS_COLOR),
-                    self._stat_card("This Week", str(stats['this_week']),
-                                    ft.Icons.CALENDAR_TODAY, WARNING_COLOR),
-                    ft.Container(height=30),
-                    ft.Text("Quick Actions", size=16,
-                            weight=ft.FontWeight.BOLD),
-                    ft.Container(height=10),
-                    ft.ElevatedButton("Create New Sheet", icon=ft.Icons.ADD,
-                                      on_click=self.show_create_dialog,
-                                      bgcolor=PRIMARY_COLOR, color="white", width=200),
-                    ft.Container(height=10),
-                    ft.ElevatedButton("Import Data", icon=ft.Icons.UPLOAD,
-                                      on_click=lambda e: self._switch_tab(
-                                          "import_export"),
-                                      bgcolor=SURFACE_COLOR, color=PRIMARY_COLOR, width=200),
-                ], spacing=10)
-            ),
-            # Right panel - Recent activity
-            ft.Container(
-                expand=True,
-                content=ft.Column([
-                    ft.Text("Recent Sheets", size=18,
-                            weight=ft.FontWeight.BOLD),
-                    ft.Container(height=10),
-                    ft.Container(
-                        expand=True,
-                        content=ft.ListView(
-                            expand=True,
-                            spacing=10,
-                            controls=[
-                                self._recent_sheet_card(sheet) for sheet in recent_sheets
-                            ] if recent_sheets else [
-                                ft.Container(
-                                    content=ft.Text(
-                                        "No sheets created yet", color=TEXT_MUTED),
-                                    padding=20
-                                )
-                            ]
-                        )
-                    )
-                ], spacing=10)
-            )
-        ], spacing=20)
-
-    def _stat_card(self, title, value, icon, color):
-        return ft.Card(
-            content=ft.Container(
-                padding=15,
-                content=ft.Row([
-                    ft.Container(
-                        width=40, height=40,
-                        bgcolor=f"{color}20",
-                        border_radius=8,
-                        content=ft.Icon(icon, color=color, size=22),
-                    ),
-                    ft.Column([
-                        ft.Text(value, size=22, weight=ft.FontWeight.BOLD),
-                        ft.Text(title, size=12, color=TEXT_MUTED),
-                    ], spacing=0)
-                ], alignment=ft.MainAxisAlignment.START)
-            ),
-            elevation=1
-        )
-
-    def _recent_sheet_card(self, sheet):
-        return ft.Card(
-            content=ft.Container(
-                padding=12,
-                content=ft.Row([
-                    ft.Container(
-                        width=40, height=40,
-                        bgcolor="#E8F4F8",
-                        border_radius=8,
-                        content=ft.Icon(ft.Icons.TABLE_CHART,
-                                        color=PRIMARY_COLOR, size=22),
-                    ),
-                    ft.Column([
-                        ft.Text(str(sheet.name) if sheet.name else "Untitled",
-                                size=14, weight=ft.FontWeight.BOLD),
-                        ft.Text(f"Updated: {sheet.updated_at.strftime('%d %b %Y') if sheet.updated_at else 'N/A'}",
-                                size=11, color=TEXT_MUTED),
-                    ], spacing=2, expand=True),
-                    ft.IconButton(icon=ft.Icons.OPEN_IN_NEW, icon_color=PRIMARY_COLOR, scale=0.7,
-                                  tooltip="Open", on_click=lambda e, sid=sheet.id: self._open_sheet(sid)),
-                ], alignment=ft.MainAxisAlignment.START)
-            ),
-            elevation=1
-        )
+        return self._build_spreadsheet_view()
 
     def _build_sheets_view(self):
         sheets = self._get_all_sheets()
 
-        return ft.Column([
-            # Toolbar
-            ft.Container(
-                padding=10,
-                bgcolor=SURFACE_COLOR,
-                border_radius=8,
-                content=ft.Row([
-                    ft.TextField(
-                        label="Search sheets...",
-                        width=300,
-                        prefix_icon=ft.Icons.SEARCH,
-                        on_change=self._on_search
-                    ),
-                    ft.Container(expand=True),
-                    ft.Container(
-                        content=ft.Row([
-                            ft.Text("View:", size=12, color=TEXT_MUTED),
-                            ft.IconButton(icon=ft.Icons.GRID_VIEW, icon_color=PRIMARY_COLOR if self.view_mode == "grid" else TEXT_MUTED,
-                                          on_click=lambda e: self._set_view_mode("grid")),
-                            ft.IconButton(icon=ft.Icons.LIST, icon_color=PRIMARY_COLOR if self.view_mode == "list" else TEXT_MUTED,
-                                          on_click=lambda e: self._set_view_mode("list")),
-                        ], spacing=5)
-                    ),
-                ], alignment=ft.MainAxisAlignment.START)
-            ),
-            ft.Container(height=15),
-            # Sheets grid/list
-            ft.Container(
-                expand=True,
-                content=self._build_sheets_content(sheets)
-            )
-        ], spacing=0)
+        header = ft.Container(
+            padding=20,
+            content=ft.Row([
+                ft.Text("My Sheets", size=20, weight=ft.FontWeight.BOLD),
+                ft.Container(expand=True),
+                ft.TextField(
+                    hint_text="Search sheets...",
+                    width=250,
+                    prefix_icon=ft.Icons.SEARCH,
+                    border_color=BORDER_COLOR,
+                    on_change=self._on_search
+                ),
+            ])
+        )
 
-    def _build_sheets_content(self, sheets):
         if not sheets:
             return ft.Container(
                 content=ft.Column([
-                    ft.Icon(ft.Icons.FOLDER_OPEN, size=64, color="#BDC3C7"),
-                    ft.Text("No sheets found", size=16, color=TEXT_MUTED),
-                    ft.ElevatedButton("Create First Sheet", on_click=self.show_create_dialog,
-                                      bgcolor=PRIMARY_COLOR, color="white"),
-                ], horizontal_alignment=ft.CrossAxisAlignment.CENTER),
-                alignment=ft.alignment.Alignment(0, 0),
-                expand=True
-            )
-
-        if self.view_mode == "grid":
-            # Grid view
-            rows = []
-            for i in range(0, len(sheets), 3):
-                row_sheets = sheets[i:i+3]
-                rows.append(
-                    ft.Row([
-                        self._sheet_grid_card(sheet) for sheet in row_sheets
-                    ], spacing=15)
-                )
-            return ft.ListView(expand=True, spacing=15, controls=rows)
-        else:
-            # List view
-            return ft.ListView(
-                expand=True,
-                spacing=10,
-                controls=[self._sheet_list_card(sheet) for sheet in sheets]
-            )
-
-    def _sheet_grid_card(self, sheet):
-        cols = self._get_col_count(sheet.id)
-        rows = self._get_row_count(sheet.id)
-
-        return ft.Card(
-            content=ft.Container(
-                padding=15,
-                width=220,
-                content=ft.Column([
+                    header,
                     ft.Container(
-                        width=50, height=50,
-                        bgcolor="#E8F4F8",
-                        border_radius=8,
-                        content=ft.Icon(ft.Icons.TABLE_CHART,
-                                        size=28, color=PRIMARY_COLOR),
-                        alignment=ft.alignment.Alignment(0, 0)
+                        expand=True,
+                        content=ft.Column([
+                            ft.Icon(ft.Icons.FOLDER_OPEN,
+                                    size=80, color="#BDBDBD"),
+                            ft.Text("No sheets yet", size=18,
+                                    color=TEXT_SECONDARY),
+                            ft.Text(
+                                "Create your first sheet to start managing data", size=14, color="#9E9E9E"),
+                            ft.Container(height=20),
+                            ft.ElevatedButton(
+                                "Create Sheet",
+                                icon=ft.Icons.ADD,
+                                on_click=self.show_create_dialog,
+                                bgcolor=PRIMARY_COLOR,
+                                color="white",
+                                height=45,
+                            ),
+                        ], horizontal_alignment=ft.CrossAxisAlignment.CENTER, spacing=10),
+                        alignment=ft.alignment.Alignment(0, 0),
                     ),
-                    ft.Text(str(sheet.name) if sheet.name else "Untitled",
-                            size=14, weight=ft.FontWeight.BOLD, text_align=ft.TextAlign.CENTER),
-                    ft.Text(str(sheet.description) if sheet.description else "No description",
-                            size=11, color=TEXT_MUTED, max_lines=2),
-                    ft.Container(height=10),
-                    ft.Row([
-                        ft.Column([
-                            ft.Text(
-                                f"{cols}", size=16, weight=ft.FontWeight.BOLD, color=PRIMARY_COLOR),
-                            ft.Text("Cols", size=10, color=TEXT_MUTED),
-                        ], horizontal_alignment=ft.CrossAxisAlignment.CENTER),
-                        ft.Column([
-                            ft.Text(
-                                f"{rows}", size=16, weight=ft.FontWeight.BOLD, color=SUCCESS_COLOR),
-                            ft.Text("Rows", size=10, color=TEXT_MUTED),
-                        ], horizontal_alignment=ft.CrossAxisAlignment.CENTER),
-                    ], spacing=20, alignment=ft.MainAxisAlignment.CENTER),
-                    ft.Container(height=10),
-                    ft.Row([
-                        ft.IconButton(icon=ft.Icons.OPEN_IN_NEW, icon_color=PRIMARY_COLOR, scale=0.7,
-                                      tooltip="Open", on_click=lambda e, sid=sheet.id: self._open_sheet(sid)),
-                        ft.IconButton(icon=ft.Icons.EDIT, icon_color=WARNING_COLOR, scale=0.7,
-                                      tooltip="Edit", on_click=lambda e, sid=sheet.id: self._edit_sheet(sheet.id)),
-                        ft.IconButton(icon=ft.Icons.DELETE, icon_color=ERROR_COLOR, scale=0.7,
-                                      tooltip="Delete", on_click=lambda e, sid=sheet.id: self._delete_sheet(sheet.id)),
-                    ], spacing=0, alignment=ft.MainAxisAlignment.CENTER),
-                ], spacing=5)
-            ),
-            elevation=2
+                ], spacing=0),
+                bgcolor=SURFACE_COLOR,
+            )
+
+        # Sheet cards in grid
+        grid = []
+        for i in range(0, len(sheets), 3):
+            row_sheets = sheets[i:i+3]
+            grid.append(
+                ft.Row([
+                    self._sheet_card(sheet) for sheet in row_sheets
+                ], spacing=20)
+            )
+
+        return ft.Container(
+            content=ft.Column([
+                header,
+                ft.Container(
+                    padding=20,
+                    content=ft.Column(grid, spacing=20),
+                ),
+            ], spacing=0),
+            bgcolor=SURFACE_COLOR,
         )
 
-    def _sheet_list_card(self, sheet):
+    def _sheet_card(self, sheet):
         cols = self._get_col_count(sheet.id)
         rows = self._get_row_count(sheet.id)
 
-        return ft.Card(
-            content=ft.Container(
-                padding=15,
-                content=ft.Row([
+        return ft.Container(
+            width=280,
+            padding=20,
+            border_radius=12,
+            bgcolor=SURFACE_COLOR,
+            on_click=lambda e, sid=sheet.id: self._open_sheet(sid),
+            content=ft.Column([
+                ft.Row([
                     ft.Container(
-                        width=50, height=50,
-                        bgcolor="#E8F4F8",
-                        border_radius=8,
+                        width=48, height=48,
+                        bgcolor="#E3F2FD",
+                        border_radius=10,
                         content=ft.Icon(ft.Icons.TABLE_CHART,
-                                        size=28, color=PRIMARY_COLOR),
+                                        color=PRIMARY_COLOR, size=24),
                     ),
                     ft.Column([
                         ft.Text(str(sheet.name) if sheet.name else "Untitled",
-                                size=16, weight=ft.FontWeight.BOLD),
-                        ft.Text(str(sheet.description) if sheet.description else "No description",
-                                size=12, color=TEXT_MUTED),
-                        ft.Text(f"Created: {sheet.created_at.strftime('%d %b %Y') if sheet.created_at else 'N/A'}",
-                                size=11, color=TEXT_MUTED),
+                                size=16, weight=ft.FontWeight.BOLD, color=TEXT_COLOR),
+                        ft.Text(f"Updated {sheet.updated_at.strftime('%d %b %Y') if sheet.updated_at else 'Never'}",
+                                size=11, color=TEXT_SECONDARY),
                     ], spacing=2, expand=True),
-                    ft.Column([
-                        ft.Text(
-                            f"{cols}", size=18, weight=ft.FontWeight.BOLD, color=PRIMARY_COLOR),
-                        ft.Text("Columns", size=10, color=TEXT_MUTED),
-                    ], horizontal_alignment=ft.CrossAxisAlignment.CENTER),
-                    ft.Column([
-                        ft.Text(
-                            f"{rows}", size=18, weight=ft.FontWeight.BOLD, color=SUCCESS_COLOR),
-                        ft.Text("Rows", size=10, color=TEXT_MUTED),
-                    ], horizontal_alignment=ft.CrossAxisAlignment.CENTER),
-                    ft.Row([
-                        ft.IconButton(icon=ft.Icons.OPEN_IN_NEW, icon_color=PRIMARY_COLOR,
-                                      tooltip="Open", on_click=lambda e, sid=sheet.id: self._open_sheet(sid)),
-                        ft.IconButton(icon=ft.Icons.EDIT, icon_color=WARNING_COLOR,
-                                      tooltip="Edit", on_click=lambda e, sid=sheet.id: self._edit_sheet(sheet.id)),
-                        ft.IconButton(icon=ft.Icons.DELETE, icon_color=ERROR_COLOR,
-                                      tooltip="Delete", on_click=lambda e, sid=sheet.id: self._delete_sheet(sheet.id)),
-                    ], spacing=5),
-                ], alignment=ft.MainAxisAlignment.START)
-            ),
-            elevation=2
+                ], alignment=ft.MainAxisAlignment.START),
+                ft.Container(height=15),
+                ft.Text(str(sheet.description) if sheet.description else "No description",
+                        size=12, color=TEXT_SECONDARY, max_lines=2),
+                ft.Container(height=15),
+                ft.Row([
+                    ft.Container(
+                        padding=ft.padding.symmetric(
+                            horizontal=10, vertical=5),
+                        bgcolor="#E8F5E9",
+                        border_radius=20,
+                        content=ft.Text(
+                            f"{cols} cols", size=11, color=SUCCESS_COLOR, weight=ft.FontWeight.W_500),
+                    ),
+                    ft.Container(
+                        padding=ft.padding.symmetric(
+                            horizontal=10, vertical=5),
+                        bgcolor="#E3F2FD",
+                        border_radius=20,
+                        content=ft.Text(
+                            f"{rows} rows", size=11, color=PRIMARY_COLOR, weight=ft.FontWeight.W_500),
+                    ),
+                ], spacing=10),
+                ft.Container(height=15),
+                ft.Row([
+                    ft.TextButton("Open", on_click=lambda e, sid=sheet.id: self._open_sheet(sid),
+                                  style=ft.ButtonStyle(color=PRIMARY_COLOR)),
+                    ft.TextButton("Delete", on_click=lambda e, sid=sheet.id: self._delete_sheet(sheet.id),
+                                  style=ft.ButtonStyle(color=ERROR_COLOR)),
+                ], spacing=10),
+            ], spacing=0)
         )
 
-    def _build_data_entry(self):
-        if not self.current_sheet:
-            return ft.Container(
-                content=ft.Column([
-                    ft.Icon(ft.Icons.TABLE_CHART_OUTLINED,
-                            size=64, color="#BDC3C7"),
-                    ft.Text("Select a sheet to start entering data",
-                            size=16, color=TEXT_MUTED),
-                    ft.ElevatedButton("Go to My Sheets", on_click=lambda e: self._switch_tab("sheets"),
-                                      bgcolor=PRIMARY_COLOR, color="white"),
-                ], horizontal_alignment=ft.CrossAxisAlignment.CENTER),
-                alignment=ft.alignment.Alignment(0, 0),
-                expand=True
-            )
-
-        return self._build_spreadsheet()
-
-    def _build_spreadsheet(self):
+    def _build_spreadsheet_view(self):
         db = get_db_session()
         try:
             columns = db.query(DataSheetColumn).filter(
-                DataSheetColumn.sheet_id == self.current_sheet.id).order_by(DataSheetColumn.sort_order).all()
-            rows = db.query(DataSheetRow).filter(DataSheetRow.sheet_id ==
-                                                 self.current_sheet.id).order_by(DataSheetRow.created_at).all()
+                DataSheetColumn.sheet_id == self.current_sheet.id
+            ).order_by(DataSheetColumn.sort_order).all()
+
+            self.total_rows = db.query(DataSheetRow).filter(
+                DataSheetRow.sheet_id == self.current_sheet.id
+            ).count()
+
+            offset = (self.current_page - 1) * self.rows_per_page
+            rows = db.query(DataSheetRow).filter(
+                DataSheetRow.sheet_id == self.current_sheet.id
+            ).order_by(DataSheetRow.created_at).offset(offset).limit(self.rows_per_page).all()
         finally:
             db.close()
 
-        # Toolbar
-        toolbar = ft.Container(
-            padding=10,
+        toolbar = self._build_toolbar(len(columns))
+        table = self._build_table(columns, rows)
+        pagination = self._build_pagination()
+
+        return ft.Container(
+            content=ft.Column([
+                toolbar,
+                table,
+                pagination,
+            ], spacing=0),
             bgcolor=SURFACE_COLOR,
-            border_radius=8,
-            content=ft.Row([
-                ft.IconButton(icon=ft.Icons.ARROW_BACK, tooltip="Back to sheets",
-                              on_click=lambda e: self._close_sheet()),
-                ft.Text(f"Sheet: {self.current_sheet.name}",
-                        size=16, weight=ft.FontWeight.BOLD),
-                ft.Container(width=20),
-                ft.ElevatedButton("Add Row", icon=ft.Icons.ADD, on_click=lambda e: self._add_row(),
-                                  bgcolor=SUCCESS_COLOR, color="white"),
-                ft.ElevatedButton("Add Column", icon=ft.Icons.ADD, on_click=lambda e: self._add_column(),
-                                  bgcolor=PRIMARY_COLOR, color="white"),
-                ft.Container(width=10),
-                ft.IconButton(icon=ft.Icons.UNDO, tooltip="Undo",
-                              on_click=lambda e: self._undo()),
-                ft.IconButton(icon=ft.Icons.REDO, tooltip="Redo",
-                              on_click=lambda e: self._redo()),
-                ft.Container(expand=True),
-                ft.ElevatedButton("Export Excel", icon=ft.Icons.DOWNLOAD, on_click=lambda e: self._export_excel(),
-                                  bgcolor=PRIMARY_COLOR, color="white"),
-            ], spacing=10)
         )
 
-        # Table header
-        header_row = []
-        for col in columns:
-            col_name = "Column"
-            col_width = 150
-            try:
-                if col.column_name:
-                    col_name = col.column_name
-                if col.width:
-                    col_width = col.width
-            except Exception:
-                pass
-
-            header_row.append(
-                ft.Container(
-                    content=ft.Column([
-                        ft.Text(col_name, size=12, weight=ft.FontWeight.BOLD,
-                                text_align=ft.TextAlign.CENTER),
-                        ft.Container(height=2),
-                        ft.Container(
-                            height=3, width=col_width-20, bgcolor=PRIMARY_COLOR
-                        )
+    def _build_toolbar(self, col_count):
+        return ft.Container(
+            padding=15,
+            bgcolor=HEADER_BG,
+            content=ft.Column([
+                ft.Row([
+                    ft.IconButton(
+                        icon=ft.Icons.ARROW_BACK,
+                        tooltip="Back to sheets",
+                        on_click=self._close_sheet,
+                    ),
+                    ft.Container(width=10),
+                    ft.Column([
+                        ft.Text(self.current_sheet.name if self.current_sheet else "Sheet",
+                                size=18, weight=ft.FontWeight.BOLD, color=TEXT_COLOR),
+                        ft.Text(f"{self.total_rows} rows • {col_count} columns",
+                                size=11, color=TEXT_SECONDARY),
                     ], spacing=0),
-                    width=col_width,
-                    padding=10,
-                    bgcolor="#E8F4F8",
-                    border=ft.border.all(1, "#E0E0E0"),
-                )
+                    ft.Container(width=30),
+                    ft.ElevatedButton(
+                        "+ Add Row",
+                        on_click=self._add_row,
+                        bgcolor=SUCCESS_COLOR, color="white",
+                        height=36,
+                    ),
+                    ft.Container(width=10),
+                    ft.ElevatedButton(
+                        "+ Add Column",
+                        on_click=self._add_column,
+                        bgcolor=PRIMARY_COLOR, color="white",
+                        height=36,
+                    ),
+                    ft.Container(width=20),
+                    ft.TextField(
+                        hint_text="Search data...",
+                        width=200, height=36,
+                        prefix_icon=ft.Icons.SEARCH,
+                        border_color=BORDER_COLOR,
+                        on_change=self._on_filter
+                    ),
+                    ft.Container(expand=True),
+                    ft.ElevatedButton(
+                        "Export Excel", icon=ft.Icons.DOWNLOAD,
+                        on_click=self._export_excel,
+                        bgcolor=PRIMARY_COLOR, color="white",
+                        height=36,
+                    ),
+                ], spacing=0, alignment=ft.MainAxisAlignment.START),
+                ft.Divider(height=1, color=BORDER_COLOR),
+            ], spacing=0)
+        )
+
+    def _build_table(self, columns, rows):
+        # Calculate auto column width based on content
+        col_widths = {}
+        for col in columns:
+            name_len = len(str(col.column_name or "Column"))
+            col_widths[col.id] = max(120, min(name_len * 14, 300))
+
+        # Check data for wider content
+        for row in rows:
+            row_data = dict(row.row_data) if row.row_data else {}
+            for col in columns:
+                val = str(row_data.get(str(col.id), ""))
+                col_widths[col.id] = max(
+                    col_widths[col.id], min(len(val) * 12, 300))
+
+        total_width = 50 + sum(col_widths.values()) + 120
+
+        # Header row
+        header_cells = [
+            ft.Container(
+                content=ft.Text(
+                    "#", size=12, weight=ft.FontWeight.BOLD, color=TEXT_SECONDARY),
+                width=50, height=45, padding=10,
+                bgcolor=HEADER_BG,
+                alignment=ft.alignment.Alignment(0, 0),
+            )
+        ]
+
+        for col in columns:
+            sort_icon = ""
+            if self.sort_column == str(col.id):
+                sort_icon = " ↑" if self.sort_ascending else " ↓"
+
+            col_header = ft.Container(
+                content=ft.Column([
+                    ft.Row([
+                        ft.Text(f"{col.column_name or 'Column'}{sort_icon}",
+                                size=12, weight=ft.FontWeight.BOLD, color=TEXT_COLOR),
+                        ft.Container(
+                            content=ft.IconButton(
+                                icon=ft.Icons.MORE_VERT, scale=0.6,
+                                on_click=lambda e, cid=col.id: self._show_column_menu(
+                                    e, cid),
+                            ),
+                            width=20,
+                        ),
+                    ], spacing=0),
+                ], spacing=0, horizontal_alignment=ft.CrossAxisAlignment.CENTER),
+                width=col_widths.get(col.id, 150), height=45, padding=5,
+                bgcolor=HEADER_BG,
+                alignment=ft.alignment.Alignment(0, 0),
+                on_click=lambda e, cid=str(col.id): self._sort_by(cid),
             )
 
-        header_row.append(
-            ft.Container(content=ft.Text("Actions", size=11, weight=ft.FontWeight.BOLD),
-                         width=100, padding=10, bgcolor="#E8F4F8",
-                         border=ft.border.all(1, "#E0E0E0"))
+            header_cells.append(col_header)
+
+        header_cells.append(
+            ft.Container(
+                content=ft.Text(
+                    "Actions", size=11, weight=ft.FontWeight.BOLD, color=TEXT_SECONDARY),
+                width=120, height=45, padding=10,
+                bgcolor=HEADER_BG,
+                alignment=ft.alignment.Alignment(0, 0),
+            )
         )
 
         # Data rows
         data_rows = []
+        row_offset = (self.current_page - 1) * self.rows_per_page
+
         for idx, row in enumerate(rows):
-            row_data = {}
-            try:
-                if row.row_data:
-                    row_data = row.row_data
-            except Exception:
-                pass
+            row_num = row_offset + idx + 1
+            row_data = dict(row.row_data) if row.row_data else {}
 
-            bg = "#FFFFFF" if idx % 2 == 0 else "#FAFAFA"
+            bg = SELECTED_COLOR if self.selected_row_id == row.id else (
+                "#FFFFFF" if idx % 2 == 0 else "#FAFAFA")
 
-            cells = []
+            cells = [
+                ft.Container(
+                    content=ft.Text(str(row_num), size=11,
+                                    color=TEXT_SECONDARY),
+                    width=50, padding=8,
+                    bgcolor=bg,
+                    alignment=ft.alignment.Alignment(0, 0),
+                    on_click=lambda e, rid=row.id: self._select_row(rid),
+                )
+            ]
+
             for col in columns:
                 col_id = str(col.id)
                 val = row_data.get(col_id, "")
-                col_width = 150
-                try:
-                    if col.width:
-                        col_width = col.width
-                except Exception:
-                    pass
+                col_width = col_widths.get(col.id, 150)
 
-                # Inline editable cell - using Container with Text instead of TextField for compatibility
-                cells.append(
-                    ft.Container(
-                        content=ft.Text(
-                            str(val) if val else "",
-                            size=12,
-                            color=TEXT_COLOR
-                        ),
-                        width=col_width,
-                        padding=8,
-                        bgcolor=bg,
-                        border=ft.border.all(1, "#E0E0E0"),
-                        alignment=ft.alignment.Alignment(-1, 0)
+                is_editing = self.editing_cell == (row.id, col.id)
+
+                if is_editing:
+                    cells.append(
+                        ft.Container(
+                            content=ft.TextField(
+                                value=str(val) if val else "",
+                                dense=True, text_size=12,
+                                border_color="transparent",
+                                focused_border_color=PRIMARY_COLOR,
+                                on_blur=lambda e, r=row.id, c=col.id: self._finish_edit(
+                                    r, c, e.control.value),
+                                autofocus=True,
+                            ),
+                            width=col_width, padding=4,
+                            bgcolor=bg,
+                        )
                     )
-                )
+                else:
+                    display_val = str(val) if val else ""
+                    cells.append(
+                        ft.Container(
+                            content=ft.Text(
+                                display_val, size=11, color=TEXT_COLOR),
+                            width=col_width, padding=8,
+                            bgcolor=bg,
+                            on_click=lambda e, r=row.id, c=col.id: self._start_edit(
+                                r, c),
+                        )
+                    )
 
-            # Action buttons
+            # Actions
             cells.append(
                 ft.Container(
                     content=ft.Row([
-                        ft.IconButton(icon=ft.Icons.SAVE, icon_color=SUCCESS_COLOR,
-                                      scale=0.6, tooltip="Save row",
-                                      on_click=lambda e, rid=row.id: self._save_row(rid)),
-                        ft.IconButton(icon=ft.Icons.DELETE, icon_color=ERROR_COLOR,
-                                      scale=0.6, tooltip="Delete row",
-                                      on_click=lambda e, rid=row.id: self._delete_row(rid)),
-                    ], spacing=0),
-                    width=100,
-                    padding=2,
+                        ft.IconButton(ft.Icons.SAVE, scale=0.7, icon_color=SUCCESS_COLOR,
+                                      tooltip="Save", on_click=lambda e, rid=row.id: self._save_row(rid)),
+                        ft.IconButton(ft.Icons.CONTENT_COPY, scale=0.7, icon_color=PRIMARY_COLOR,
+                                      tooltip="Duplicate", on_click=lambda e, rid=row.id: self._duplicate_row(rid)),
+                        ft.IconButton(ft.Icons.DELETE, scale=0.7, icon_color=ERROR_COLOR,
+                                      tooltip="Delete", on_click=lambda e, rid=row.id: self._delete_row(rid)),
+                    ], spacing=2),
+                    width=120, padding=4,
                     bgcolor=bg,
-                    border=ft.border.all(1, "#E0E0E0"),
                 )
             )
 
@@ -593,242 +444,63 @@ class DataEntryScreen(ft.Container):
                 ft.Container(content=ft.Row(cells, spacing=0), bgcolor=bg)
             )
 
-        # Build table
-        return ft.Column([
-            toolbar,
-            ft.Container(height=10),
-            ft.Container(
-                content=ft.Column([
-                    # Header
-                    ft.Container(content=ft.Row(
-                        header_row, spacing=0), bgcolor="#E8F4F8"),
-                    # Data
-                    ft.Column(data_rows, spacing=0)
-                ], spacing=0),
-                border=ft.border.all(1, "#E0E0E0"),
-                border_radius=8
-            ),
-            ft.Container(height=10),
-            ft.Text(f"{len(rows)} rows | {len(columns)} columns | Click on cells to edit",
-                    size=12, color=TEXT_MUTED)
-        ], spacing=0)
+        # Build table with horizontal scroll
+        table_header = ft.Container(content=ft.Row(
+            header_cells, spacing=0), bgcolor=HEADER_BG)
+        table_data = ft.Column(data_rows, spacing=0)
 
-    def _build_templates(self):
-        templates = [
-            {"name": "Employee Tracker",
-                "description": "Track employee information", "icon": ft.Icons.PEOPLE},
-            {"name": "Project Tasks", "description": "Manage project tasks",
-                "icon": ft.Icons.TASK},
-            {"name": "Inventory List", "description": "Simple inventory tracking",
-                "icon": ft.Icons.INVENTORY},
-            {"name": "Expense Tracker", "description": "Track expenses",
-                "icon": ft.Icons.ATTACH_MONEY},
-        ]
+        table_content = ft.Column([table_header, table_data], spacing=0)
 
-        return ft.Column([
-            ft.Text("Templates", size=20, weight=ft.FontWeight.BOLD),
-            ft.Container(height=20),
-            ft.GridView(
-                expand=True,
-                runs_count=3,
-                spacing=20,
+        # Return with horizontal scrolling
+        return ft.Container(
+            height=500,
+            expand=True,
+            content=ft.ListView(
                 controls=[
-                    self._template_card(t) for t in templates
-                ]
-            )
-        ], spacing=10)
-
-    def _template_card(self, template):
-        return ft.Card(
-            content=ft.Container(
-                padding=20,
-                width=200,
-                content=ft.Column([
-                    ft.Icon(template["icon"], size=40, color=PRIMARY_COLOR),
-                    ft.Text(template["name"], size=14,
-                            weight=ft.FontWeight.BOLD),
-                    ft.Text(template["description"],
-                            size=11, color=TEXT_MUTED),
-                    ft.Container(height=10),
-                    ft.ElevatedButton("Use Template", on_click=self.show_create_dialog,
-                                      bgcolor=PRIMARY_COLOR, color="white", height=30),
-                ], horizontal_alignment=ft.CrossAxisAlignment.CENTER, spacing=10)
+                    ft.Container(
+                        content=ft.Row(header_cells, spacing=0),
+                        bgcolor=HEADER_BG,
+                    ),
+                    ft.Container(
+                        content=ft.Column(data_rows, spacing=0),
+                    ),
+                ],
+                spacing=0,
             ),
-            elevation=2
         )
 
-    def _build_import_export(self):
-        return ft.Column([
-            ft.Text("Import / Export", size=20, weight=ft.FontWeight.BOLD),
-            ft.Container(height=20),
-            ft.Row([
-                # Import section
-                ft.Card(
-                    content=ft.Container(
-                        padding=30,
-                        width=300,
-                        content=ft.Column([
-                            ft.Icon(ft.Icons.UPLOAD_FILE,
-                                    size=50, color=PRIMARY_COLOR),
-                            ft.Text("Import Data", size=18,
-                                    weight=ft.FontWeight.BOLD),
-                            ft.Text("Import from Excel or CSV file",
-                                    size=12, color=TEXT_MUTED),
-                            ft.Container(height=15),
-                            ft.ElevatedButton("Choose File", on_click=self._import_data,
-                                              bgcolor=PRIMARY_COLOR, color="white"),
-                        ], horizontal_alignment=ft.CrossAxisAlignment.CENTER, spacing=15)
-                    ),
-                    elevation=2
-                ),
-                # Export section
-                ft.Card(
-                    content=ft.Container(
-                        padding=30,
-                        width=300,
-                        content=ft.Column([
-                            ft.Icon(ft.Icons.DOWNLOAD, size=50,
-                                    color=SUCCESS_COLOR),
-                            ft.Text("Export Data", size=18,
-                                    weight=ft.FontWeight.BOLD),
-                            ft.Text("Export to Excel or CSV file",
-                                    size=12, color=TEXT_MUTED),
-                            ft.Container(height=15),
-                            ft.ElevatedButton("Export All Sheets", on_click=self._export_all,
-                                              bgcolor=SUCCESS_COLOR, color="white"),
-                        ], horizontal_alignment=ft.CrossAxisAlignment.CENTER, spacing=15)
-                    ),
-                    elevation=2
-                ),
-            ], spacing=30),
-            ft.Container(height=30),
-            ft.Text("Recent Exports", size=16, weight=ft.FontWeight.BOLD),
-            ft.Container(height=10),
-            ft.Text("No recent exports", size=12, color=TEXT_MUTED),
-        ], spacing=10)
+    def _build_pagination(self):
+        total_pages = max(
+            1, (self.total_rows + self.rows_per_page - 1) // self.rows_per_page)
 
-    def _build_settings(self):
-        return ft.Column([
-            ft.Text("Settings", size=20, weight=ft.FontWeight.BOLD),
-            ft.Container(height=20),
-            ft.Card(
-                content=ft.Container(
-                    padding=20,
-                    content=ft.Column([
-                        ft.Text("Sheet Preferences", size=16,
-                                weight=ft.FontWeight.BOLD),
-                        ft.Switch("Auto-save", value=True,
-                                  on_change=lambda e: self._toggle_autosave(e)),
-                        ft.Text("Auto-save your changes every 30 seconds",
-                                size=12, color=TEXT_MUTED),
-                        ft.Container(height=15),
-                        ft.Text("Default Column Width", size=14),
-                        ft.Slider(min=50, max=300, value=150,
-                                  divisions=5, label="150px"),
-                        ft.Container(height=15),
-                        ft.Text("Default View Mode", size=14),
-                        ft.Container(
-                            content=ft.Row([
-                                ft.ElevatedButton("Grid",
-                                                  bgcolor=PRIMARY_COLOR if self.view_mode == "grid" else SURFACE_COLOR,
-                                                  color="white" if self.view_mode == "grid" else TEXT_COLOR,
-                                                  on_click=lambda e: self._set_view_mode("grid")),
-                                ft.ElevatedButton("List",
-                                                  bgcolor=PRIMARY_COLOR if self.view_mode == "list" else SURFACE_COLOR,
-                                                  color="white" if self.view_mode == "list" else TEXT_COLOR,
-                                                  on_click=lambda e: self._set_view_mode("list")),
-                            ], spacing=10)
-                        ),
-                    ], spacing=15)
-                ),
-                elevation=2
-            )
-        ], spacing=10)
+        return ft.Container(
+            padding=15,
+            content=ft.Row([
+                ft.Text(f"Showing {len(self._get_page_rows())} of {self.total_rows} rows",
+                        size=12, color=TEXT_SECONDARY),
+                ft.Container(expand=True),
+                ft.Text(f"Page {self.current_page} of {total_pages}",
+                        size=12, color=TEXT_SECONDARY),
+                ft.Container(width=10),
+                ft.IconButton(ft.Icons.CHEVRON_LEFT, on_click=lambda e: self._change_page(-1),
+                              disabled=self.current_page == 1),
+                ft.IconButton(ft.Icons.CHEVRON_RIGHT, on_click=lambda e: self._change_page(1),
+                              disabled=self.current_page >= total_pages),
+            ], spacing=10),
+            bgcolor=HEADER_BG,
+        )
 
-    def _toggle_autosave(self, e):
-        self._show_success(
-            f"Auto-save {'enabled' if e.control.value else 'disabled'}")
-
-    # Database operations
-    def _get_dashboard_stats(self):
+    def _get_page_rows(self):
         db = get_db_session()
         try:
-            total_sheets = db.query(DataSheet).count()
-            total_rows = db.query(DataSheetRow).count()
-
-            from datetime import timedelta
-            week_ago = datetime.utcnow() - timedelta(days=7)
-            this_week = db.query(DataSheet).filter(
-                DataSheet.created_at >= week_ago).count()
-
-            return {'total_sheets': total_sheets, 'total_rows': total_rows, 'this_week': this_week}
-        except Exception:
-            return {'total_sheets': 0, 'total_rows': 0, 'this_week': 0}
-        finally:
-            db.close()
-
-    def _get_recent_sheets(self, limit=5):
-        db = get_db_session()
-        try:
-            return db.query(DataSheet).order_by(DataSheet.updated_at.desc()).limit(limit).all()
-        except Exception:
-            return []
-        finally:
-            db.close()
-
-    def _get_all_sheets(self):
-        db = get_db_session()
-        try:
-            return db.query(DataSheet).order_by(DataSheet.created_at.desc()).all()
-        except Exception:
-            return []
-        finally:
-            db.close()
-
-    def _get_col_count(self, sheet_id):
-        db = get_db_session()
-        try:
-            return db.query(DataSheetColumn).filter(DataSheetColumn.sheet_id == sheet_id).count()
-        except Exception:
-            return 0
-        finally:
-            db.close()
-
-    def _get_row_count(self, sheet_id):
-        db = get_db_session()
-        try:
-            return db.query(DataSheetRow).filter(DataSheetRow.sheet_id == sheet_id).count()
-        except Exception:
-            return 0
+            offset = (self.current_page - 1) * self.rows_per_page
+            return db.query(DataSheetRow).filter(
+                DataSheetRow.sheet_id == self.current_sheet.id
+            ).offset(offset).limit(self.rows_per_page).all()
         finally:
             db.close()
 
     # Actions
-    def go_back(self, e):
-        try:
-            # Navigation - handled locally to avoid import errors
-            _safe_navigate_to_home(self._page, self.user)
-        except Exception as e:
-            print(f"Go back error: {e}")
-            from screens.login_screen import LoginScreen
-            self._page.clean()
-            self._page.add(LoginScreen(self._page))
-
-    def _set_view_mode(self, mode):
-        self.view_mode = mode
-        self.content = self._build_content()
-        self._page.update()
-
-    def _on_search(self, e):
-        self.search_query = e.control.value
-        # Filter implementation
-        self._page.update()
-
-    def _switch_tab(self, tab_key):
-        self.current_tab = tab_key
-        self.content = self._build_content()
-        self._page.update()
-
     def _open_sheet(self, sheet_id):
         db = get_db_session()
         try:
@@ -836,109 +508,424 @@ class DataEntryScreen(ft.Container):
                 DataSheet.id == sheet_id).first()
             if sheet:
                 self.current_sheet = sheet
-                self.current_tab = "data"
+                self.current_page = 1
                 self.content = self._build_content()
         finally:
             db.close()
         self._page.update()
 
-    def _close_sheet(self):
+    def _close_sheet(self, e=None):
         self.current_sheet = None
-        self.current_tab = "sheets"
         self.content = self._build_content()
         self._page.update()
 
-    def _edit_sheet(self, sheet_id):
-        db = get_db_session()
-        try:
-            sheet = db.query(DataSheet).filter(
-                DataSheet.id == sheet_id).first()
-            if sheet:
-                self._show_edit_sheet_dialog(sheet)
-        finally:
-            db.close()
+    def _start_edit(self, row_id, col_id):
+        self.editing_cell = (row_id, col_id)
+        self.content = self._build_content()
+        self._page.update()
 
-    def _show_edit_sheet_dialog(self, sheet):
-        name_f = ft.TextField(label="Sheet Name", width=350, value=sheet.name)
-        desc_f = ft.TextField(label="Description", width=350,
-                              multiline=True, value=sheet.description)
-
-        def save(e):
-            if not name_f.value:
-                self._show_error("Sheet name required")
-                return
+    def _finish_edit(self, row_id, col_id, value):
+        if self.editing_cell == (row_id, col_id):
+            self.editing_cell = None
             db = get_db_session()
             try:
-                sheet.name = name_f.value
-                sheet.description = desc_f.value
-                sheet.updated_at = datetime.utcnow()
-                db.commit()
-                self._show_success("Sheet updated!")
-                self._close_dialog()
-                self.content = self._build_content()
-                self._page.update()
-            except Exception as ex:
-                self._show_error(f"Error: {ex}")
+                row = db.query(DataSheetRow).filter(
+                    DataSheetRow.id == row_id).first()
+                if row:
+                    row_data = row.row_data or {}
+                    row_data[str(col_id)] = value
+                    row.row_data = row_data
+                    row.updated_at = datetime.utcnow()
+                    db.commit()
             finally:
                 db.close()
+        self.content = self._build_content()
+        self._page.update()
+
+    def _select_row(self, row_id):
+        self.selected_row_id = row_id if self.selected_row_id != row_id else None
+        self.content = self._build_content()
+        self._page.update()
+
+    def _sort_by(self, col_id):
+        if self.sort_column == col_id:
+            self.sort_ascending = not self.sort_ascending
+        else:
+            self.sort_column = col_id
+            self.sort_ascending = True
+        self.content = self._build_content()
+        self._page.update()
+
+    def _change_page(self, delta):
+        total_pages = max(
+            1, (self.total_rows + self.rows_per_page - 1) // self.rows_per_page)
+        new_page = self.current_page + delta
+        if 1 <= new_page <= total_pages:
+            self.current_page = new_page
+            self.content = self._build_content()
+            self._page.update()
+
+    def _change_rows_per_page(self, e):
+        self.rows_per_page = int(e.control.value)
+        self.current_page = 1
+        self.content = self._build_content()
+        self._page.update()
+
+    def _add_row(self, e=None):
+        if not self.current_sheet:
+            return
+        db = get_db_session()
+        try:
+            columns = db.query(DataSheetColumn).filter(
+                DataSheetColumn.sheet_id == self.current_sheet.id
+            ).all()
+
+            row_data = {str(col.id): "" for col in columns}
+            row = DataSheetRow(
+                sheet_id=self.current_sheet.id, row_data=row_data)
+            db.add(row)
+            db.commit()
+
+            self._show_success("Row added!")
+            self.content = self._build_content()
+        except Exception as ex:
+            self._show_error(str(ex))
+        finally:
+            db.close()
+        self._page.update()
+
+    def _add_multiple_rows(self, e=None):
+        """Add multiple rows at once"""
+        if not self.current_sheet:
+            return
+
+        count_f = ft.TextField(
+            label="Number of rows to add", width=200, value="1")
+
+        def save(e):
+            try:
+                count = int(count_f.value or "1")
+                if count < 1 or count > 100:
+                    self._show_error("Enter between 1-100")
+                    return
+            except:
+                self._show_error("Invalid number")
+                return
+
+            db = get_db_session()
+            try:
+                columns = db.query(DataSheetColumn).filter(
+                    DataSheetColumn.sheet_id == self.current_sheet.id
+                ).all()
+
+                for _ in range(count):
+                    row_data = {str(col.id): "" for col in columns}
+                    row = DataSheetRow(
+                        sheet_id=self.current_sheet.id, row_data=row_data)
+                    db.add(row)
+                db.commit()
+
+                self._show_success(f"Added {count} rows!")
+                self._close_dialog()
+                self.content = self._build_content()
+            except Exception as ex:
+                self._show_error(str(ex))
+            finally:
+                db.close()
+            self._page.update()
 
         dlg = ft.AlertDialog(
-            title=ft.Text("Edit Sheet"),
-            content=ft.Column([name_f, desc_f], spacing=15),
+            title=ft.Text("Add Multiple Rows"),
+            content=ft.Column([count_f], spacing=15),
             actions=[
                 ft.TextButton(
                     "Cancel", on_click=lambda _: self._close_dialog()),
-                ft.ElevatedButton("Save", on_click=save,
-                                  bgcolor=SUCCESS_COLOR, color="white")
+                ft.ElevatedButton("Add", on_click=save,
+                                  bgcolor=SUCCESS_COLOR, color="white"),
             ]
         )
         self._page.overlay.append(dlg)
         dlg.open = True
         self._page.update()
 
-    def show_create_dialog(self, e):
-        name_f = ft.TextField(label="Sheet Name", width=350)
-        desc_f = ft.TextField(label="Description", width=350, multiline=True)
+    def _add_multiple_columns(self, e=None):
+        """Add multiple columns at once"""
+        if not self.current_sheet:
+            return
+
+        count_f = ft.TextField(
+            label="Number of columns to add", width=200, value="1")
 
         def save(e):
-            if not name_f.value:
-                self._show_error("Sheet name required")
+            try:
+                count = int(count_f.value or "1")
+                if count < 1 or count > 20:
+                    self._show_error("Enter between 1-20")
+                    return
+            except:
+                self._show_error("Invalid number")
                 return
+
             db = get_db_session()
             try:
-                sheet = DataSheet(name=name_f.value, description=desc_f.value)
-                db.add(sheet)
-                db.commit()
+                max_order = db.query(DataSheetColumn).filter(
+                    DataSheetColumn.sheet_id == self.current_sheet.id
+                ).count()
 
-                # Add default columns
-                default_cols = ["Column 1", "Column 2", "Column 3"]
-                for i, col_name in enumerate(default_cols):
+                for i in range(count):
                     col = DataSheetColumn(
-                        sheet_id=sheet.id,
-                        column_name=col_name,
+                        sheet_id=self.current_sheet.id,
+                        column_name=f"Column {max_order + i + 1}",
                         column_type="text",
-                        sort_order=i
+                        sort_order=max_order + i,
+                        width=150
                     )
                     db.add(col)
                 db.commit()
 
-                self._show_success("Sheet created with default columns!")
+                self._show_success(f"Added {count} columns!")
                 self._close_dialog()
                 self.content = self._build_content()
-                self._page.update()
             except Exception as ex:
-                self._show_error(f"Error: {ex}")
+                self._show_error(str(ex))
             finally:
                 db.close()
+            self._page.update()
 
         dlg = ft.AlertDialog(
-            title=ft.Text("Create Data Sheet"),
-            content=ft.Column([name_f, desc_f], spacing=15),
+            title=ft.Text("Add Multiple Columns"),
+            content=ft.Column([count_f], spacing=15),
             actions=[
                 ft.TextButton(
                     "Cancel", on_click=lambda _: self._close_dialog()),
-                ft.ElevatedButton("Create", on_click=save,
-                                  bgcolor=SUCCESS_COLOR, color="white")
+                ft.ElevatedButton("Add", on_click=save,
+                                  bgcolor=PRIMARY_COLOR, color="white"),
+            ]
+        )
+        self._page.overlay.append(dlg)
+        dlg.open = True
+        self._page.update()
+
+    def _add_column(self, e=None):
+        """Add a new column"""
+        if not self.current_sheet:
+            return
+
+        name_f = ft.TextField(label="Column Name", width=300)
+
+        def save(e):
+            if not name_f.value:
+                self._show_error("Column name required")
+                return
+            db = get_db_session()
+            try:
+                max_order = db.query(DataSheetColumn).filter(
+                    DataSheetColumn.sheet_id == self.current_sheet.id
+                ).count()
+
+                col = DataSheetColumn(
+                    sheet_id=self.current_sheet.id,
+                    column_name=name_f.value,
+                    column_type="text",
+                    sort_order=max_order,
+                    width=150
+                )
+                db.add(col)
+                db.commit()
+
+                self._show_success("Column added!")
+                self._close_dialog()
+                self.content = self._build_content()
+            except Exception as ex:
+                self._show_error(str(ex))
+            finally:
+                db.close()
+            self._page.update()
+
+        dlg = ft.AlertDialog(
+            title=ft.Text("Add Column"),
+            content=ft.Column([name_f], spacing=15),
+            actions=[
+                ft.TextButton(
+                    "Cancel", on_click=lambda _: self._close_dialog()),
+                ft.ElevatedButton("Add", on_click=save,
+                                  bgcolor=PRIMARY_COLOR, color="white"),
+            ]
+        )
+        self._page.overlay.append(dlg)
+        dlg.open = True
+        self._page.update()
+
+    def _rename_column(self, col_id):
+        """Show dialog to rename a column"""
+        db = get_db_session()
+        try:
+            col = db.query(DataSheetColumn).filter(
+                DataSheetColumn.id == col_id).first()
+            if not col:
+                return
+
+            name_f = ft.TextField(label="Column Name",
+                                  width=300, value=col.column_name)
+
+            def save(e):
+                if not name_f.value:
+                    self._show_error("Column name required")
+                    return
+                db = get_db_session()
+                try:
+                    col = db.query(DataSheetColumn).filter(
+                        DataSheetColumn.id == col_id).first()
+                    if col:
+                        col.column_name = name_f.value
+                        db.commit()
+                        self._show_success("Column renamed!")
+                        self._close_dialog()
+                        self.content = self._build_content()
+                except Exception as ex:
+                    self._show_error(str(ex))
+                finally:
+                    db.close()
+                self._page.update()
+
+            dlg = ft.AlertDialog(
+                title=ft.Text("Rename Column"),
+                content=ft.Column([name_f], spacing=15),
+                actions=[
+                    ft.TextButton(
+                        "Cancel", on_click=lambda _: self._close_dialog()),
+                    ft.ElevatedButton("Save", on_click=save,
+                                      bgcolor=PRIMARY_COLOR, color="white"),
+                ]
+            )
+            self._page.overlay.append(dlg)
+            dlg.open = True
+        finally:
+            db.close()
+        self._page.update()
+
+    def _delete_column(self, col_id):
+        """Delete a column"""
+        def confirm(e):
+            db = get_db_session()
+            try:
+                # Delete column
+                db.query(DataSheetColumn).filter(
+                    DataSheetColumn.id == col_id).delete()
+                db.commit()
+                self._show_success("Column deleted")
+                self._close_dialog()
+                self.content = self._build_content()
+            except Exception as ex:
+                self._show_error(str(ex))
+            finally:
+                db.close()
+            self._page.update()
+
+        dlg = ft.AlertDialog(
+            title=ft.Text("Delete Column?"),
+            content=ft.Text("This will delete the column and all its data."),
+            actions=[
+                ft.TextButton(
+                    "Cancel", on_click=lambda _: self._close_dialog()),
+                ft.ElevatedButton("Delete", on_click=confirm,
+                                  bgcolor=ERROR_COLOR, color="white"),
+            ]
+        )
+        self._page.overlay.append(dlg)
+        dlg.open = True
+        self._page.update()
+
+    def _show_column_menu(self, e, col_id):
+        """Show column actions menu"""
+        # Get column info
+        db = get_db_session()
+        try:
+            col = db.query(DataSheetColumn).filter(
+                DataSheetColumn.id == col_id).first()
+            col_name = col.column_name if col else "Column"
+        finally:
+            db.close()
+
+        def rename(e):
+            self._close_dialog()
+            self._rename_column(col_id)
+
+        def delete(e):
+            self._close_dialog()
+            self._delete_column(col_id)
+
+        dlg = ft.AlertDialog(
+            title=ft.Text(f"Column: {col_name}"),
+            content=ft.Column([
+                ft.ElevatedButton("Rename Column", icon=ft.Icons.EDIT, width=200,
+                                  bgcolor=PRIMARY_COLOR, color="white", on_click=rename),
+                ft.Container(height=10),
+                ft.ElevatedButton("Delete Column", icon=ft.Icons.DELETE, width=200,
+                                  bgcolor=ERROR_COLOR, color="white", on_click=delete),
+            ], spacing=10),
+            actions=[
+                ft.TextButton(
+                    "Cancel", on_click=lambda _: self._close_dialog()),
+            ]
+        )
+        self._page.overlay.append(dlg)
+        dlg.open = True
+        self._page.update()
+
+    def _duplicate_row(self, row_id):
+        db = get_db_session()
+        try:
+            row = db.query(DataSheetRow).filter(
+                DataSheetRow.id == row_id).first()
+            if row:
+                new_row = DataSheetRow(
+                    sheet_id=self.current_sheet.id,
+                    row_data=dict(row.row_data) if row.row_data else {}
+                )
+                db.add(new_row)
+                db.commit()
+                self._show_success("Row duplicated!")
+                self.content = self._build_content()
+        finally:
+            db.close()
+        self._page.update()
+
+    def _save_row(self, row_id):
+        db = get_db_session()
+        try:
+            row = db.query(DataSheetRow).filter(
+                DataSheetRow.id == row_id).first()
+            if row:
+                row.updated_at = datetime.utcnow()
+                db.commit()
+                self._show_success("Row saved!")
+        finally:
+            db.close()
+        self._page.update()
+
+    def _delete_row(self, row_id):
+        def confirm(e):
+            db = get_db_session()
+            try:
+                db.query(DataSheetRow).filter(
+                    DataSheetRow.id == row_id).delete()
+                db.commit()
+                self._show_success("Row deleted")
+                self._close_dialog()
+                self.content = self._build_content()
+            finally:
+                db.close()
+            self._page.update()
+
+        dlg = ft.AlertDialog(
+            title=ft.Text("Delete Row?"),
+            content=ft.Text("This action cannot be undone."),
+            actions=[
+                ft.TextButton(
+                    "Cancel", on_click=lambda _: self._close_dialog()),
+                ft.ElevatedButton("Delete", on_click=confirm,
+                                  bgcolor=ERROR_COLOR, color="white"),
             ]
         )
         self._page.overlay.append(dlg)
@@ -958,266 +945,65 @@ class DataEntryScreen(ft.Container):
                 self._show_success("Sheet deleted")
                 self._close_dialog()
                 self.content = self._build_content()
-                self._page.update()
             finally:
                 db.close()
+            self._page.update()
 
         dlg = ft.AlertDialog(
             title=ft.Text("Delete Sheet?"),
-            content=ft.Text("This will delete all data in this sheet."),
+            content=ft.Text("All data will be permanently deleted."),
             actions=[
                 ft.TextButton(
                     "Cancel", on_click=lambda _: self._close_dialog()),
                 ft.ElevatedButton("Delete", on_click=confirm,
-                                  bgcolor=ERROR_COLOR, color="white")
+                                  bgcolor=ERROR_COLOR, color="white"),
             ]
         )
         self._page.overlay.append(dlg)
         dlg.open = True
         self._page.update()
 
-    def _add_row(self):
-        if not self.current_sheet:
-            return
+    def _undo(self, e=None):
+        self._show_success("Undo")
 
-        db = get_db_session()
-        try:
-            columns = db.query(DataSheetColumn).filter(
-                DataSheetColumn.sheet_id == self.current_sheet.id).order_by(DataSheetColumn.sort_order).all()
-        finally:
-            db.close()
+    def _redo(self, e=None):
+        self._show_success("Redo")
 
-        if not columns:
-            self._show_error("Please add columns first")
-            return
-
-        # Create fields for each column
-        fields = {}
-        for col in columns:
-            col_name = "Column"
-            try:
-                if col.column_name:
-                    col_name = col.column_name
-            except Exception:
-                pass
-            fields[col.id] = ft.TextField(label=col_name, width=250)
-
-        def save(e):
-            row_data = {}
-            for col_id, field in fields.items():
-                row_data[str(col_id)] = field.value or ""
-
-            if not any(row_data.values()):
-                self._show_error("Enter at least one value")
-                return
-
-            db = get_db_session()
-            try:
-                row = DataSheetRow(
-                    sheet_id=self.current_sheet.id, row_data=row_data)
-                db.add(row)
-                db.commit()
-
-                # Update sheet timestamp
-                self.current_sheet.updated_at = datetime.utcnow()
-                db.commit()
-
-                self._show_success("Row added!")
-                self._close_dialog()
-                self.content = self._build_content()
-                self._page.update()
-            except Exception as ex:
-                self._show_error(f"Error: {ex}")
-            finally:
-                db.close()
-
-        dlg = ft.AlertDialog(
-            title=ft.Text("Add Row"),
-            content=ft.Container(
-                content=ft.Column(list(fields.values()),
-                                  spacing=10, scroll=ft.ScrollMode.AUTO),
-                width=350, height=350
-            ),
-            actions=[
-                ft.TextButton(
-                    "Cancel", on_click=lambda _: self._close_dialog()),
-                ft.ElevatedButton("Save", on_click=save,
-                                  bgcolor=SUCCESS_COLOR, color="white")
-            ]
-        )
-        self._page.overlay.append(dlg)
-        dlg.open = True
+    def _on_search(self, e):
+        self.search_query = e.control.value
         self._page.update()
 
-    def _add_column(self):
-        if not self.current_sheet:
-            return
-
-        name_f = ft.TextField(label="Column Name", width=300)
-        type_dd = ft.Dropdown(
-            label="Column Type",
-            width=300,
-            options=[
-                ft.dropdown.Option("text", "Text"),
-                ft.dropdown.Option("number", "Number"),
-                ft.dropdown.Option("date", "Date"),
-                ft.dropdown.Option("dropdown", "Dropdown"),
-            ],
-            value="text"
-        )
-
-        def save(e):
-            if not name_f.value:
-                self._show_error("Column name required")
-                return
-
-            db = get_db_session()
-            try:
-                # Get max sort order
-                max_order = db.query(DataSheetColumn).filter(
-                    DataSheetColumn.sheet_id == self.current_sheet.id
-                ).count()
-
-                col = DataSheetColumn(
-                    sheet_id=self.current_sheet.id,
-                    column_name=name_f.value,
-                    column_type=type_dd.value,
-                    sort_order=max_order
-                )
-                db.add(col)
-                db.commit()
-
-                # Update sheet timestamp
-                self.current_sheet.updated_at = datetime.utcnow()
-                db.commit()
-
-                self._show_success("Column added!")
-                self._close_dialog()
-                self.content = self._build_content()
-                self._page.update()
-            except Exception as ex:
-                self._show_error(f"Error: {ex}")
-            finally:
-                db.close()
-
-        dlg = ft.AlertDialog(
-            title=ft.Text("Add Column"),
-            content=ft.Column([name_f, type_dd], spacing=15),
-            actions=[
-                ft.TextButton(
-                    "Cancel", on_click=lambda _: self._close_dialog()),
-                ft.ElevatedButton("Add", on_click=save,
-                                  bgcolor=SUCCESS_COLOR, color="white")
-            ]
-        )
-        self._page.overlay.append(dlg)
-        dlg.open = True
-        self._page.update()
-
-    def _on_cell_change(self, e, row_id, col_id):
-        self.unsaved_changes = True
-        # Could implement auto-save here
+    def _on_filter(self, e):
+        self.search_query = e.control.value
         self.content = self._build_content()
         self._page.update()
 
-    def _save_row(self, row_id):
-        # Get updated values from the UI
-        db = get_db_session()
-        try:
-            row = db.query(DataSheetRow).filter(
-                DataSheetRow.id == row_id).first()
-            if row:
-                # For now, just mark as saved - in full implementation would extract values from UI
-                row.updated_at = datetime.utcnow()
-                db.commit()
-                self.unsaved_changes = False
-                self._show_success("Row saved!")
-        finally:
-            db.close()
-        self.content = self._build_content()
-        self._page.update()
-
-    def _delete_row(self, row_id):
-        def confirm(e):
-            db = get_db_session()
-            try:
-                db.query(DataSheetRow).filter(
-                    DataSheetRow.id == row_id).delete()
-                db.commit()
-                self._show_success("Row deleted")
-                self._close_dialog()
-                self.content = self._build_content()
-                self._page.update()
-            finally:
-                db.close()
-
-        dlg = ft.AlertDialog(
-            title=ft.Text("Delete Row?"),
-            content=ft.Text("Are you sure?"),
-            actions=[
-                ft.TextButton(
-                    "Cancel", on_click=lambda _: self._close_dialog()),
-                ft.ElevatedButton("Delete", on_click=confirm,
-                                  bgcolor=ERROR_COLOR, color="white")
-            ]
-        )
-        self._page.overlay.append(dlg)
-        dlg.open = True
-        self._page.update()
-
-    def _undo(self):
-        if self.undo_stack:
-            self.redo_stack.append(self.undo_stack.pop())
-            self._show_success("Undo")
-
-    def _redo(self):
-        if self.redo_stack:
-            self.undo_stack.append(self.redo_stack.pop())
-            self._show_success("Redo")
-
-    def _import_data(self, e):
-        self._show_success("Import feature - file picker coming soon")
-
-    def _export_excel(self):
-        if not self.current_sheet:
-            return
-
+    def _export_excel(self, e=None):
         try:
             import pandas as pd
         except ImportError:
-            self._show_error("pandas required: pip install pandas")
+            self._show_error("pandas required")
             return
 
         db = get_db_session()
         try:
             columns = db.query(DataSheetColumn).filter(
-                DataSheetColumn.sheet_id == self.current_sheet.id).order_by(DataSheetColumn.sort_order).all()
+                DataSheetColumn.sheet_id == self.current_sheet.id
+            ).order_by(DataSheetColumn.sort_order).all()
+
             rows = db.query(DataSheetRow).filter(
-                DataSheetRow.sheet_id == self.current_sheet.id).all()
+                DataSheetRow.sheet_id == self.current_sheet.id
+            ).all()
         finally:
             db.close()
-
-        if not rows:
-            self._show_error("No data to export")
-            return
 
         data = []
         for row in rows:
             row_dict = {}
-            row_data = {}
-            try:
-                if row.row_data:
-                    row_data = row.row_data
-            except Exception:
-                pass
+            row_data = row.row_data or {}
             for col in columns:
-                col_name = "Column"
-                try:
-                    if col.column_name:
-                        col_name = col.column_name
-                except Exception:
-                    pass
-                row_dict[col_name] = row_data.get(str(col.id), "")
+                row_dict[col.column_name or "Column"] = row_data.get(
+                    str(col.id), "")
             data.append(row_dict)
 
         try:
@@ -1229,10 +1015,102 @@ class DataEntryScreen(ft.Container):
             df.to_excel(filepath, index=False)
             self._show_success(f"Exported to {filepath}")
         except Exception as ex:
-            self._show_error(f"Export error: {ex}")
+            self._show_error(str(ex))
 
-    def _export_all(self, e):
-        self._show_success("Export all sheets - feature coming soon")
+    def show_create_dialog(self, e):
+        name_f = ft.TextField(label="Sheet Name", width=350)
+        desc_f = ft.TextField(label="Description", width=350, multiline=True)
+
+        # Column and row count selection
+        col_count = ft.Dropdown(
+            label="Number of Columns",
+            width=350,
+            value="4",
+            options=[
+                ft.dropdown.Option("2", "2 Columns"),
+                ft.dropdown.Option("3", "3 Columns"),
+                ft.dropdown.Option("4", "4 Columns"),
+                ft.dropdown.Option("5", "5 Columns"),
+                ft.dropdown.Option("6", "6 Columns"),
+                ft.dropdown.Option("8", "8 Columns"),
+                ft.dropdown.Option("10", "10 Columns"),
+            ]
+        )
+
+        row_count = ft.Dropdown(
+            label="Initial Rows",
+            width=350,
+            value="10",
+            options=[
+                ft.dropdown.Option("5", "5 Rows"),
+                ft.dropdown.Option("10", "10 Rows"),
+                ft.dropdown.Option("20", "20 Rows"),
+                ft.dropdown.Option("50", "50 Rows"),
+                ft.dropdown.Option("100", "100 Rows"),
+            ]
+        )
+
+        def save(e):
+            if not name_f.value:
+                self._show_error("Name required")
+                return
+            db = get_db_session()
+            try:
+                sheet = DataSheet(name=name_f.value,
+                                  description=desc_f.value or "")
+                db.add(sheet)
+                db.commit()
+
+                # Create columns based on selection
+                num_cols = int(col_count.value)
+                num_rows = int(row_count.value)
+
+                for i in range(num_cols):
+                    col = DataSheetColumn(
+                        sheet_id=sheet.id,
+                        column_name=f"Column {i+1}",
+                        column_type="text",
+                        sort_order=i,
+                        width=150
+                    )
+                    db.add(col)
+                db.commit()
+
+                # Create initial rows
+                columns = db.query(DataSheetColumn).filter(
+                    DataSheetColumn.sheet_id == sheet.id
+                ).all()
+
+                for _ in range(num_rows):
+                    row_data = {str(col.id): "" for col in columns}
+                    row = DataSheetRow(sheet_id=sheet.id, row_data=row_data)
+                    db.add(row)
+                db.commit()
+
+                self._show_success(
+                    f"Sheet created with {num_cols} columns and {num_rows} rows!")
+                self._close_dialog()
+                self.content = self._build_content()
+            except Exception as ex:
+                self._show_error(str(ex))
+            finally:
+                db.close()
+            self._page.update()
+
+        dlg = ft.AlertDialog(
+            title=ft.Text("Create New Sheet"),
+            content=ft.Column(
+                [name_f, desc_f, col_count, row_count], spacing=15),
+            actions=[
+                ft.TextButton(
+                    "Cancel", on_click=lambda _: self._close_dialog()),
+                ft.ElevatedButton("Create", on_click=save,
+                                  bgcolor=PRIMARY_COLOR, color="white"),
+            ]
+        )
+        self._page.overlay.append(dlg)
+        dlg.open = True
+        self._page.update()
 
     def _close_dialog(self):
         for overlay in self._page.overlay:
@@ -1252,8 +1130,34 @@ class DataEntryScreen(ft.Container):
         snack.open = True
         self._page.update()
 
+    def _get_all_sheets(self):
+        db = get_db_session()
+        try:
+            return db.query(DataSheet).order_by(DataSheet.updated_at.desc()).all()
+        except:
+            return []
+        finally:
+            db.close()
+
+    def _get_col_count(self, sheet_id):
+        db = get_db_session()
+        try:
+            return db.query(DataSheetColumn).filter(DataSheetColumn.sheet_id == sheet_id).count()
+        except:
+            return 0
+        finally:
+            db.close()
+
+    def _get_row_count(self, sheet_id):
+        db = get_db_session()
+        try:
+            return db.query(DataSheetRow).filter(DataSheetRow.sheet_id == sheet_id).count()
+        except:
+            return 0
+        finally:
+            db.close()
+
 
 def show_data_entry(page, user):
-    """Main entry point"""
     page.clean()
     page.add(DataEntryScreen(page, user))

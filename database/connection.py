@@ -5,7 +5,8 @@ Industry-Level Human Resource Management System
 This module handles database connection management, session creation,
 and engine configuration for SQLAlchemy.
 
-Supports: SQLite, PostgreSQL (Supabase, self-hosted)
+Supports: PostgreSQL (Supabase, self-hosted) ONLY
+SQLite is no longer supported - cloud database required for multi-user
 """
 
 from config import (
@@ -25,6 +26,7 @@ from sqlalchemy import create_engine, event, text
 from sqlalchemy.engine import Engine
 from sqlalchemy.orm import Session, sessionmaker
 from sqlalchemy.ext.declarative import declarative_base
+from sqlalchemy.pool import QueuePool
 
 
 # Configure logging
@@ -40,61 +42,47 @@ _session_factory = None
 
 
 def get_engine() -> Engine:
-    """Get or create the database engine."""
+    """Get or create the database engine with optimized settings."""
     global _engine
 
     if _engine is None:
-        connect_args = {}
-
-        if "sqlite" in DATABASE_URL:
-            connect_args = {"check_same_thread": False}
-        elif "postgresql" in DATABASE_URL:
-            connect_args = {
-                "connect_timeout": 10,
-                "keepalives_idle": 30,
-                "keepalives_interval": 5,
-                "keepalives_count": 5,
-                "application_name": "Vernika_HRA"
-            }
+        # PostgreSQL connection settings with optimizations for 200+ users
+        connect_args = {
+            "connect_timeout": 10,
+            "keepalives_idle": 30,
+            "keepalives_interval": 5,
+            "keepalives_count": 5,
+            "application_name": "Vernika_HRA",
+            "options": "-c statement_timeout=30000"
+        }
 
         _engine = create_engine(
             DATABASE_URL,
             echo=DB_ECHO,
-            pool_size=20,
-            max_overflow=30,
+            pool_size=DB_POOL_SIZE,  # 20 connections for 200 users
+            max_overflow=DB_MAX_OVERFLOW,  # 40 overflow
             pool_recycle=DB_POOL_RECYCLE,
             pool_timeout=DB_POOL_TIMEOUT,
             pool_pre_ping=True,
             connect_args=connect_args
         )
 
-        if "sqlite" in DATABASE_URL:
-            _setup_sqlite_listeners(_engine)
-        elif "postgresql" in DATABASE_URL:
-            _setup_postgresql_listeners(_engine)
+        # Set up PostgreSQL-specific optimizations
+        _setup_postgresql_optimizations(_engine)
 
-        logger.info(f"Database engine created: {DATABASE_TYPE}")
+        logger.info(
+            f"Database engine created: {DATABASE_TYPE} (pool_size={DB_POOL_SIZE})")
 
     return _engine
 
 
-def _setup_sqlite_listeners(engine: Engine) -> None:
+def _setup_postgresql_optimizations(engine: Engine) -> None:
+    """Set up PostgreSQL-specific optimizations."""
     @event.listens_for(engine, "connect")
-    def set_sqlite_pragma(dbapi_connection, connection_record):
-        cursor = dbapi_connection.cursor()
-        cursor.execute("PRAGMA foreign_keys=ON")
-        cursor.execute("PRAGMA journal_mode=WAL")
-        cursor.execute("PRAGMA synchronous=NORMAL")
-        cursor.execute("PRAGMA cache_size=-64000")
-        cursor.execute("PRAGMA temp_store=MEMORY")
-        cursor.close()
-
-
-def _setup_postgresql_listeners(engine: Engine) -> None:
-    @event.listens_for(engine, "connect")
-    def set_pg_session(dbapi_connection, connection_record):
+    def set_pg_session_optimizations(dbapi_connection, connection_record):
         cursor = dbapi_connection.cursor()
         cursor.execute("SET statement_timeout = '30s'")
+        cursor.execute("SET timezone = 'UTC'")
         cursor.close()
 
 

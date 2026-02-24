@@ -38,9 +38,9 @@ DB_SSL_MODE = os.getenv("DB_SSL_MODE", "require")
 DB_SSL_CERT = os.getenv("DB_SSL_CERT", "None")
 
 # Database pool settings - optimized for cloud PostgreSQL
-# Increased for better concurrency
-DB_POOL_SIZE = int(os.getenv("DB_POOL_SIZE", "10"))
-DB_MAX_OVERFLOW = int(os.getenv("DB_MAX_OVERFLOW", "20"))
+# Increased for better concurrency with 200+ users
+DB_POOL_SIZE = int(os.getenv("DB_POOL_SIZE", "20"))
+DB_MAX_OVERFLOW = int(os.getenv("DB_MAX_OVERFLOW", "40"))
 DB_POOL_RECYCLE = int(os.getenv("DB_POOL_RECYCLE", "1800"))  # 30 minutes
 DB_POOL_TIMEOUT = int(os.getenv("DB_POOL_TIMEOUT", "30"))  # Connection timeout
 DB_ECHO = os.getenv("DB_ECHO", "false").lower() == "true"
@@ -196,8 +196,13 @@ for directory in [ASSETS_DIR, LOGO_DIR, PROFILE_PHOTOS_DIR, DOCUMENTS_DIR]:
 # ==================== SUPABASE CONFIGURATION ====================
 SUPABASE_URL = os.getenv(
     "SUPABASE_URL", "https://tbofjzzufxqbwfmfapxh.supabase.co")
-SUPABASE_KEY = os.getenv("SUPABASE_KEY", "")
+SUPABASE_KEY = os.getenv(
+    "SUPABASE_KEY", "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InRib2Zqenp1ZnhxYndmbWZhcHhoIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc3MTk1MDAwNCwiZXhwIjoyMDg3NTI2MDA0fQ.l_OP2BCTYN8W-M3c3SJRxg_pNgu8Kmpp0tLBIVAo7JM")
 SUPABASE_REALTIME_URL = f"{SUPABASE_URL}/realtime/v1"
+
+# Supabase Storage Configuration
+SUPABASE_STORAGE_URL = f"{SUPABASE_URL}/storage/v1"
+SUPABASE_STORAGE_BUCKET = os.getenv("SUPABASE_STORAGE_BUCKET", "vernika-files")
 
 # ==================== HELPERS ====================
 

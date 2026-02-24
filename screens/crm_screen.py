@@ -76,14 +76,21 @@ class CRMScreen(ft.Container):
 
     def _show_snackbar(self, message, bgcolor=SUCCESS):
         """Show a snackbar notification"""
-        # Handle both old style (ft.SnackBar object) and new style (message string)
-        if isinstance(message, ft.SnackBar):
-            snack = message
-        else:
-            snack = ft.SnackBar(content=ft.Text(message), bgcolor=bgcolor)
-        self._page.overlay.append(snack)
-        snack.open = True
-        self._page.update()
+        try:
+            # Handle both old style (ft.SnackBar object) and new style (message string)
+            if isinstance(message, ft.SnackBar):
+                snack = message
+            else:
+                snack = ft.SnackBar(
+                    content=ft.Text(message),
+                    bgcolor=bgcolor,
+                    duration=3000,
+                )
+            self._page.overlay.append(snack)
+            snack.open = True
+            self._page.update()
+        except Exception as e:
+            print(f"Snackbar error: {e}")
 
     def refresh(self):
         """Refresh the CRM content"""
@@ -157,6 +164,64 @@ class CRMScreen(ft.Container):
 
     def _create_header(self, username):
         """Create header"""
+        # Create popup menu for Add New button
+        add_new_menu = ft.PopupMenuButton(
+            items=[
+                ft.PopupMenuItem(
+                    content=ft.Row([
+                        ft.Icon(ft.Icons.PERSON_ADD, size=20),
+                        ft.Text("Add Lead", size=14),
+                    ], spacing=10),
+                    on_click=lambda e: self._show_add_lead_dialog(),
+                ),
+                ft.PopupMenuItem(
+                    content=ft.Row([
+                        ft.Icon(ft.Icons.CONTACT_PHONE, size=20),
+                        ft.Text("Add Contact", size=14),
+                    ], spacing=10),
+                    on_click=lambda e: self._show_add_contact_dialog(),
+                ),
+                ft.PopupMenuItem(
+                    content=ft.Row([
+                        ft.Icon(ft.Icons.BUSINESS_CENTER, size=20),
+                        ft.Text("Add Deal", size=14),
+                    ], spacing=10),
+                    on_click=lambda e: self._show_add_deal_dialog(),
+                ),
+                ft.PopupMenuItem(
+                    content=ft.Row([
+                        ft.Icon(ft.Icons.EVENT, size=20),
+                        ft.Text("Add Activity", size=14),
+                    ], spacing=10),
+                    on_click=lambda e: self._show_add_activity_dialog(),
+                ),
+                ft.PopupMenuItem(
+                    content=ft.Row([
+                        ft.Icon(ft.Icons.DESCRIPTION, size=20),
+                        ft.Text("Create Quote", size=14),
+                    ], spacing=10),
+                    on_click=lambda e: self._show_add_quote_dialog(),
+                ),
+                ft.PopupMenuItem(
+                    content=ft.Row([
+                        ft.Icon(ft.Icons.INVENTORY, size=20),
+                        ft.Text("Add Product", size=14),
+                    ], spacing=10),
+                    on_click=lambda e: self._show_add_product_dialog(),
+                ),
+            ],
+            tooltip="Add New",
+            content=ft.Container(
+                content=ft.Row([
+                    ft.Text("Add New", size=14),
+                    ft.Icon(ft.Icons.ARROW_DROP_DOWN, size=20),
+                ], spacing=5),
+                bgcolor=SUCCESS,
+                padding=ft.padding.symmetric(horizontal=15, vertical=10),
+                border_radius=5,
+            ),
+        )
+
         return ft.Container(
             padding=15,
             bgcolor=PRIMARY,
@@ -168,13 +233,7 @@ class CRMScreen(ft.Container):
                 ], spacing=15),
                 ft.Container(expand=True),
                 ft.Row([
-                    ft.FilledButton(
-                        "Add New",
-                        icon=ft.Icons.ADD,
-                        bgcolor=SUCCESS,
-                        color="WHITE",
-                        on_click=self._show_add_dialog,
-                    ),
+                    add_new_menu,
                     ft.Container(width=10),
                     ft.IconButton(
                         icon=ft.Icons.REFRESH,
@@ -489,7 +548,7 @@ class CRMScreen(ft.Container):
                 status_filter,
                 ft.Container(expand=True),
                 ft.ElevatedButton("Add Lead", icon=ft.Icons.ADD, bgcolor=PRIMARY, color="WHITE",
-                                  on_click=self._show_add_lead_dialog),
+                                  on_click=lambda e: self._show_add_lead_dialog()),
             ], spacing=10),
             padding=15,
             bgcolor=SURFACE,
@@ -704,7 +763,7 @@ class CRMScreen(ft.Container):
                 category_filter,
                 ft.Container(expand=True),
                 ft.ElevatedButton("Add Contact", icon=ft.Icons.ADD, bgcolor=PRIMARY, color="WHITE",
-                                  on_click=self._show_add_contact_dialog),
+                                  on_click=lambda e: self._show_add_contact_dialog()),
             ], spacing=10),
             padding=15,
             bgcolor=SURFACE,
@@ -848,7 +907,7 @@ class CRMScreen(ft.Container):
                 ),
                 ft.Container(expand=True),
                 ft.ElevatedButton("Add Deal", icon=ft.Icons.ADD, bgcolor=PRIMARY, color="WHITE",
-                                  on_click=self._show_add_deal_dialog),
+                                  on_click=lambda e: self._show_add_deal_dialog()),
             ], spacing=10),
             padding=15,
             bgcolor=SURFACE,
@@ -995,7 +1054,7 @@ class CRMScreen(ft.Container):
                 ),
                 ft.Container(expand=True),
                 ft.ElevatedButton("Add Activity", icon=ft.Icons.ADD, bgcolor=PRIMARY, color="WHITE",
-                                  on_click=self._show_add_activity_dialog),
+                                  on_click=lambda e: self._show_add_activity_dialog()),
             ], spacing=10),
             padding=15,
             bgcolor=SURFACE,
@@ -1109,7 +1168,7 @@ class CRMScreen(ft.Container):
         return ft.Column(controls=[self._create_quotes_filter_bar(), stats_row, ft.Container(content=quotes_list, expand=True)], spacing=0, expand=True)
 
     def _create_quotes_filter_bar(self):
-        return ft.Container(content=ft.Row([ft.TextField(hint_text="Search quotes...", prefix_icon=ft.Icons.SEARCH, width=250, border_color=BORDER_COLOR, focused_border_color=PRIMARY), ft.Container(expand=True), ft.ElevatedButton("Create Quote", icon=ft.Icons.ADD, bgcolor=PRIMARY, color="WHITE", on_click=self._show_add_quote_dialog)], spacing=10), padding=15, bgcolor=SURFACE, border=ft.border.only(bottom=ft.border.BorderSide(1, BORDER_COLOR)))
+        return ft.Container(content=ft.Row([ft.TextField(hint_text="Search quotes...", prefix_icon=ft.Icons.SEARCH, width=250, border_color=BORDER_COLOR, focused_border_color=PRIMARY), ft.Container(expand=True), ft.ElevatedButton("Create Quote", icon=ft.Icons.ADD, bgcolor=PRIMARY, color="WHITE", on_click=lambda e: self._show_add_quote_dialog())], spacing=10), padding=15, bgcolor=SURFACE, border=ft.border.only(bottom=ft.border.BorderSide(1, BORDER_COLOR)))
 
     def _create_quotes_list(self, quotes):
         return ft.Container(content=ft.ListView(expand=True, spacing=10, padding=15, controls=[self._create_quote_row(q) for q in quotes]), expand=True)
@@ -1201,7 +1260,7 @@ class CRMScreen(ft.Container):
         return ft.Column(controls=[self._create_products_filter_bar(), stats_row, ft.Container(content=products_grid, expand=True)], spacing=0, expand=True)
 
     def _create_products_filter_bar(self):
-        return ft.Container(content=ft.Row([ft.TextField(hint_text="Search products...", prefix_icon=ft.Icons.SEARCH, width=250, border_color=BORDER_COLOR, focused_border_color=PRIMARY), ft.Container(expand=True), ft.ElevatedButton("Add Product", icon=ft.Icons.ADD, bgcolor=PRIMARY, color="WHITE", on_click=self._show_add_product_dialog)], spacing=10), padding=15, bgcolor=SURFACE, border=ft.border.only(bottom=ft.border.BorderSide(1, BORDER_COLOR)))
+        return ft.Container(content=ft.Row([ft.TextField(hint_text="Search products...", prefix_icon=ft.Icons.SEARCH, width=250, border_color=BORDER_COLOR, focused_border_color=PRIMARY), ft.Container(expand=True), ft.ElevatedButton("Add Product", icon=ft.Icons.ADD, bgcolor=PRIMARY, color="WHITE", on_click=lambda e: self._show_add_product_dialog())], spacing=10), padding=15, bgcolor=SURFACE, border=ft.border.only(bottom=ft.border.BorderSide(1, BORDER_COLOR)))
 
     def _create_products_grid(self, products):
         return ft.Container(content=ft.ListView(expand=True, spacing=10, padding=15, controls=[self._create_product_card(p) for p in products]), expand=True)
@@ -1258,7 +1317,7 @@ class CRMScreen(ft.Container):
         activities = self._get_activities()
         return ft.Container(padding=20, content=ft.Column([
             ft.Row([ft.IconButton(ft.Icons.CHEVRON_LEFT, on_click=self._prev_month), ft.Text(f"{datetime(self.calendar_year, self.calendar_month, 1).strftime('%B %Y')}", size=20, weight=ft.FontWeight.BOLD), ft.IconButton(
-                ft.Icons.CHEVRON_RIGHT, on_click=self._next_month), ft.Container(expand=True), ft.ElevatedButton("Today", on_click=self._go_to_today), ft.Container(width=10), ft.ElevatedButton("Add Activity", icon=ft.Icons.ADD, bgcolor=PRIMARY, color="WHITE", on_click=self._show_add_activity_dialog)], alignment=ft.MainAxisAlignment.CENTER),
+                ft.Icons.CHEVRON_RIGHT, on_click=self._next_month), ft.Container(expand=True), ft.ElevatedButton("Today", on_click=self._go_to_today), ft.Container(width=10), ft.ElevatedButton("Add Activity", icon=ft.Icons.ADD, bgcolor=PRIMARY, color="WHITE", on_click=lambda e: self._show_add_activity_dialog())], alignment=ft.MainAxisAlignment.CENTER),
             ft.Container(height=20),
             self._build_calendar_grid(
                 activities, self.calendar_year, self.calendar_month),
@@ -1273,7 +1332,7 @@ class CRMScreen(ft.Container):
         days_in_month = (date(year, month % 12 + 1, 1) - timedelta(days=1)).day
         day_names = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"]
         rows = [ft.Container(content=ft.Row([ft.Text(day, size=12, weight=ft.FontWeight.BOLD, expand=True, text_align=ft.TextAlign.CENTER)
-                             for day in day_names]), padding=10, bgcolor=PRIMARY, border_radius=ft.border_radius.only(top_left=10, top_right=10))]
+                                             for day in day_names]), padding=10, bgcolor=PRIMARY, border_radius=ft.border_radius.only(top_left=10, top_right=10))]
         start_offset = first_day.weekday()
         current_day = 1
         for week in range(6):

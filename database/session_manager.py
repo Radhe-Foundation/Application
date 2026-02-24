@@ -50,49 +50,54 @@ _session_lock = threading.Lock()
 def get_engine() -> Engine:
     """
     Get or create the database engine with optimized settings.
-    Uses connection pooling for better performance.
+    Uses connection pooling for better performance with 200+ users.
     """
     global _engine
 
     if _engine is None:
-        # Build connection arguments
-        connect_args = {}
+        # Build connection arguments for PostgreSQL
+        connect_args = {
+            "connect_timeout": 10,
+            "keepalives_idle": 30,
+            "keepalives_interval": 5,
+            "keepalives_count": 5,
+            "application_name": "Vernika_HRA",
+            "options": "-c statement_timeout=30000"  # 30 second timeout
+        }
 
-        if "sqlite" in DATABASE_URL:
-            # SQLite-specific settings
-            connect_args = {"check_same_thread": False}
-        elif "postgresql" in DATABASE_URL:
-            # PostgreSQL-specific settings with timeouts
-            connect_args = {
-                "connect_timeout": 10,
-                "keepalives_idle": 30,
-                "keepalives_interval": 5,
-                "keepalives_count": 5,
-                "application_name": "Vernika_HRA"
-            }
-
-        # Create engine with connection pooling
+        # Create engine with optimized connection pooling for 200+ users
         _engine = create_engine(
             DATABASE_URL,
             echo=DB_ECHO,
-            pool_size=DB_POOL_SIZE,
-            max_overflow=DB_MAX_OVERFLOW,
+            pool_size=DB_POOL_SIZE,  # 20 connections
+            max_overflow=DB_MAX_OVERFLOW,  # 40 overflow connections
             pool_recycle=DB_POOL_RECYCLE,
             pool_timeout=DB_POOL_TIMEOUT,
             pool_pre_ping=True,  # Health check before using connection
-            poolclass=QueuePool,  # Explicit pool class
+            poolclass=QueuePool,
             connect_args=connect_args
         )
 
-        # Set up database-specific listeners
-        if "sqlite" in DATABASE_URL:
-            _setup_sqlite_listeners(_engine)
-        elif "postgresql" in DATABASE_URL:
-            _setup_postgresql_listeners(_engine)
+        # Set up PostgreSQL-specific optimizations
+        _setup_postgresql_optimizations(_engine)
 
-        logger.info(f"Database engine created: {DATABASE_TYPE}")
+        logger.info(
+            f"Database engine created: {DATABASE_TYPE} (pool_size={DB_POOL_SIZE}, max_overflow={DB_MAX_OVERFLOW})")
 
     return _engine
+
+
+def _setup_postgresql_optimizations(engine: Engine) -> None:
+    """Set up PostgreSQL-specific optimizations for better performance."""
+
+    @event.listens_for(engine, "connect")
+    def set_pg_session_optimizations(dbapi_connection, connection_record):
+        cursor = dbapi_connection.cursor()
+        # Set statement timeout (30 seconds)
+        cursor.execute("SET statement_timeout = '30s'")
+        # Set timezone to UTC
+        cursor.execute("SET timezone = 'UTC'")
+        cursor.close()
 
 
 def _setup_sqlite_listeners(engine: Engine) -> None:
