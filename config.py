@@ -28,21 +28,21 @@ DATABASE_TYPE = "postgresql"
 
 # PostgreSQL configuration (for cloud database - Supabase)
 DATABASE_URL = os.getenv(
-    "DATABASE_URL", "postgresql://postgres:Bv5EETFz7Hl5XoQv@db.siezchlohcmelbdpzldb.supabase.co:5432/postgres")
-DB_HOST = os.getenv("DB_HOST", "db.siezchlohcmelbdpzldb.supabase.co")
+    "DATABASE_URL", "postgresql://postgres:!vrMVXZrv84wmKH@db.tbofjzzufxqbwfmfapxh.supabase.co:5432/postgres")
+DB_HOST = os.getenv("DB_HOST", "db.tbofjzzufxqbwfmfapxh.supabase.co")
 DB_PORT = int(os.getenv("DB_PORT", "5432"))
 DB_NAME = os.getenv("DB_NAME", "postgres")
 DB_USER = os.getenv("DB_USER", "postgres")
-DB_PASSWORD = os.getenv("DB_PASSWORD", "Bv5EETFz7Hl5XoQv")
+DB_PASSWORD = os.getenv("DB_PASSWORD", "!vrMVXZrv84wmKH")
 DB_SSL_MODE = os.getenv("DB_SSL_MODE", "require")
 DB_SSL_CERT = os.getenv("DB_SSL_CERT", "None")
 
 # Database pool settings - optimized for cloud PostgreSQL
 # Increased for better concurrency
-DB_POOL_SIZE = int(os.getenv("DB_POOL_SIZE", "5"))
-DB_MAX_OVERFLOW = int(os.getenv("DB_MAX_OVERFLOW", "10")
-                      )  # Increased for burst traffic
+DB_POOL_SIZE = int(os.getenv("DB_POOL_SIZE", "10"))
+DB_MAX_OVERFLOW = int(os.getenv("DB_MAX_OVERFLOW", "20"))
 DB_POOL_RECYCLE = int(os.getenv("DB_POOL_RECYCLE", "1800"))  # 30 minutes
+DB_POOL_TIMEOUT = int(os.getenv("DB_POOL_TIMEOUT", "30"))  # Connection timeout
 DB_ECHO = os.getenv("DB_ECHO", "false").lower() == "true"
 
 # ==================== SECURITY CONFIGURATION ====================
@@ -195,7 +195,7 @@ for directory in [ASSETS_DIR, LOGO_DIR, PROFILE_PHOTOS_DIR, DOCUMENTS_DIR]:
 
 # ==================== SUPABASE CONFIGURATION ====================
 SUPABASE_URL = os.getenv(
-    "SUPABASE_URL", "https://siezchlohcmelbdpzldb.supabase.co")
+    "SUPABASE_URL", "https://tbofjzzufxqbwfmfapxh.supabase.co")
 SUPABASE_KEY = os.getenv("SUPABASE_KEY", "")
 SUPABASE_REALTIME_URL = f"{SUPABASE_URL}/realtime/v1"
 

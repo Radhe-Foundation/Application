@@ -5,7 +5,7 @@ PostgreSQL/SQLAlchemy based departments management
 
 import flet as ft
 from sqlalchemy.orm import Session, joinedload
-from database.connection import get_db_session
+from database.session_manager import get_session, get_db_session, check_db_connection
 from database.models import Department, Employee
 
 
@@ -16,6 +16,37 @@ ERROR = "#F44336"
 WARNING = "#FF9800"
 BACKGROUND = "#F5F5F5"
 SURFACE = "#FFFFFF"
+TEXT_PRIMARY = "#1A1C1E"
+TEXT_SECONDARY = "#6C757D"
+
+
+def _safe_navigate_to_home(page, user=None):
+    """Safely navigate to home screen"""
+    try:
+        from core.navigation import navigate_to_home
+        navigate_to_home(page, user)
+    except ImportError:
+        # Fallback navigation
+        try:
+            from screens.admin_screen import AdminScreen
+            from screens.employee_screen import EmployeeScreen
+            page.clean()
+            if user and isinstance(user, dict):
+                role = user.get('role', 'employee').lower()
+            elif user and hasattr(user, 'role'):
+                role = user.role.name.lower() if user.role else 'employee'
+            else:
+                role = 'employee'
+
+            if role == 'admin':
+                page.add(AdminScreen(page, user))
+            else:
+                page.add(EmployeeScreen(page, user))
+        except Exception as e:
+            print(f"Navigation error: {e}")
+            from screens.login_screen import LoginScreen
+            page.clean()
+            page.add(LoginScreen(page))
 
 
 class DepartmentsScreen(ft.Container):
@@ -25,34 +56,29 @@ class DepartmentsScreen(ft.Container):
         self.user = user
         self.expand = True
         self.bgcolor = BACKGROUND
+        self._nav_rail_visible = True
         self.content = self._build_content()
 
     def _build_content(self):
-        header = ft.Container(
-            padding=15,
-            bgcolor=PRIMARY,
-            content=ft.Row([
-                ft.IconButton(
-                    icon=ft.Icons.ARROW_BACK,
-                    icon_color="WHITE",
-                    on_click=self.on_back
-                ),
-                ft.Text("Department Management", size=18,
-                        color="WHITE", weight=ft.FontWeight.BOLD),
-                ft.Container(expand=True),
-                ft.ElevatedButton(
-                    "Add Department",
-                    icon=ft.Icons.ADD,
-                    on_click=self.on_add,
-                    style=ft.ButtonStyle(bgcolor="#388E3C", color="WHITE")
-                ),
-            ])
+        # Create toggle button for navigation
+        def toggle_nav_rail(e):
+            self._nav_rail_visible = not self._nav_rail_visible
+            self.content.content.controls[0].visible = self._nav_rail_visible
+            self.content.content.controls[1].visible = self._nav_rail_visible
+            self._page.update()
+
+        self.nav_toggle_btn = ft.IconButton(
+            icon=ft.Icons.MENU_OPEN if self._nav_rail_visible else ft.Icons.MENU,
+            tooltip="Toggle Navigation",
+            on_click=toggle_nav_rail,
+            icon_color="WHITE"
         )
 
         department_list = self._build_department_list()
 
         content = ft.Column([
-            header,
+            # Header with navigation, company name, welcome text, and logout
+            self._create_header(),
             ft.Container(
                 padding=20,
                 content=department_list,
@@ -62,9 +88,53 @@ class DepartmentsScreen(ft.Container):
 
         return content
 
+    def _create_header(self):
+        """Create header with navigation, company name, welcome text, and logout"""
+        return ft.Container(
+            content=ft.Row([
+                # Navigation toggle button
+                self.nav_toggle_btn,
+                ft.Container(width=10),
+                ft.Icon(ft.Icons.BUSINESS, color="WHITE", size=28),
+                ft.Text("Vernika HRA - Department Management", size=18,
+                        color="WHITE", weight=ft.FontWeight.BOLD),
+                ft.Container(expand=True),
+                # Add Department button
+                ft.ElevatedButton(
+                    "Add Department",
+                    icon=ft.Icons.ADD,
+                    on_click=self.on_add,
+                    style=ft.ButtonStyle(
+                        bgcolor="WHITE",
+                        color=PRIMARY,
+                    ),
+                ),
+                ft.Container(width=10),
+                ft.Text(
+                    f"Welcome, {self.user.get('username', 'User') if isinstance(self.user, dict) else 'User'}",
+                    size=14,
+                    color="WHITE"
+                ),
+                ft.IconButton(
+                    icon=ft.Icons.LOGOUT,
+                    tooltip="Logout",
+                    on_click=self._handle_logout,
+                    icon_color="WHITE"
+                )
+            ], alignment=ft.MainAxisAlignment.SPACE_BETWEEN),
+            padding=ft.padding.symmetric(horizontal=20, vertical=15),
+            bgcolor=PRIMARY,
+        )
+
+    def _handle_logout(self, e):
+        """Handle logout"""
+        from screens.login_screen import LoginScreen
+        self._page.clean()
+        self._page.add(LoginScreen(self._page))
+
     def on_back(self, e):
-        from core.navigation import navigate_to_home
-        navigate_to_home(self._page, self.user)
+        """Handle back navigation"""
+        _safe_navigate_to_home(self._page, self.user)
 
     def on_add(self, e):
         self._show_add_dialog()
@@ -195,9 +265,9 @@ class DepartmentsScreen(ft.Container):
         employees = self._get_employees()
 
         # Basic Info
-        name = ft.TextField(label="Name *", width=300)
+        name = ft.TextField(label="Name *", width=280)
         code = ft.TextField(label="Code *", width=150)
-        desc = ft.TextField(label="Description", width=500, multiline=True)
+        desc = ft.TextField(label="Description", width=450, multiline=True)
 
         # Head/Manager Assignment
         emp_options = [ft.dropdown.Option(
@@ -247,25 +317,29 @@ class DepartmentsScreen(ft.Container):
             finally:
                 db.close()
 
+        # Build form with proper alignment
         tab_content = ft.Column([
             ft.Text("Basic Information", size=14,
                     weight=ft.FontWeight.BOLD, color=PRIMARY),
-            ft.Row([name, code], spacing=10),
-            desc,
+            ft.Row([
+                ft.Container(content=name, width=280),
+                ft.Container(content=code, width=150),
+            ], spacing=10),
+            ft.Container(content=desc, width=450),
             ft.Divider(),
             ft.Text("Organization", size=14,
                     weight=ft.FontWeight.BOLD, color="#9C27B0"),
-            head_dropdown,
+            ft.Container(content=head_dropdown, width=250),
             error,
             ft.Container(height=20),
-        ], spacing=8, scroll=ft.ScrollMode.AUTO)
+        ], spacing=10, scroll=ft.ScrollMode.AUTO)
 
         dialog = ft.AlertDialog(
             modal=True,
             title=ft.Text("Add Department"),
             content=ft.Container(
                 content=tab_content,
-                width=550,
+                width=500,
                 height=350,
             ),
             actions=[

@@ -8,7 +8,7 @@ This module provides the meeting scheduler and calendar functionality.
 from typing import List, Optional, Dict
 import flet as ft
 from datetime import datetime, timedelta, date
-from database.connection import get_db_session
+from database.session_manager import get_session, get_db_session, check_db_connection
 from database.models import Meeting, MeetingParticipant, User
 from database.operations import create_meeting, get_user_meetings
 
@@ -271,7 +271,7 @@ class MeetingsScreen(ft.Container):
             db = get_db_session()
             users = db.query(User).filter(User.status == "active").all()
             db.close()
-        except:
+        except Exception:
             pass
 
         title_field = ft.TextField(label="Meeting Title *", width=400)

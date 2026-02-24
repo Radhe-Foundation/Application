@@ -5,7 +5,7 @@ Multi-Tab Professional Interface with Advanced Features
 
 import flet as ft
 from datetime import datetime
-from database.connection import get_db_session
+from database.session_manager import get_session, get_db_session, check_db_connection
 from database.models import InventoryCategory, Product, InventoryTransaction
 
 
@@ -18,6 +18,37 @@ BG_COLOR = "#F5F7FA"
 SURFACE_COLOR = "#FFFFFF"
 TEXT_COLOR = "#2C3E50"
 TEXT_MUTED = "#7F8C8D"
+
+
+def _safe_navigate_to_home(page, user=None):
+    """Safely navigate to home screen"""
+    try:
+        from screens.admin_screen import AdminScreen
+        from screens.employee_screen import EmployeeScreen
+        page.clean()
+        if user and isinstance(user, dict):
+            role = user.get('role', 'employee').lower()
+        elif user and hasattr(user, 'role'):
+            role = user.role.name.lower() if user.role else 'employee'
+        else:
+            role = 'employee'
+
+        if role == 'admin':
+            page.add(AdminScreen(page, user))
+        else:
+            page.add(EmployeeScreen(page, user))
+    except Exception as e:
+        print(f"Navigation error: {e}")
+        from screens.login_screen import LoginScreen
+        page.clean()
+        page.add(LoginScreen(page))
+
+
+# Import navigate_to_home for compatibility (wrapped)
+try:
+    from core.navigation import navigate_to_home
+except ImportError:
+    navigate_to_home = _safe_navigate_to_home
 
 
 class InventoryScreen(ft.Container):
@@ -39,16 +70,16 @@ class InventoryScreen(ft.Container):
         self.content = self._build_content()
 
     def _build_content(self):
-        return ft.Column([
+        return ft.ListView([
             # Header
             self._build_header(),
             # Tab navigation
             self._build_tabs(),
-            # Main content area
+            # Main content area - scrollable
             ft.Container(
                 content=self._build_tab_content(),
                 expand=True,
-                padding=20
+                padding=20,
             )
         ], expand=True, spacing=0)
 
@@ -138,20 +169,22 @@ class InventoryScreen(ft.Container):
 
         return ft.Column([
             # Stats cards
-            ft.Row([
-                self._stat_card("Total Products", str(
-                    stats['total']), ft.Icons.INVENTORY_2, "#3498DB"),
-                self._stat_card("Low Stock", str(
-                    stats['low']), ft.Icons.WARNING, WARNING_COLOR),
-                self._stat_card("Out of Stock", str(
-                    stats['out']), ft.Icons.ERROR_OUTLINE, ERROR_COLOR),
-                self._stat_card("Categories", str(
-                    stats['cats']), ft.Icons.CATEGORY, "#9B59B6"),
-                self._stat_card(
-                    "Total Value", f"₹{stats['value']:,.0f}", ft.Icons.ATTACH_MONEY, SUCCESS_COLOR),
-            ], spacing=20),
+            ft.Container(
+                content=ft.Row([
+                    self._stat_card("Total Products", str(
+                        stats['total']), ft.Icons.INVENTORY_2, "#3498DB"),
+                    self._stat_card("Low Stock", str(
+                        stats['low']), ft.Icons.WARNING, WARNING_COLOR),
+                    self._stat_card("Out of Stock", str(
+                        stats['out']), ft.Icons.ERROR_OUTLINE, ERROR_COLOR),
+                    self._stat_card("Categories", str(
+                        stats['cats']), ft.Icons.CATEGORY, "#9B59B6"),
+                    self._stat_card(
+                        "Total Value", f"₹{stats['value']:,.0f}", ft.Icons.ATTACH_MONEY, SUCCESS_COLOR),
+                ], spacing=20, scroll=ft.ScrollMode.AUTO),
+            ),
             ft.Container(height=30),
-            # Alerts section
+            # Alerts section - scrollable
             ft.Row([
                 # Low stock alerts
                 ft.Container(
@@ -168,7 +201,7 @@ class InventoryScreen(ft.Container):
                                 controls=self._get_low_stock_alerts()
                             )
                         )
-                    ], spacing=10)
+                    ], spacing=10, expand=True)
                 ),
                 ft.Container(width=20),
                 # Recent transactions
@@ -186,10 +219,10 @@ class InventoryScreen(ft.Container):
                                 controls=self._get_recent_transactions()
                             )
                         )
-                    ], spacing=10)
+                    ], spacing=10, expand=True)
                 ),
-            ], spacing=20)
-        ], spacing=0)
+            ], spacing=20, expand=True)
+        ], spacing=0, expand=True)
 
     def _stat_card(self, title, value, icon, color):
         return ft.Card(
@@ -322,12 +355,12 @@ class InventoryScreen(ft.Container):
                 ], alignment=ft.MainAxisAlignment.START)
             ),
             ft.Container(height=15),
-            # Products grid/list
+            # Products grid/list - scrollable
             ft.Container(
                 expand=True,
                 content=self._build_products_content(products)
             )
-        ], spacing=0)
+        ], spacing=0, expand=True)
 
     def _build_category_dropdown(self):
         db = get_db_session()
@@ -384,12 +417,22 @@ class InventoryScreen(ft.Container):
                         self._product_grid_card(p) for p in row_products
                     ], spacing=15)
                 )
-            return ft.ListView(expand=True, spacing=15, controls=rows)
-        else:
-            return ft.ListView(
+            return ft.Container(
+                content=ft.ListView(
+                    expand=True,
+                    spacing=15,
+                    controls=rows
+                ),
                 expand=True,
-                spacing=10,
-                controls=[self._product_list_card(p) for p in products]
+            )
+        else:
+            return ft.Container(
+                content=ft.ListView(
+                    expand=True,
+                    spacing=10,
+                    controls=[self._product_list_card(p) for p in products]
+                ),
+                expand=True,
             )
 
     def _product_grid_card(self, product):
@@ -408,7 +451,7 @@ class InventoryScreen(ft.Container):
         try:
             if product.category:
                 cat_name = product.category.name
-        except:
+        except Exception:
             pass
 
         return ft.Card(
@@ -470,7 +513,7 @@ class InventoryScreen(ft.Container):
         try:
             if product.category:
                 cat_name = product.category.name
-        except:
+        except Exception:
             pass
 
         return ft.Card(
@@ -549,7 +592,7 @@ class InventoryScreen(ft.Container):
                     ]
                 )
             )
-        ], spacing=10)
+        ], spacing=10, expand=True)
 
     def _category_card(self, category):
         db = get_db_session()
@@ -615,25 +658,30 @@ class InventoryScreen(ft.Container):
                     "Filter by transaction type in toolbar coming soon", size=12, color=TEXT_MUTED)
             ),
             ft.Container(height=15),
-            # Transactions table
+            # Transactions table - using ListView for scrolling
             ft.Container(
                 expand=True,
                 content=ft.ListView(
                     expand=True,
                     spacing=8,
+                    padding=10,
                     controls=[
                         self._transaction_card(t) for t in transactions
                     ] if transactions else [
                         ft.Container(
-                            content=ft.Text("No transactions yet",
-                                            size=14, color=TEXT_MUTED),
+                            content=ft.Column([
+                                ft.Icon(ft.Icons.SWAP_HORIZ_OUTLINED,
+                                        size=48, color="#BDC3C7"),
+                                ft.Text("No transactions yet",
+                                        size=14, color=TEXT_MUTED),
+                            ], horizontal_alignment=ft.CrossAxisAlignment.CENTER),
                             padding=30,
                             alignment=ft.alignment.Alignment(0, 0)
                         )
                     ]
                 )
             )
-        ], spacing=10)
+        ], spacing=10, expand=True)
 
     def _transaction_card(self, transaction):
         db = get_db_session()
@@ -710,9 +758,9 @@ class InventoryScreen(ft.Container):
                 ], horizontal_alignment=ft.CrossAxisAlignment.CENTER),
                 padding=30,
                 alignment=ft.alignment.Alignment(0, 0),
-                expand=True
+                expand=True,
             )
-        ], spacing=10)
+        ], spacing=10, expand=True)
 
     def _build_reports(self):
         return ft.Column([
@@ -802,7 +850,7 @@ class InventoryScreen(ft.Container):
                 [(p.current_stock or 0) * (p.sale_price or 0) for p in products])
 
             return {'total': total, 'low': low, 'out': out, 'cats': cats, 'value': total_value}
-        except:
+        except Exception:
             return {'total': 0, 'low': 0, 'out': 0, 'cats': 0, 'value': 0}
         finally:
             db.close()
@@ -815,7 +863,7 @@ class InventoryScreen(ft.Container):
                 query = query.filter(Product.category_id ==
                                      self.selected_category)
             return query.order_by(Product.name).all()
-        except:
+        except Exception:
             return []
         finally:
             db.close()
@@ -826,7 +874,7 @@ class InventoryScreen(ft.Container):
             return db.query(InventoryCategory).filter(
                 InventoryCategory.is_active == True
             ).order_by(InventoryCategory.name).all()
-        except:
+        except Exception:
             return []
         finally:
             db.close()
@@ -837,15 +885,21 @@ class InventoryScreen(ft.Container):
             return db.query(InventoryTransaction).order_by(
                 InventoryTransaction.created_at.desc()
             ).limit(50).all()
-        except:
+        except Exception:
             return []
         finally:
             db.close()
 
     # Actions
     def go_back(self, e):
-        from core.navigation import navigate_to_home
-        navigate_to_home(self._page, self.user)
+        try:
+            # Navigation - handled locally to avoid import errors
+            _safe_navigate_to_home(self._page, self.user)
+        except Exception as e:
+            print(f"Go back error: {e}")
+            from screens.login_screen import LoginScreen
+            self._page.clean()
+            self._page.add(LoginScreen(self._page))
 
     def _set_view_mode(self, mode):
         self.view_mode = mode
@@ -1188,6 +1242,31 @@ class InventoryScreen(ft.Container):
         dlg.open = True
         self._page.update()
 
+    def _get_user_id(self):
+        """Get current user ID - handles both dict and object users"""
+        # Try dict first
+        if isinstance(self.user, dict):
+            uid = self.user.get('id')
+            if uid:
+                return uid
+
+        # Try object attribute
+        if hasattr(self.user, 'id'):
+            return getattr(self.user, 'id')
+
+        # Try from page session
+        try:
+            if hasattr(self._page, 'session'):
+                session_data = self._page.session
+                if session_data and isinstance(session_data, dict):
+                    user_data = session_data.get('user')
+                    if user_data and isinstance(user_data, dict):
+                        return user_data.get('id')
+        except Exception:
+            pass
+
+        return None
+
     def show_add_transaction_dialog(self, e):
         # Get products
         db = get_db_session()
@@ -1245,7 +1324,7 @@ class InventoryScreen(ft.Container):
                 # Update product stock
                 product.current_stock = quantity_after
 
-                # Create transaction
+                # Create transaction - use helper method for user ID
                 trans = InventoryTransaction(
                     product_id=product_id,
                     transaction_type=trans_type,
@@ -1253,8 +1332,7 @@ class InventoryScreen(ft.Container):
                     quantity_before=quantity_before,
                     quantity_after=quantity_after,
                     notes=notes_f.value,
-                    created_by_id=self.user.id if hasattr(
-                        self.user, 'id') else None
+                    created_by_id=self._get_user_id()
                 )
                 db.add(trans)
                 db.commit()

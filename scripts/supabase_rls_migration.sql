@@ -798,6 +798,10 @@ CREATE POLICY "Admins can view audit logs" ON public.audit_logs
 -- STEP 4: Create Safe Views for Sensitive Data
 -- ============================================================================
 
+-- Drop existing views if they exist (to remove any old SECURITY DEFINER versions)
+DROP VIEW IF EXISTS public.employees_safe;
+DROP VIEW IF EXISTS public.users_safe;
+
 -- Create a view for employees WITHOUT sensitive data (account_number excluded)
 CREATE OR REPLACE VIEW public.employees_safe AS
 SELECT 

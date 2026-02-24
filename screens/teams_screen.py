@@ -5,7 +5,7 @@ Enhanced with employee members, roles, work status, and task assignment
 
 import flet as ft
 from sqlalchemy.orm import Session
-from database.connection import get_db_session
+from database.session_manager import get_session, get_db_session, check_db_connection
 from database.models import Team, TeamMember, Employee
 from sqlalchemy.orm import joinedload
 import json
@@ -20,6 +20,35 @@ BACKGROUND = "#F5F5F5"
 SURFACE = "#FFFFFF"
 TEXT_PRIMARY = "#1A1C1E"
 TEXT_SECONDARY = "#6C757D"
+
+
+def _safe_navigate_to_home(page, user=None):
+    """Safely navigate to home screen"""
+    try:
+        from core.navigation import navigate_to_home
+        navigate_to_home(page, user)
+    except ImportError:
+        # Fallback navigation
+        try:
+            from screens.admin_screen import AdminScreen
+            from screens.employee_screen import EmployeeScreen
+            page.clean()
+            if user and isinstance(user, dict):
+                role = user.get('role', 'employee').lower()
+            elif user and hasattr(user, 'role'):
+                role = user.role.name.lower() if user.role else 'employee'
+            else:
+                role = 'employee'
+
+            if role == 'admin':
+                page.add(AdminScreen(page, user))
+            else:
+                page.add(EmployeeScreen(page, user))
+        except Exception as e:
+            print(f"Navigation error: {e}")
+            from screens.login_screen import LoginScreen
+            page.clean()
+            page.add(LoginScreen(page))
 
 
 class TeamsScreen(ft.Container):
@@ -67,8 +96,8 @@ class TeamsScreen(ft.Container):
         return content
 
     def on_back(self, e):
-        from core.navigation import navigate_to_home
-        navigate_to_home(self._page, self.user)
+        """Handle back navigation"""
+        _safe_navigate_to_home(self._page, self.user)
 
     def on_create(self, e):
         self._show_create_dialog()
@@ -144,7 +173,7 @@ class TeamsScreen(ft.Container):
                     TeamMember.is_active == True
                 ).count()
                 db.close()
-            except:
+            except Exception:
                 pass
 
             rows.append(

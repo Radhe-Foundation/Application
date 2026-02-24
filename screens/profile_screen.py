@@ -5,7 +5,7 @@ Simple profile screen for non-admin users with screen access management
 
 import flet as ft
 from datetime import datetime
-from database.connection import get_db_session
+from database.session_manager import get_session, get_db_session, check_db_connection
 from database.models import Employee, User, Department, Position, Role
 from sqlalchemy.orm import joinedload
 
@@ -24,6 +24,58 @@ class ProfileScreen(ft.Container):
         """Get database connection using SQLAlchemy"""
         return get_db_session()
 
+    def _get_user_id(self):
+        """Get user ID from user_data - checks both 'id' and 'user_id' keys"""
+        # First check for 'id', then 'user_id' - this order matters!
+        user_id = self.user_data.get("id") or self.user_data.get("user_id")
+        if user_id:
+            return user_id
+
+        # Try to get from username if available
+        username = self.user_data.get("username", "")
+        if username:
+            db = None
+            try:
+                db = get_db_session()
+                from database.models import User
+                user = db.query(User).filter(User.username == username).first()
+                if user:
+                    return user.id
+            except Exception as e:
+                print(f"Error getting user id from username: {e}")
+            finally:
+                if db:
+                    db.close()
+        return None
+
+    def _get_user_id_safe(self):
+        """Safely get user ID with fallback - used for edit profile"""
+        # Try multiple ways to get user_id
+        user_id = self.user_data.get("id") if isinstance(
+            self.user_data, dict) else None
+        if not user_id:
+            user_id = self.user_data.get("user_id") if isinstance(
+                self.user_data, dict) else None
+        if not user_id:
+            # Try to get from username
+            username = self.user_data.get("username") if isinstance(
+                self.user_data, dict) else None
+            if username:
+                db = None
+                try:
+                    db = get_db_session()
+                    from database.models import User
+                    user = db.query(User).filter(
+                        User.username == username).first()
+                    if user:
+                        return user.id
+                except Exception as e:
+                    print(f"Error getting user id: {e}")
+                finally:
+                    if db:
+                        db.close()
+        return user_id
+
     def _get_employee_data(self):
         """Fetch employee data from PostgreSQL database"""
         db = None
@@ -31,7 +83,7 @@ class ProfileScreen(ft.Container):
             db = get_db_session()
 
             # Get employee data based on user_id or username
-            user_id = self.user_data.get("user_id")
+            user_id = self._get_user_id()
             username = self.user_data.get("username", "")
 
             if user_id:
@@ -63,7 +115,7 @@ class ProfileScreen(ft.Container):
                         if role:
                             role_name = role.name
 
-                # Build employee data dict
+                # Build employee data dict - include profile_photo
                 self.employee_data = {
                     'first_name': emp.first_name,
                     'last_name': emp.last_name,
@@ -73,6 +125,7 @@ class ProfileScreen(ft.Container):
                     'position_title': emp.position.title if emp.position else None,
                     'role_name': role_name,
                     'date_of_joining': emp.date_of_joining,
+                    'profile_photo': emp.profile_photo,
                 }
         except Exception as e:
             print(f"Error fetching employee data: {e}")
@@ -86,7 +139,7 @@ class ProfileScreen(ft.Container):
         db = None
         try:
             db = get_db_session()
-            user_id = self.user_data.get("user_id")
+            user_id = self._get_user_id()
 
             if user_id:
                 # Get employee by user_id
@@ -112,7 +165,7 @@ class ProfileScreen(ft.Container):
         db = None
         try:
             db = get_db_session()
-            user_id = self.user_data.get("user_id")
+            user_id = self._get_user_id()
 
             if user_id:
                 # Get employee by user_id
@@ -138,7 +191,7 @@ class ProfileScreen(ft.Container):
         db = None
         try:
             db = get_db_session()
-            user_id = self.user_data.get("user_id")
+            user_id = self._get_user_id()
 
             if user_id:
                 # Get employee by user_id
@@ -169,8 +222,12 @@ class ProfileScreen(ft.Container):
 
     def _can_access(self, screen_key: str) -> bool:
         """Check if user can access a specific screen based on screen_access table"""
+        # Always allow access to profile - users should always be able to access their own profile
+        if screen_key == "profile":
+            return True
+
         try:
-            user_id = self.user_data.get("user_id")
+            user_id = self._get_user_id()
             if not user_id:
                 # If no user_id, allow access for now
                 return True
@@ -209,7 +266,7 @@ class ProfileScreen(ft.Container):
                 elevation=3
             )
         else:
-            # Disabled card - grayed out
+            # Disabled card - grayed out but still clickable
             return ft.Card(
                 content=ft.Container(
                     content=ft.Column([
@@ -219,12 +276,11 @@ class ProfileScreen(ft.Container):
                         ft.Text(subtitle, size=12, color="#BDBDBD"),
                         ft.Container(height=10),
                         ft.ElevatedButton(
-                            "Locked",
-                            icon=ft.Icons.LOCK,
-                            on_click=self._show_access_denied,
+                            "Open",
+                            icon=ft.Icons.ARROW_FORWARD,
+                            on_click=on_click,  # Make it clickable instead of locked
                             style=ft.ButtonStyle(
-                                bgcolor="#E0E0E0", color="#9E9E9E"),
-                            disabled=True
+                                bgcolor="#9E9E9E", color="white")
                         )
                     ], horizontal_alignment=ft.CrossAxisAlignment.CENTER, spacing=5),
                     padding=ft.padding.all(20),
@@ -297,6 +353,7 @@ class ProfileScreen(ft.Container):
         email = f"{username}@vernika.com"
         phone = "Not provided"
         date_of_joining = "N/A"
+        profile_photo = None
 
         if emp:
             full_name = f"{emp.get('first_name', '')} {emp.get('last_name', '')}".strip(
@@ -311,6 +368,7 @@ class ProfileScreen(ft.Container):
             doj = emp.get('date_of_joining')
             if doj:
                 date_of_joining = str(doj)
+            profile_photo = emp.get('profile_photo')
 
         header = ft.Container(
             padding=15,
@@ -324,24 +382,74 @@ class ProfileScreen(ft.Container):
             ], alignment=ft.MainAxisAlignment.SPACE_BETWEEN)
         )
 
-        # Profile card with real data
+        # Profile card with real data and profile photo
+        # Create avatar - show profile photo if available and valid, otherwise show initials
+        import os
+        from pathlib import Path
+        profile_photo_valid = False
+        profile_photo_to_show = None
+
+        if profile_photo:
+            # Check if profile photo path is valid (file exists or is a valid URL)
+            if profile_photo.startswith('http'):
+                # Assume HTTP URLs are valid
+                profile_photo_valid = True
+                profile_photo_to_show = profile_photo
+            else:
+                # Check if local path exists as-is
+                if os.path.exists(profile_photo):
+                    profile_photo_valid = True
+                    profile_photo_to_show = profile_photo
+                else:
+                    # Try relative to assets/profile_photos directory
+                    base_dir = Path(__file__).parent.parent
+                    assets_path = base_dir / "assets" / \
+                        "profile_photos" / os.path.basename(profile_photo)
+                    if assets_path.exists():
+                        profile_photo_valid = True
+                        profile_photo_to_show = str(assets_path)
+                    else:
+                        # Try just the basename in profile_photos
+                        basename = os.path.basename(profile_photo)
+                        assets_path2 = base_dir / "assets" / "profile_photos" / basename
+                        if assets_path2.exists():
+                            profile_photo_valid = True
+                            profile_photo_to_show = str(assets_path2)
+
+        if profile_photo and profile_photo_valid and profile_photo_to_show:
+            # Use profile photo if available and valid
+            profile_avatar = ft.Container(
+                width=80, height=80,
+                border_radius=40,
+                content=ft.Image(
+                    src=profile_photo_to_show,
+                    width=80,
+                    height=80,
+                    fit=ft.BoxFit.COVER,
+                ),
+                clip_behavior=ft.ClipBehavior.HARD_EDGE,
+            )
+        else:
+            # Show initials as fallback (when no photo or photo path invalid)
+            profile_avatar = ft.Container(
+                width=80, height=80,
+                bgcolor="#2E86AB",
+                border_radius=40,
+                content=ft.Text(
+                    full_name[:1].upper(
+                    ) if full_name else username[:1].upper(),
+                    size=32,
+                    color="WHITE",
+                    weight=ft.FontWeight.BOLD
+                ),
+                alignment=ft.alignment.Alignment(0, 0),
+            )
+
         profile_card = ft.Card(
             content=ft.Container(
                 padding=30,
                 content=ft.Column([
-                    ft.Container(
-                        width=80, height=80,
-                        bgcolor="#2E86AB",
-                        border_radius=40,
-                        content=ft.Text(
-                            full_name[:1].upper(
-                            ) if full_name else username[:1].upper(),
-                            size=32,
-                            color="WHITE",
-                            weight=ft.FontWeight.BOLD
-                        ),
-                        alignment=ft.alignment.Alignment(0, 0),
-                    ),
+                    profile_avatar,
                     ft.Text(full_name, size=20, weight=ft.FontWeight.BOLD),
                     ft.Text(role, size=14, color="#757575"),
                     ft.Container(height=10),
@@ -485,22 +593,35 @@ class ProfileScreen(ft.Container):
 
     def edit_profile(self, e):
         """Edit user profile"""
-        if not self.employee_data:
+        # First validate user_id - use the safe method
+        user_id = self._get_user_id_safe()
+        if not user_id:
+            # Try the original method as fallback
+            user_id = self._get_user_id()
+
+        if not user_id:
             self._show_snackbar(
-                "Profile data not available", bgcolor="#DC3545")
+                "User ID not found. Please login again.", bgcolor="#DC3545")
             return
 
-        emp = self.employee_data
-
         # Get current user data
-        db = get_db_session()
+        db = None
         try:
-            user_id = self.user_data.get("user_id")
+            db = get_db_session()
+
+            # Get user and employee
             user = db.query(User).filter(User.id == user_id).first()
+            if not user:
+                self._close_dialog()
+                self._show_snackbar(
+                    "User not found. Please login again.", bgcolor="#DC3545")
+                return
+
             employee = db.query(Employee).filter(
                 Employee.user_id == user_id).first()
 
             if not employee:
+                self._close_dialog()
                 self._show_snackbar(
                     "Employee record not found", bgcolor="#DC3545")
                 return
@@ -509,58 +630,62 @@ class ProfileScreen(ft.Container):
             departments = db.query(Department).all()
             positions = db.query(Position).all()
 
-            # Build form fields
+            # Build form fields - use employee object from DB query
             first_name = ft.TextField(
                 label="First Name",
-                value=emp.get('first_name', ''),
+                value=employee.first_name or '',
                 width=200
             )
             last_name = ft.TextField(
                 label="Last Name",
-                value=emp.get('last_name', ''),
+                value=employee.last_name or '',
                 width=200
             )
             email = ft.TextField(
                 label="Email",
-                value=emp.get('email', ''),
+                value=employee.email or '',
                 width=200,
                 disabled=True  # Email typically can't be changed
             )
             phone = ft.TextField(
                 label="Phone",
-                value=emp.get('phone', ''),
+                value=employee.phone or '',
                 width=200
             )
 
+            # Get department and position names for comparison
+            current_dept_name = employee.department.name if employee.department else None
+            current_pos_title = employee.position.title if employee.position else None
+
             # Department dropdown
             dept_options = [ft.dropdown.Option("", "Select Department")]
-            current_dept_id = None
+            current_dept_id = ""
             for dept in departments:
                 dept_options.append(
                     ft.dropdown.Option(str(dept.id), dept.name))
-                if emp.get('department_name') == dept.name:
+                if current_dept_name == dept.name:
                     current_dept_id = str(dept.id)
 
             department = ft.Dropdown(
                 label="Department",
                 width=200,
                 options=dept_options,
-                value=current_dept_id or "",
+                value=current_dept_id,
             )
 
             # Position dropdown
             pos_options = [ft.dropdown.Option("", "Select Position")]
-            current_pos_id = None
+            current_pos_id = ""
             for pos in positions:
                 pos_options.append(ft.dropdown.Option(str(pos.id), pos.title))
-                if emp.get('position_title') == pos.title:
+                if current_pos_title == pos.title:
                     current_pos_id = str(pos.id)
 
             position = ft.Dropdown(
                 label="Position",
                 width=200,
                 options=pos_options,
-                value=current_pos_id or "",
+                value=current_pos_id,
             )
 
             error_text = ft.Text("", color="#DC3545", size=12, visible=False)
@@ -596,10 +721,14 @@ class ProfileScreen(ft.Container):
                     error_text.value = f"Error: {str(ex)}"
                     error_text.visible = True
                     self._page.update()
+                finally:
+                    if db:
+                        db.close()
 
             def close_dlg(ef):
                 self._close_dialog()
-                db.close()
+                if db:
+                    db.close()
 
             dialog = ft.AlertDialog(
                 title=ft.Text("Edit Profile"),
@@ -627,7 +756,10 @@ class ProfileScreen(ft.Container):
         except Exception as ex:
             print(f"Error loading profile: {ex}")
             self._show_snackbar(f"Error: {str(ex)}", bgcolor="#DC3545")
-            db.close()
+            if db:
+                db.close()
+        # Note: Database session remains open while dialog is shown
+        # It will be closed in the close_dlg or save_profile callback
 
     def _close_dialog(self):
         """Close dialog"""

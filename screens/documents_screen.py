@@ -36,12 +36,19 @@ class DocumentsScreen(ft.Container):
         self.selected_category = 0
         self.search_query = ""
         self._picked_file = None
+        self._file_picker = None
 
         # Build the content first
         self.content = self._build_content()
 
         # Load documents after building UI
         self._load_documents()
+
+    def _init_file_picker(self):
+        """Initialize file picker for document upload"""
+        if not self._file_picker:
+            self._file_picker = ft.FilePicker()
+            self._page.services.append(self._file_picker)
 
     def _build_content(self):
         """Build the main content"""
@@ -319,11 +326,51 @@ class DocumentsScreen(ft.Container):
         self._show_upload_dialog()
 
     def _show_upload_dialog(self):
-        """Show upload dialog"""
+        """Show upload dialog with file picker"""
+        self._init_file_picker()
+
         # Document name
         doc_name = ft.TextField(
             label="Document Name *",
-            width=400,
+            width=350,
+        )
+
+        # File path with browse button
+        file_path = [""]
+
+        def pick_file(e):
+            """Pick file using file picker"""
+            async def pick_and_set():
+                try:
+                    files = await self._file_picker.pick_files(
+                        dialog_title="Choose document file",
+                        file_type=ft.FilePickerFileType.ANY,
+                    )
+                    if files and files[0]:
+                        path = files[0].path
+                        file_path[0] = path
+                        path_input.value = path
+                        # Auto-fill document name if empty
+                        if not doc_name.value:
+                            doc_name.value = files[0].name
+                        self._page.update()
+                except Exception as ex:
+                    print(f"Error picking file: {ex}")
+
+            self._page.run_task(pick_and_set)
+
+        path_input = ft.TextField(
+            label="File Path",
+            width=350,
+            hint_text="Select a file or enter path",
+        )
+
+        browse_btn = ft.ElevatedButton(
+            "Browse",
+            icon=ft.Icons.FOLDER_OPEN,
+            on_click=pick_file,
+            style=ft.ButtonStyle(bgcolor=colors.PRIMARY,
+                                 color=colors.ON_PRIMARY)
         )
 
         # Category dropdown
@@ -368,6 +415,7 @@ class DocumentsScreen(ft.Container):
                 "uploaded_by": self.user.get('username', 'User') if isinstance(self.user, dict) else 'User',
                 "date": "2024-03-15",  # Would be current date
                 "description": description.value or "",
+                "file_path": file_path[0],
             }
             self.documents.insert(0, new_doc)
             self._close_dialog()
@@ -381,12 +429,15 @@ class DocumentsScreen(ft.Container):
                 [ft.Icon(ft.Icons.UPLOAD, color=colors.PRIMARY), ft.Text("Upload Document")]),
             content=ft.Container(
                 content=ft.Column(
-                    controls=[doc_name, category_dropdown,
-                              description, error_text],
+                    controls=[
+                        ft.Row([path_input, browse_btn], spacing=10),
+                        doc_name,
+                        category_dropdown,
+                        description, error_text],
                     spacing=10,
                 ),
-                width=450,
-                height=300,
+                width=500,
+                height=350,
             ),
             actions=[
                 ft.TextButton(
@@ -494,7 +545,7 @@ class DocumentsScreen(ft.Container):
     def _load_documents(self):
         """Load documents from database"""
         from database.operations import get_user_documents
-        from database.connection import get_db_session
+        from database.session_manager import get_session, get_db_session, check_db_connection
 
         category_names = ["All", "Policies", "Forms",
                           "Contracts", "Training", "Other"]

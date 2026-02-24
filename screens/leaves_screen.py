@@ -5,7 +5,7 @@ Updated with view_mode support: admin (manage all) or employee (self only)
 
 import flet as ft
 from datetime import datetime, date
-from database.connection import get_db_session
+from database.session_manager import get_session, get_db_session, check_db_connection
 from database.models import LeaveRequest, Employee, LeaveStatus, LeaveTypeConfig, LeaveBalance
 from database.operations import (
     get_all_employees, get_leave_requests, get_leave_type_configs,
@@ -14,6 +14,35 @@ from database.operations import (
     get_employee_by_user_id
 )
 from components.forms import DatePickerField
+
+
+def _safe_navigate_to_home(page, user=None):
+    """Safely navigate to home screen"""
+    try:
+        from core.navigation import navigate_to_home
+        navigate_to_home(page, user)
+    except ImportError:
+        # Fallback navigation
+        try:
+            from screens.admin_screen import AdminScreen
+            from screens.employee_screen import EmployeeScreen
+            page.clean()
+            if user and isinstance(user, dict):
+                role = user.get('role', 'employee').lower()
+            elif user and hasattr(user, 'role'):
+                role = user.role.name.lower() if user.role else 'employee'
+            else:
+                role = 'employee'
+
+            if role == 'admin':
+                page.add(AdminScreen(page, user))
+            else:
+                page.add(EmployeeScreen(page, user))
+        except Exception as e:
+            print(f"Navigation error: {e}")
+            from screens.login_screen import LoginScreen
+            page.clean()
+            page.add(LoginScreen(page))
 
 
 class LeavesScreen(ft.Container):
@@ -190,12 +219,8 @@ class LeavesScreen(ft.Container):
                 ft.DataColumn(label=ft.Text("End")),
                 ft.DataColumn(label=ft.Text("Days")),
                 ft.DataColumn(label=ft.Text("Status")),
+                ft.DataColumn(label=ft.Text("Actions")),
             ]
-
-            if self.view_mode == "admin":
-                columns.append(ft.DataColumn(label=ft.Text("Actions")))
-            else:
-                columns.append(ft.DataColumn(label=ft.Text("")))
 
             table = ft.DataTable(
                 columns=columns,
@@ -207,8 +232,8 @@ class LeavesScreen(ft.Container):
         return ft.Column([header, ft.Container(padding=20, content=table_content, expand=True)], expand=True)
 
     def on_back(self, e):
-        from core.navigation import navigate_to_home
-        navigate_to_home(self._page, self.user)
+        """Handle back navigation"""
+        _safe_navigate_to_home(self._page, self.user)
 
     def on_add(self, e):
         self._show_add_dialog()

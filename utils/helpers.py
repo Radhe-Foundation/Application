@@ -166,3 +166,33 @@ class Logger:
 
 # Create default logger instance
 logger = Logger()
+
+
+def get_employee_photo_url(employee) -> str:
+    """
+    Get employee profile photo URL or path.
+    Returns the photo path from employee record or generates a placeholder.
+    """
+    if not employee:
+        return None
+
+    # Check if employee has profile photo
+    if hasattr(employee, 'profile_photo') and employee.profile_photo:
+        return employee.profile_photo
+
+    # Check if employee has profile photo data (binary)
+    if hasattr(employee, 'profile_photo_data') and employee.profile_photo_data:
+        # Return special flag to indicate binary data
+        return "binary_data"
+
+    return None
+
+
+def get_employee_display_name(employee) -> str:
+    """Get employee's display name"""
+    if not employee:
+        return "Unknown"
+    first = getattr(employee, 'first_name', '') or ''
+    last = getattr(employee, 'last_name', '') or ''
+    name = f"{first} {last}".strip()
+    return name if name else getattr(employee, 'employee_code', 'Unknown')

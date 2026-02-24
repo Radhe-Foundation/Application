@@ -7,7 +7,7 @@ import flet as ft
 import os
 
 from core.theme import PRIMARY
-from database.connection import get_db_session
+from database.session_manager import get_session, get_db_session, check_db_connection
 from database.operations import authenticate_user
 
 
@@ -467,18 +467,26 @@ class LoginScreen(ft.Container):
                 end=ft.alignment.Alignment(0, 1),
             ),
             content=ft.Column([
-                # Logo and title section - centered
+                # Logo and title section - centered properly with top spacing
                 ft.Container(
                     expand=True,
                     content=ft.Column(
                         controls=[
-                            ft.Container(height=40),  # Top spacing
-                            self.logo,
-                            ft.Container(height=20),
+                            # Top spacing for vertical centering - adjusted for better centering
+                            ft.Container(height=60),
+                            # Logo container - perfectly centered
+                            ft.Container(
+                                content=self.logo,
+                                alignment=ft.alignment.Alignment(0, 0),
+                            ),
+                            ft.Container(height=25),
+                            # App title - centered below logo
                             self.app_title,
                             ft.Container(height=15),
+                            # Welcome title - centered
                             self.welcome_title,
                             ft.Container(height=8),
+                            # Welcome subtitle - centered
                             self.welcome_subtitle,
                         ],
                         horizontal_alignment=ft.CrossAxisAlignment.CENTER,
@@ -579,6 +587,12 @@ class LoginScreen(ft.Container):
             print(
                 f"Login successful for user: {user_data['username']}, role: {user_data['role']}"
             )
+
+            # Close database session before navigation
+            if db:
+                db.close()
+                db = None
+
             self.show_dashboard(user_data)
 
         except Exception as ex:

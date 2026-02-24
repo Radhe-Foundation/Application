@@ -9,7 +9,7 @@ import json
 import os
 from typing import Dict, List, Optional, Any
 from sqlalchemy import inspect, text
-from database.connection import get_db_session
+from database.session_manager import get_session, get_db_session, check_db_connection
 from database.models import ETLJob, ETLJobStatus
 from core.theme import theme
 from core.colors_compat import colors
@@ -34,6 +34,14 @@ class ETLScreen(ft.Container):
         self.column_mapping = {}
         self.excel_preview_data = []
         self.excel_columns = []
+
+        # File picker - initialize properly for Flet 0.80+
+        self._file_picker: Optional[ft.FilePicker] = None
+        try:
+            self._file_picker = ft.FilePicker()
+            self._page.services.append(self._file_picker)
+        except Exception as e:
+            print(f"[ETL] FilePicker init error: {e}")
 
         # Build content
         self.content = self._build_content()
@@ -441,15 +449,33 @@ class ETLScreen(ft.Container):
         )
 
     def _show_file_dialog(self, input_field: ft.TextField):
-        """Show file selection dialog"""
-        def confirm_selection(e):
-            """Confirm file selection"""
-            if input_field.value:
-                self.selected_file_name = input_field.value
-                self.selected_file_path = input_field.value
-                self.show_success(f"File selected: {self.selected_file_name}")
-            self._close_dialog()
-            self._refresh()
+        """Show file selection dialog with file picker"""
+        # File picker should already be initialized in __init__
+        if not self._file_picker:
+            self.show_error("File picker not available")
+            return
+
+        def pick_file(e):
+            """Pick file using file picker"""
+            async def pick_and_set():
+                try:
+                    files = await self._file_picker.pick_files(
+                        dialog_title="Choose Excel file",
+                        file_type=ft.FilePickerFileType.ANY,
+                    )
+                    if files and files[0]:
+                        path = files[0].path
+                        if path:
+                            input_field.value = path
+                            self.selected_file_name = path
+                            self.selected_file_path = path
+                            self.show_success(f"File selected: {path}")
+                            self._page.update()
+                except Exception as ex:
+                    print(f"Error picking file: {ex}")
+                    self.show_error(f"Error selecting file: {ex}")
+
+            self._page.run_task(pick_and_set)
 
         dialog = ft.AlertDialog(
             modal=True,
@@ -458,11 +484,11 @@ class ETLScreen(ft.Container):
             content=ft.Container(
                 content=ft.Column(
                     controls=[
-                        ft.Text("Enter the full path to your Excel file:",
+                        ft.Text("Click Browse to select your Excel file:",
                                 size=12, color=colors.SECONDARY),
-                        input_field,
-                        ft.Text("Or use the Export function to download template first",
+                        ft.Text("Or enter the full path manually below:",
                                 size=11, color=colors.GREY),
+                        input_field,
                     ],
                     spacing=10,
                 ),
@@ -473,8 +499,9 @@ class ETLScreen(ft.Container):
                 ft.TextButton(
                     "Cancel", on_click=lambda e: self._close_dialog()),
                 ft.ElevatedButton(
-                    "Select",
-                    on_click=confirm_selection,
+                    "Browse",
+                    icon=ft.Icons.FOLDER_OPEN,
+                    on_click=pick_file,
                     style=ft.ButtonStyle(bgcolor=theme.primary, color="white"),
                 ),
             ],

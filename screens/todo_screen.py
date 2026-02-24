@@ -15,6 +15,33 @@ class TaskItem:
     completed: bool = False
 
 
+def _safe_navigate_to_home(page, user=None):
+    """Safely navigate to home screen"""
+    try:
+        from core.navigation import navigate_to_home
+        navigate_to_home(page, user)
+    except ImportError:
+        try:
+            from screens.admin_screen import AdminScreen
+            from screens.employee_screen import EmployeeScreen
+            page.clean()
+            if user and isinstance(user, dict):
+                role = user.get('role', 'employee').lower()
+            elif user and hasattr(user, 'role'):
+                role = user.role.name.lower() if user.role else 'employee'
+            else:
+                role = 'employee'
+            if role == 'admin':
+                page.add(AdminScreen(page, user))
+            else:
+                page.add(EmployeeScreen(page, user))
+        except Exception as e:
+            print(f"Navigation error: {e}")
+            from screens.login_screen import LoginScreen
+            page.clean()
+            page.add(LoginScreen(page))
+
+
 class TaskWidget(ft.Container):
     def __init__(self, task: TaskItem, on_toggle: Callable, on_delete: Callable, on_edit: Callable):
         super().__init__()
@@ -221,5 +248,5 @@ class TodoScreen(ft.Container):
         self._page.update()
 
     def go_back(self, e):
-        from core.navigation import navigate_to_home
-        navigate_to_home(self._page, self.user)
+        """Handle back navigation"""
+        _safe_navigate_to_home(self._page, self.user)

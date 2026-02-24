@@ -7,7 +7,7 @@ from datetime import datetime
 from typing import Dict, List, Optional
 from sqlalchemy.orm import Session
 from sqlalchemy import and_, or_
-from database.connection import get_db_session
+from database.session_manager import get_db_session, get_session
 from database.models import ScreenAccess, User, Employee, Role
 
 
@@ -181,6 +181,70 @@ SCREEN_ACCESS_CONFIG = {
         "default_employee": False,
         "category": "admin",
         "admin_tab_index": 16
+    },
+    # Business Screens
+    "data_entry": {
+        "name": "Data Entry",
+        "icon": "TABLE_ROWS",
+        "description": "Spreadsheet and data management",
+        "default_admin": True,
+        "default_employee": False,
+        "category": "business",
+        "admin_tab_index": 22
+    },
+    "inventory": {
+        "name": "Inventory",
+        "icon": "INVENTORY",
+        "description": "Inventory and stock management",
+        "default_admin": True,
+        "default_employee": False,
+        "category": "business",
+        "admin_tab_index": 23
+    },
+    "transactions": {
+        "name": "Transactions",
+        "icon": "PAYMENT",
+        "description": "Financial transactions and payments",
+        "default_admin": True,
+        "default_employee": False,
+        "category": "business",
+        "admin_tab_index": 24
+    },
+    "crm": {
+        "name": "CRM",
+        "icon": "PEOPLE",
+        "description": "Customer relationship management",
+        "default_admin": True,
+        "default_employee": False,
+        "category": "business",
+        "admin_tab_index": 25
+    },
+    "invoicing": {
+        "name": "Invoicing",
+        "icon": "RECEIPT_LONG",
+        "description": "Invoice generation and billing",
+        "default_admin": True,
+        "default_employee": False,
+        "category": "business",
+        "admin_tab_index": 26
+    },
+    "assets": {
+        "name": "Assets",
+        "icon": "INVENTORY_2",
+        "description": "Company asset management",
+        "default_admin": True,
+        "default_employee": False,
+        "category": "business",
+        "admin_tab_index": 27
+    },
+    "time_tracking": {
+        "name": "Time Track",
+        "icon": "TIMER",
+        "description": "Employee time tracking",
+        "default_admin": True,
+        "default_employee": False,
+        "category": "business",
+        "admin_tab_index": 28
     },
     "admin_panel": {
         "name": "Admin Panel",

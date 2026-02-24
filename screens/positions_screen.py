@@ -5,7 +5,7 @@ PostgreSQL/SQLAlchemy based positions management
 
 import flet as ft
 from sqlalchemy.orm import Session, joinedload
-from database.connection import get_db_session
+from database.session_manager import get_session, get_db_session, check_db_connection
 from database.models import Position, Department
 
 
@@ -20,6 +20,35 @@ TEXT_PRIMARY = "#1A1C1E"
 TEXT_SECONDARY = "#6C757D"
 
 
+def _safe_navigate_to_home(page, user=None):
+    """Safely navigate to home screen"""
+    try:
+        from core.navigation import navigate_to_home
+        navigate_to_home(page, user)
+    except ImportError:
+        # Fallback navigation
+        try:
+            from screens.admin_screen import AdminScreen
+            from screens.employee_screen import EmployeeScreen
+            page.clean()
+            if user and isinstance(user, dict):
+                role = user.get('role', 'employee').lower()
+            elif user and hasattr(user, 'role'):
+                role = user.role.name.lower() if user.role else 'employee'
+            else:
+                role = 'employee'
+
+            if role == 'admin':
+                page.add(AdminScreen(page, user))
+            else:
+                page.add(EmployeeScreen(page, user))
+        except Exception as e:
+            print(f"Navigation error: {e}")
+            from screens.login_screen import LoginScreen
+            page.clean()
+            page.add(LoginScreen(page))
+
+
 class PositionsScreen(ft.Container):
     """
     Screen for managing job positions/roles.
@@ -31,35 +60,30 @@ class PositionsScreen(ft.Container):
         self.user = user
         self.expand = True
         self.bgcolor = BACKGROUND
+        self._nav_rail_visible = True
         self.content = self._build_content()
 
     def _build_content(self):
         """Build the UI"""
-        header = ft.Container(
-            padding=15,
-            bgcolor=PRIMARY,
-            content=ft.Row([
-                ft.IconButton(
-                    icon=ft.Icons.ARROW_BACK,
-                    icon_color="WHITE",
-                    on_click=self._on_back
-                ),
-                ft.Text("Positions Management", size=18,
-                        color="WHITE", weight=ft.FontWeight.BOLD),
-                ft.Container(expand=True),
-                ft.ElevatedButton(
-                    "Add Position",
-                    icon=ft.Icons.ADD,
-                    on_click=self._on_add,
-                    style=ft.ButtonStyle(bgcolor="#1976D2", color="WHITE")
-                ),
-            ])
+        # Create toggle button for navigation
+        def toggle_nav_rail(e):
+            self._nav_rail_visible = not self._nav_rail_visible
+            self.content.content.controls[0].visible = self._nav_rail_visible
+            self.content.content.controls[1].visible = self._nav_rail_visible
+            self._page.update()
+
+        self.nav_toggle_btn = ft.IconButton(
+            icon=ft.Icons.MENU_OPEN if self._nav_rail_visible else ft.Icons.MENU,
+            tooltip="Toggle Navigation",
+            on_click=toggle_nav_rail,
+            icon_color="WHITE"
         )
 
         positions_list = self._build_positions_list()
 
         content = ft.Column([
-            header,
+            # Header with navigation, company name, welcome text, and logout
+            self._create_header(),
             ft.Container(
                 padding=20,
                 content=positions_list,
@@ -69,10 +93,53 @@ class PositionsScreen(ft.Container):
 
         return content
 
+    def _create_header(self):
+        """Create header with navigation, company name, welcome text, and logout"""
+        return ft.Container(
+            content=ft.Row([
+                # Navigation toggle button
+                self.nav_toggle_btn,
+                ft.Container(width=10),
+                ft.Icon(ft.Icons.WORK, color="WHITE", size=28),
+                ft.Text("Vernika HRA - Positions Management", size=18,
+                        color="WHITE", weight=ft.FontWeight.BOLD),
+                ft.Container(expand=True),
+                # Add Position button
+                ft.ElevatedButton(
+                    "Add Position",
+                    icon=ft.Icons.ADD,
+                    on_click=self._on_add,
+                    style=ft.ButtonStyle(
+                        bgcolor="WHITE",
+                        color=PRIMARY,
+                    ),
+                ),
+                ft.Container(width=10),
+                ft.Text(
+                    f"Welcome, {self.user.get('username', 'User') if isinstance(self.user, dict) else 'User'}",
+                    size=14,
+                    color="WHITE"
+                ),
+                ft.IconButton(
+                    icon=ft.Icons.LOGOUT,
+                    tooltip="Logout",
+                    on_click=self._handle_logout,
+                    icon_color="WHITE"
+                )
+            ], alignment=ft.MainAxisAlignment.SPACE_BETWEEN),
+            padding=ft.padding.symmetric(horizontal=20, vertical=15),
+            bgcolor=PRIMARY,
+        )
+
+    def _handle_logout(self, e):
+        """Handle logout"""
+        from screens.login_screen import LoginScreen
+        self._page.clean()
+        self._page.add(LoginScreen(self._page))
+
     def _on_back(self, e):
         """Go back to dashboard"""
-        from core.navigation import navigate_to_home
-        navigate_to_home(self._page, self.user)
+        _safe_navigate_to_home(self._page, self.user)
 
     def _on_add(self, e):
         """Show add position dialog"""
@@ -193,7 +260,7 @@ class PositionsScreen(ft.Container):
         dept_options = [ft.dropdown.Option(
             key=str(d.id), text=d.name) for d in departments]
 
-        title = ft.TextField(label="Title *", width=300)
+        title = ft.TextField(label="Title *", width=280)
         code = ft.TextField(label="Code *", width=150)
         description = ft.TextField(
             label="Description", width=450, multiline=True, min_lines=2)
@@ -250,26 +317,25 @@ class PositionsScreen(ft.Container):
             finally:
                 db.close()
 
-        tab_content = ft.Column([
-            ft.Text("Position Details", size=14,
-                    weight=ft.FontWeight.BOLD, color=PRIMARY),
-            ft.Row([title, code], spacing=10),
-            description,
-            ft.Divider(),
-            ft.Text("Department & Salary", size=14,
-                    weight=ft.FontWeight.BOLD, color=SUCCESS),
-            ft.Row([department, min_salary, max_salary], spacing=10),
-            error,
-            ft.Container(height=20),
-        ], spacing=10, scroll=ft.ScrollMode.AUTO)
-
         dialog = ft.AlertDialog(
             modal=True,
             title=ft.Text("Add Position"),
             content=ft.Container(
-                content=tab_content,
-                width=500,
-                height=400,
+                content=ft.Column([
+                    ft.Text("Position Details", size=14,
+                            weight=ft.FontWeight.BOLD, color=PRIMARY),
+                    ft.Row([title, code], spacing=15),
+                    description,
+                    ft.Container(height=10),
+                    ft.Divider(),
+                    ft.Text("Department & Salary", size=14,
+                            weight=ft.FontWeight.BOLD, color=SUCCESS),
+                    ft.Container(height=5),
+                    ft.Row([department], spacing=15),
+                    ft.Row([min_salary, max_salary], spacing=15),
+                    error,
+                ], spacing=10, scroll=ft.ScrollMode.AUTO),
+                width=520,
             ),
             actions=[
                 ft.TextButton(
@@ -343,12 +409,24 @@ class PositionsScreen(ft.Container):
         tab_content = ft.Column([
             ft.Text("Position Details", size=14,
                     weight=ft.FontWeight.BOLD, color=PRIMARY),
-            ft.Row([title, code], spacing=10),
-            description,
+            ft.Row([
+                ft.Container(content=title, width=300),
+                ft.Container(content=code, width=150),
+            ], spacing=10),
+            ft.Container(content=description, width=450),
             ft.Divider(),
             ft.Text("Department & Salary", size=14,
                     weight=ft.FontWeight.BOLD, color=SUCCESS),
-            ft.Row([department, min_salary, max_salary], spacing=10),
+            ft.Container(
+                content=ft.Row(
+                    [
+                        ft.Container(content=department, width=250),
+                        ft.Container(content=min_salary, width=150),
+                        ft.Container(content=max_salary, width=150),
+                    ],
+                    spacing=10,
+                ),
+            ),
             ft.Divider(),
             status_switch,
             ft.Container(height=20),

@@ -8,7 +8,7 @@ import io
 from datetime import datetime
 from typing import List, Dict, Any, Optional
 from sqlalchemy import text
-from database.connection import get_db_session
+from database.session_manager import get_db_session, get_session
 
 
 class ExcelExporter:

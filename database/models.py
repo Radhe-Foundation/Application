@@ -9,7 +9,7 @@ from typing import Optional, List
 import flet as ft
 from sqlalchemy import (
     Column, Integer, String, Boolean, DateTime, Date, Text,
-    ForeignKey, Float, Enum, JSON, UniqueConstraint, Index
+    ForeignKey, Float, Enum, JSON, UniqueConstraint, Index, LargeBinary
 )
 from sqlalchemy.orm import relationship, Mapped, mapped_column
 from sqlalchemy.sql import func
@@ -311,6 +311,11 @@ class Employee(Base):
     allowance = Column(Float, default=0)
     deduction = Column(Float, default=0)
 
+    # Profile photo
+    profile_photo = Column(String(500), nullable=True)
+    # Binary data for multi-device access
+    profile_photo_data = Column(LargeBinary, nullable=True)
+
     user = relationship("User", backref="employee")
     department = relationship("Department", backref="employees")
     position = relationship("Position", backref="employees")
@@ -369,6 +374,10 @@ class LeaveRequest(Base):
     reason = Column(Text, nullable=False)
     status = Column(Enum(LeaveStatus), default=LeaveStatus.PENDING)
     created_at = Column(DateTime, default=datetime.utcnow)
+
+    # Relationships
+    employee = relationship("Employee", backref="leave_requests")
+    leave_type = relationship("LeaveTypeConfig", backref="leave_requests")
 
 
 class Task(Base):
@@ -436,7 +445,7 @@ class TimeOff(Base):
     __tablename__ = "time_off_requests"
 
     id = Column(Integer, primary_key=True, index=True)
-    user_id = Column(Integer, ForeignKey("employees.id"), nullable=False)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=False)
     leave_type = Column(String(50), nullable=False)
     start_date = Column(Date, nullable=False)
     end_date = Column(Date, nullable=False)
@@ -445,7 +454,7 @@ class TimeOff(Base):
     created_at = Column(DateTime, default=datetime.utcnow)
     approved_by = Column(Integer, ForeignKey("employees.id"))
 
-    user = relationship("Employee", foreign_keys=[
+    user = relationship("User", foreign_keys=[
                         user_id], backref="time_off_requests")
     approver = relationship("Employee", foreign_keys=[
                             approved_by], backref="approved_time_offs")
@@ -535,6 +544,35 @@ class EmailRecipient(Base):
 
     email = relationship("EmailMessage", back_populates="recipients")
     recipient = relationship("User", backref="received_emails")
+
+
+class EmailGroup(Base):
+    """Email distribution groups for sending to multiple recipients"""
+    __tablename__ = "email_groups"
+
+    id = Column(Integer, primary_key=True, index=True)
+    name = Column(String(100), nullable=False)
+    description = Column(Text)
+    created_by = Column(Integer, ForeignKey("users.id"), nullable=False)
+    is_active = Column(Boolean, default=True)
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+    members = relationship("EmailGroupMember", back_populates="group")
+    creator = relationship("User")
+
+
+class EmailGroupMember(Base):
+    """Membership in email groups"""
+    __tablename__ = "email_group_members"
+
+    id = Column(Integer, primary_key=True, index=True)
+    group_id = Column(Integer, ForeignKey("email_groups.id"), nullable=False)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=False)
+    role = Column(String(20), default="member")  # admin, member
+    joined_at = Column(DateTime, default=datetime.utcnow)
+
+    group = relationship("EmailGroup", back_populates="members")
+    user = relationship("User")
 
 
 class Meeting(Base):
@@ -1201,6 +1239,28 @@ class InventoryTransaction(Base):
     created_by = relationship("User")
 
 
+class Supplier(Base):
+    """Suppliers for inventory management"""
+    __tablename__ = "suppliers"
+
+    id = Column(Integer, primary_key=True, index=True)
+    name = Column(String(200), nullable=False)
+    contact_person = Column(String(100))
+    email = Column(String(100))
+    phone = Column(String(20))
+    address = Column(Text)
+    city = Column(String(100))
+    state = Column(String(100))
+    pincode = Column(String(20))
+    gst_number = Column(String(50))
+    pan_number = Column(String(50))
+    notes = Column(Text)
+    is_active = Column(Boolean, default=True)
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow,
+                        onupdate=datetime.utcnow)
+
+
 # ==================== Payment & Transactions ====================
 
 class TransactionCategory(str, enum.Enum):
@@ -1265,6 +1325,8 @@ class TransactionAttachment(Base):
     file_path = Column(String(500), nullable=False)
     file_name = Column(String(200), nullable=False)
     file_size = Column(Integer, nullable=False)  # in bytes, max 512000 (500KB)
+    # Binary data for multi-device access
+    file_data = Column(LargeBinary, nullable=True)
     uploaded_by_id = Column(Integer, ForeignKey("users.id"))
     uploaded_at = Column(DateTime, default=datetime.utcnow)
 
@@ -1323,6 +1385,522 @@ class DataSheetRow(Base):
     created_by = relationship("User")
 
 
+# ==================== CRM MODELS ====================
+
+class LeadStatus(str, enum.Enum):
+    """Lead status enumeration"""
+    NEW = "new"
+    CONTACTED = "contacted"
+    QUALIFIED = "qualified"
+    PROPOSAL = "proposal"
+    NEGOTIATION = "negotiation"
+    WON = "won"
+    LOST = "lost"
+
+
+class LeadSource(str, enum.Enum):
+    """Lead source enumeration"""
+    WEBSITE = "website"
+    REFERRAL = "referral"
+    SOCIAL_MEDIA = "social_media"
+    COLD_CALL = "cold_call"
+    TRADE_SHOW = "trade_show"
+    ADVERTISEMENT = "advertisement"
+    OTHER = "other"
+
+
+class LeadPriority(str, enum.Enum):
+    """Lead priority enumeration"""
+    LOW = "low"
+    MEDIUM = "medium"
+    HIGH = "high"
+    URGENT = "urgent"
+
+
+class ContactCategory(str, enum.Enum):
+    """Contact category"""
+    CUSTOMER = "customer"
+    PROSPECT = "prospect"
+    PARTNER = "partner"
+    VENDOR = "vendor"
+    OTHER = "other"
+
+
+class DealStage(str, enum.Enum):
+    """Deal pipeline stages"""
+    QUALIFICATION = "qualification"
+    MEETING_SCHEDULED = "meeting_scheduled"
+    PROPOSAL_SENT = "proposal_sent"
+    NEGOTIATION = "negotiation"
+    CLOSED_WON = "closed_won"
+    CLOSED_LOST = "closed_lost"
+
+
+class CRMCustomer(Base):
+    """CRM Customers/Contacts"""
+    __tablename__ = "crm_customers"
+
+    id = Column(Integer, primary_key=True, index=True)
+    name = Column(String(200), nullable=False)
+    email = Column(String(100))
+    phone = Column(String(20))
+    company = Column(String(200))
+    designation = Column(String(100))
+    address = Column(Text)
+    city = Column(String(100))
+    state = Column(String(100))
+    country = Column(String(100))
+    pincode = Column(String(20))
+    # customer, prospect, partner
+    category = Column(String(50), default="prospect")
+    source = Column(String(50), default="website")
+    notes = Column(Text)
+    tags = Column(JSON, default=list)  # List of tags
+    assigned_to_id = Column(Integer, ForeignKey("users.id"), nullable=True)
+    is_active = Column(Boolean, default=True)
+    created_by_id = Column(Integer, ForeignKey("users.id"))
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow,
+                        onupdate=datetime.utcnow)
+
+    assigned_to = relationship("User", foreign_keys=[assigned_to_id])
+    created_by = relationship("User", foreign_keys=[created_by_id])
+
+
+class CRMLead(Base):
+    """CRM Leads"""
+    __tablename__ = "crm_leads"
+
+    id = Column(Integer, primary_key=True, index=True)
+    name = Column(String(200), nullable=False)
+    email = Column(String(100))
+    phone = Column(String(20))
+    company = Column(String(200))
+    designation = Column(String(100))
+    source = Column(String(50), default="website")
+    # new, contacted, qualified, proposal, negotiation, won, lost
+    status = Column(String(50), default="new")
+    # low, medium, high, urgent
+    priority = Column(String(50), default="medium")
+    expected_value = Column(Float, default=0)
+    probability = Column(Integer, default=0)  # 0-100%
+    notes = Column(Text)
+    next_follow_up = Column(DateTime)
+    converted_to_customer_id = Column(
+        Integer, ForeignKey("crm_customers.id"), nullable=True)
+    converted_at = Column(DateTime)
+    assigned_to_id = Column(Integer, ForeignKey("users.id"), nullable=True)
+    created_by_id = Column(Integer, ForeignKey("users.id"))
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow,
+                        onupdate=datetime.utcnow)
+
+    assigned_to = relationship("User", foreign_keys=[assigned_to_id])
+    created_by = relationship("User", foreign_keys=[created_by_id])
+    converted_to_customer = relationship(
+        "CRMCustomer", foreign_keys=[converted_to_customer_id])
+
+
+class CRMDeal(Base):
+    """CRM Deals/Pipeline"""
+    __tablename__ = "crm_deals"
+
+    id = Column(Integer, primary_key=True, index=True)
+    title = Column(String(200), nullable=False)
+    customer_id = Column(Integer, ForeignKey(
+        "crm_customers.id"), nullable=False)
+    value = Column(Float, default=0)
+    # qualification, meeting_scheduled, proposal_sent, negotiation, closed_won, closed_lost
+    stage = Column(String(50), default="qualification")
+    expected_close_date = Column(Date)
+    probability = Column(Integer, default=0)  # 0-100%
+    notes = Column(Text)
+    lost_reason = Column(Text)
+    won_notes = Column(Text)
+    closed_at = Column(DateTime)
+    assigned_to_id = Column(Integer, ForeignKey("users.id"), nullable=True)
+    created_by_id = Column(Integer, ForeignKey("users.id"))
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow,
+                        onupdate=datetime.utcnow)
+
+    customer = relationship("CRMCustomer", backref="deals")
+    assigned_to = relationship("User", foreign_keys=[assigned_to_id])
+    created_by = relationship("User", foreign_keys=[created_by_id])
+
+
+class CRMActivity(Base):
+    """CRM Activities (calls, meetings, tasks)"""
+    __tablename__ = "crm_activities"
+
+    id = Column(Integer, primary_key=True, index=True)
+    title = Column(String(200), nullable=False)
+    # call, meeting, task, email, note
+    activity_type = Column(String(50), nullable=False)
+    description = Column(Text)
+    due_date = Column(DateTime)
+    completed_at = Column(DateTime)
+    is_completed = Column(Boolean, default=False)
+
+    # Related to
+    lead_id = Column(Integer, ForeignKey("crm_leads.id"), nullable=True)
+    customer_id = Column(Integer, ForeignKey(
+        "crm_customers.id"), nullable=True)
+    deal_id = Column(Integer, ForeignKey("crm_deals.id"), nullable=True)
+
+    assigned_to_id = Column(Integer, ForeignKey("users.id"), nullable=True)
+    created_by_id = Column(Integer, ForeignKey("users.id"))
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow,
+                        onupdate=datetime.utcnow)
+
+    lead = relationship("CRMLead", foreign_keys=[lead_id])
+    customer = relationship("CRMCustomer", foreign_keys=[customer_id])
+    deal = relationship("CRMDeal", foreign_keys=[deal_id])
+    assigned_to = relationship("User", foreign_keys=[assigned_to_id])
+    created_by = relationship("User", foreign_keys=[created_by_id])
+
+
+class CRMProductCategory(Base):
+    """CRM Product Categories"""
+    __tablename__ = "crm_product_categories"
+
+    id = Column(Integer, primary_key=True, index=True)
+    name = Column(String(100), nullable=False)
+    description = Column(Text)
+    is_active = Column(Boolean, default=True)
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow,
+                        onupdate=datetime.utcnow)
+
+
+class CRMProduct(Base):
+    """CRM Products/Services"""
+    __tablename__ = "crm_products"
+
+    id = Column(Integer, primary_key=True, index=True)
+    name = Column(String(200), nullable=False)
+    sku = Column(String(50), unique=True, nullable=True)
+    description = Column(Text)
+    category_id = Column(Integer, ForeignKey(
+        "crm_product_categories.id"), nullable=True)
+    unit_price = Column(Float, default=0)
+    cost_price = Column(Float, default=0)
+    is_active = Column(Boolean, default=True)
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow,
+                        onupdate=datetime.utcnow)
+
+    category = relationship("CRMProductCategory", backref="products")
+
+
+class CRMQuote(Base):
+    """CRM Quotes/Proposals"""
+    __tablename__ = "crm_quotes"
+
+    id = Column(Integer, primary_key=True, index=True)
+    title = Column(String(200), nullable=False)
+    quote_number = Column(String(50), unique=True, nullable=True)
+    customer_id = Column(Integer, ForeignKey(
+        "crm_customers.id"), nullable=False)
+    deal_id = Column(Integer, ForeignKey("crm_deals.id"), nullable=True)
+
+    # Quote details
+    subtotal = Column(Float, default=0)
+    tax_amount = Column(Float, default=0)
+    discount_amount = Column(Float, default=0)
+    total_amount = Column(Float, default=0)
+
+    # Status: draft, sent, accepted, rejected, declined
+    status = Column(String(50), default="draft")
+    valid_until = Column(Date)
+    notes = Column(Text)
+
+    # Timestamps
+    created_by_id = Column(Integer, ForeignKey("users.id"))
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow,
+                        onupdate=datetime.utcnow)
+
+    customer = relationship("CRMCustomer", backref="quotes")
+    deal = relationship("CRMDeal", foreign_keys=[deal_id])
+    created_by = relationship("User", foreign_keys=[created_by_id])
+
+
+class CRMQuoteItem(Base):
+    """CRM Quote Line Items"""
+    __tablename__ = "crm_quote_items"
+
+    id = Column(Integer, primary_key=True, index=True)
+    quote_id = Column(Integer, ForeignKey("crm_quotes.id"), nullable=False)
+    product_id = Column(Integer, ForeignKey("crm_products.id"), nullable=True)
+    description = Column(String(500))
+    quantity = Column(Float, default=1)
+    unit_price = Column(Float, default=0)
+    tax_rate = Column(Float, default=0)
+    amount = Column(Float, default=0)
+
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+    quote = relationship("CRMQuote", backref="items")
+    product = relationship("CRMProduct", foreign_keys=[product_id])
+
+
+class CRMTask(Base):
+    """CRM Tasks"""
+    __tablename__ = "crm_tasks"
+
+    id = Column(Integer, primary_key=True, index=True)
+    title = Column(String(200), nullable=False)
+    description = Column(Text)
+    # Related to
+    lead_id = Column(Integer, ForeignKey("crm_leads.id"), nullable=True)
+    customer_id = Column(Integer, ForeignKey(
+        "crm_customers.id"), nullable=True)
+    deal_id = Column(Integer, ForeignKey("crm_deals.id"), nullable=True)
+
+    # Task details
+    due_date = Column(DateTime)
+    completed_at = Column(DateTime)
+    is_completed = Column(Boolean, default=False)
+    # low, medium, high, urgent
+    priority = Column(String(50), default="medium")
+
+    assigned_to_id = Column(Integer, ForeignKey("users.id"), nullable=True)
+    created_by_id = Column(Integer, ForeignKey("users.id"))
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow,
+                        onupdate=datetime.utcnow)
+
+    lead = relationship("CRMLead", foreign_keys=[lead_id])
+    customer = relationship("CRMCustomer", foreign_keys=[customer_id])
+    deal = relationship("CRMDeal", foreign_keys=[deal_id])
+    assigned_to = relationship("User", foreign_keys=[assigned_to_id])
+    created_by = relationship("User", foreign_keys=[created_by_id])
+
+
+# ==================== INVOICING MODELS ====================
+
+class InvoiceStatus(str, enum.Enum):
+    """Invoice status"""
+    DRAFT = "draft"
+    SENT = "sent"
+    VIEWED = "viewed"
+    PAID = "paid"
+    PARTIAL = "partial"
+    OVERDUE = "overdue"
+    CANCELLED = "cancelled"
+
+
+class Invoice(Base):
+    """Invoice for customers"""
+    __tablename__ = "invoices"
+
+    id = Column(Integer, primary_key=True, index=True)
+    invoice_number = Column(String(50), unique=True, nullable=False)
+    customer_id = Column(Integer, ForeignKey(
+        "crm_customers.id"), nullable=False)
+    deal_id = Column(Integer, ForeignKey("crm_deals.id"), nullable=True)
+
+    invoice_date = Column(Date, nullable=False)
+    due_date = Column(Date, nullable=False)
+
+    subtotal = Column(Float, default=0)
+    tax_amount = Column(Float, default=0)
+    discount_amount = Column(Float, default=0)
+    total_amount = Column(Float, default=0)
+
+    status = Column(String(50), default="draft")
+    notes = Column(Text)
+    terms = Column(Text)
+
+    paid_amount = Column(Float, default=0)
+    paid_at = Column(DateTime)
+
+    created_by_id = Column(Integer, ForeignKey("users.id"))
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow,
+                        onupdate=datetime.utcnow)
+
+    customer = relationship("CRMCustomer", backref="invoices")
+    deal = relationship("CRMDeal", foreign_keys=[deal_id])
+    created_by = relationship("User", foreign_keys=[created_by_id])
+
+
+class InvoiceItem(Base):
+    """Invoice line items"""
+    __tablename__ = "invoice_items"
+
+    id = Column(Integer, primary_key=True, index=True)
+    invoice_id = Column(Integer, ForeignKey("invoices.id"), nullable=False)
+    description = Column(String(500), nullable=False)
+    quantity = Column(Float, default=1)
+    unit_price = Column(Float, default=0)
+    tax_rate = Column(Float, default=0)  # Percentage
+    amount = Column(Float, default=0)
+    sort_order = Column(Integer, default=0)
+
+    invoice = relationship("Invoice", backref="items")
+
+
+class Payment(Base):
+    """Payment records for invoices"""
+    __tablename__ = "payments"
+
+    id = Column(Integer, primary_key=True, index=True)
+    invoice_id = Column(Integer, ForeignKey("invoices.id"), nullable=False)
+    payment_number = Column(String(50), unique=True, nullable=False)
+    amount = Column(Float, nullable=False)
+    payment_date = Column(Date, nullable=False)
+    # cash, bank_transfer, upi, card, cheque
+    payment_method = Column(String(50), default="cash")
+    reference_number = Column(String(100))
+    notes = Column(Text)
+    created_by_id = Column(Integer, ForeignKey("users.id"))
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+    invoice = relationship("Invoice", backref="payments")
+    created_by = relationship("User", foreign_keys=[created_by_id])
+
+
+# ==================== TIME TRACKING MODELS ====================
+
+class TimesheetStatus(str, enum.Enum):
+    """Timesheet status"""
+    DRAFT = "draft"
+    SUBMITTED = "submitted"
+    APPROVED = "approved"
+    REJECTED = "rejected"
+
+
+class Timesheet(Base):
+    """Employee timesheets"""
+    __tablename__ = "timesheets"
+
+    id = Column(Integer, primary_key=True, index=True)
+    employee_id = Column(Integer, ForeignKey("employees.id"), nullable=False)
+    week_start = Column(Date, nullable=False)  # Start of the week (Monday)
+    week_end = Column(Date, nullable=False)  # End of the week (Sunday)
+    total_hours = Column(Float, default=0)
+    status = Column(String(50), default="draft")
+    notes = Column(Text)
+    approved_by_id = Column(Integer, ForeignKey("users.id"), nullable=True)
+    approved_at = Column(DateTime)
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow,
+                        onupdate=datetime.utcnow)
+
+    employee = relationship("Employee", backref="timesheets")
+    approved_by = relationship("User", foreign_keys=[approved_by_id])
+
+
+class TimeEntry(Base):
+    """Individual time entries"""
+    __tablename__ = "time_entries"
+
+    id = Column(Integer, primary_key=True, index=True)
+    timesheet_id = Column(Integer, ForeignKey("timesheets.id"), nullable=False)
+    project_id = Column(Integer, ForeignKey("projects.id"), nullable=True)
+    task_id = Column(Integer, ForeignKey("tasks.id"), nullable=True)
+    date = Column(Date, nullable=False)
+    hours = Column(Float, nullable=False)
+    description = Column(Text)
+    is_billable = Column(Boolean, default=True)
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow,
+                        onupdate=datetime.utcnow)
+
+    timesheet = relationship("Timesheet", backref="entries")
+    project = relationship("Project", foreign_keys=[project_id])
+    task = relationship("Task", foreign_keys=[task_id])
+
+
+# ==================== ASSET MANAGEMENT MODELS ====================
+
+class AssetStatus(str, enum.Enum):
+    """Asset status"""
+    AVAILABLE = "available"
+    ASSIGNED = "assigned"
+    MAINTENANCE = "maintenance"
+    RETIRED = "retired"
+    LOST = "lost"
+
+
+class AssetCategory(str, enum.Enum):
+    """Asset categories"""
+    HARDWARE = "hardware"
+    FURNITURE = "furniture"
+    VEHICLE = "vehicle"
+    EQUIPMENT = "equipment"
+    SOFTWARE = "software"
+    OTHER = "other"
+
+
+class Asset(Base):
+    """Company assets"""
+    __tablename__ = "assets"
+
+    id = Column(Integer, primary_key=True, index=True)
+    name = Column(String(200), nullable=False)
+    asset_code = Column(String(50), unique=True, nullable=False)
+    category = Column(String(50), default="hardware")
+    description = Column(Text)
+    purchase_date = Column(Date)
+    purchase_price = Column(Float, default=0)
+    warranty_expiry = Column(Date)
+    serial_number = Column(String(100))
+    location = Column(String(200))
+    status = Column(String(50), default="available")
+    notes = Column(Text)
+    image_path = Column(String(500))
+    is_active = Column(Boolean, default=True)
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow,
+                        onupdate=datetime.utcnow)
+
+
+class AssetAssignment(Base):
+    """Asset assignment to employees"""
+    __tablename__ = "asset_assignments"
+
+    id = Column(Integer, primary_key=True, index=True)
+    asset_id = Column(Integer, ForeignKey("assets.id"), nullable=False)
+    employee_id = Column(Integer, ForeignKey("employees.id"), nullable=False)
+    assigned_date = Column(Date, nullable=False)
+    returned_date = Column(Date, nullable=True)
+    condition_on_issue = Column(String(100), default="good")
+    condition_on_return = Column(String(100), nullable=True)
+    notes = Column(Text)
+    assigned_by_id = Column(Integer, ForeignKey("users.id"))
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow,
+                        onupdate=datetime.utcnow)
+
+    asset = relationship("Asset", backref="assignments")
+    employee = relationship("Employee", backref="asset_assignments")
+    assigned_by = relationship("User", foreign_keys=[assigned_by_id])
+
+
+class AssetMaintenance(Base):
+    """Asset maintenance records"""
+    __tablename__ = "asset_maintenance"
+
+    id = Column(Integer, primary_key=True, index=True)
+    asset_id = Column(Integer, ForeignKey("assets.id"), nullable=False)
+    # repair, service, inspection
+    maintenance_type = Column(String(50), nullable=False)
+    description = Column(Text, nullable=False)
+    maintenance_date = Column(Date, nullable=False)
+    next_maintenance_date = Column(Date)
+    cost = Column(Float, default=0)
+    vendor = Column(String(200))
+    performed_by = Column(String(200))
+    status = Column(String(50), default="completed")
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+    asset = relationship("Asset", backref="maintenance_records")
+
+
 # ==================== Helper Functions ====================
 
 def get_org_hierarchy_tree():
@@ -1360,6 +1938,104 @@ def get_org_hierarchy_tree():
         return tree
     finally:
         session.close()
+
+
+# ==================== BILLING & ACCOMMODATION REQUEST MODELS ====================
+
+class BillingRequestStatus(str, enum.Enum):
+    """Billing request status enumeration"""
+    PENDING = "pending"
+    APPROVED = "approved"
+    REJECTED = "rejected"
+    CANCELLED = "cancelled"
+
+
+class BillingRequestType(str, enum.Enum):
+    """Billing request type"""
+    ACCOMMODATION = "accommodation"
+    BILL_REIMBURSEMENT = "bill_reimbursement"
+    EXPENSE_CLAIM = "expense_claim"
+    OTHER = "other"
+
+
+class BillingRequest(Base):
+    """
+    Billing/Accommodation Request - Employees can request organization
+    to reimburse/accommodate bills for accommodation or other expenses
+    """
+    __tablename__ = "billing_requests"
+
+    id = Column(Integer, primary_key=True, index=True)
+    request_number = Column(String(50), unique=True, nullable=False)
+
+    # Request type: accommodation, bill_reimbursement, expense_claim, other
+    request_type = Column(String(50), nullable=False,
+                          default="bill_reimbursement")
+
+    # Employee who made the request
+    employee_id = Column(Integer, ForeignKey("employees.id"), nullable=False)
+
+    # Bill details
+    bill_description = Column(Text, nullable=False)
+    bill_amount = Column(Float, nullable=False)
+    bill_date = Column(Date, nullable=False)
+    # e.g., Hotel, Travel, Medical, Office Supplies
+    bill_category = Column(String(100))
+
+    # Payment details
+    payment_mode = Column(String(50))  # cash, bank_transfer, upi, cheque
+    payment_details = Column(Text)  # Bank details, UPI ID, etc.
+
+    # Request status
+    # pending, approved, rejected, cancelled
+    status = Column(String(50), default="pending")
+
+    # Admin review fields
+    reviewed_by_id = Column(Integer, ForeignKey("users.id"), nullable=True)
+    reviewed_at = Column(DateTime, nullable=True)
+    review_notes = Column(Text)
+
+    # Notes
+    notes = Column(Text)
+
+    # Timestamps
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow,
+                        onupdate=datetime.utcnow)
+
+    # Relationships
+    employee = relationship("Employee", backref="billing_requests")
+    reviewed_by = relationship("User", foreign_keys=[reviewed_by_id])
+
+
+class BillingRequestAttachment(Base):
+    """
+    Attachments for billing requests (receipts, bills, QR codes, etc.)
+    """
+    __tablename__ = "billing_request_attachments"
+
+    id = Column(Integer, primary_key=True, index=True)
+    billing_request_id = Column(Integer, ForeignKey(
+        "billing_requests.id"), nullable=False)
+
+    file_name = Column(String(200), nullable=False)
+    file_path = Column(String(500), nullable=False)
+    file_size = Column(Integer, nullable=False)  # in bytes
+    file_type = Column(String(50))  # pdf, jpg, png, etc.
+    # Binary data for multi-device access
+    file_data = Column(LargeBinary, nullable=True)
+
+    # Attachment type: receipt, qr_code, other
+    attachment_type = Column(String(50), default="receipt")
+
+    description = Column(String(200))
+
+    uploaded_by_id = Column(Integer, ForeignKey("users.id"), nullable=False)
+    uploaded_at = Column(DateTime, default=datetime.utcnow)
+
+    # Relationships
+    billing_request = relationship("BillingRequest", backref="attachments")
+    uploaded_by = relationship("User")
 
 
 def get_low_stock_products(threshold=None):

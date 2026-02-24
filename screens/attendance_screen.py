@@ -5,7 +5,7 @@ Updated with view_mode support: admin (manage all) or employee (self only)
 
 import flet as ft
 from datetime import datetime, date
-from database.connection import get_db_session
+from database.session_manager import get_session, get_db_session, check_db_connection
 from database.models import Attendance, Employee, AttendanceStatus
 from database.operations import (
     get_all_employees, mark_attendance, get_attendance_records,
@@ -13,6 +13,35 @@ from database.operations import (
     get_employee_by_user_id
 )
 from components.forms import DatePickerField, TimePickerField
+
+
+def _safe_navigate_to_home(page, user=None):
+    """Safely navigate to home screen"""
+    try:
+        from core.navigation import navigate_to_home
+        navigate_to_home(page, user)
+    except ImportError:
+        # Fallback navigation
+        try:
+            from screens.admin_screen import AdminScreen
+            from screens.employee_screen import EmployeeScreen
+            page.clean()
+            if user and isinstance(user, dict):
+                role = user.get('role', 'employee').lower()
+            elif user and hasattr(user, 'role'):
+                role = user.role.name.lower() if user.role else 'employee'
+            else:
+                role = 'employee'
+
+            if role == 'admin':
+                page.add(AdminScreen(page, user))
+            else:
+                page.add(EmployeeScreen(page, user))
+        except Exception as e:
+            print(f"Navigation error: {e}")
+            from screens.login_screen import LoginScreen
+            page.clean()
+            page.add(LoginScreen(page))
 
 
 class AttendanceScreen(ft.Container):
@@ -180,7 +209,9 @@ class AttendanceScreen(ft.Container):
                     ft.DataColumn(label=ft.Text("Check In")),
                     ft.DataColumn(label=ft.Text("Check Out")),
                     ft.DataColumn(label=ft.Text("Status")),
-                    ft.DataColumn(label=ft.Text("Hours"))
+                    ft.DataColumn(label=ft.Text("Hours")),
+                    # Empty column to match cells
+                    ft.DataColumn(label=ft.Text("")),
                 ]
             else:
                 columns = [
@@ -326,8 +357,8 @@ class AttendanceScreen(ft.Container):
             self._show_error(f"Error: {str(ex)}")
 
     def on_back(self, e):
-        from core.navigation import navigate_to_home
-        navigate_to_home(self._page, self.user)
+        """Handle back navigation"""
+        _safe_navigate_to_home(self._page, self.user)
 
     def on_add(self, e):
         self._show_add_dialog()

@@ -66,3 +66,28 @@ class SessionManager:
 
 # Global session manager instance
 session_manager = SessionManager()
+
+
+def get_current_user() -> Optional[User]:
+    """
+    Get the current logged in user.
+
+    Returns:
+        User object if logged in, None otherwise
+    """
+    return session_manager.current_user
+
+
+def set_current_user(user: User) -> None:
+    """
+    Set the current logged in user.
+
+    Args:
+        user: User object to set as current user
+    """
+    session_manager.current_user = user
+
+
+def clear_current_user() -> None:
+    """Clear the current user session"""
+    session_manager.clear_session()

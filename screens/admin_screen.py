@@ -4,7 +4,8 @@ Admin dashboard with full management capabilities for all modules
 """
 
 import flet as ft
-from database.connection import get_db_session
+# Import both for backward compatibility
+from database.session_manager import get_session, get_db_session
 from database.operations import get_dashboard_stats as get_db_stats
 from auth.role_check import check_admin_access
 
@@ -48,6 +49,11 @@ class AdminScreen(ft.Container):
         # State variable to track if refresh is needed
         self._needs_refresh = False
 
+        # Loading state
+        self._is_loading = False
+        self._loading_progress = ft.ProgressRing(
+            width=20, height=20, visible=False)
+
         # Navigation rail state
         self._nav_rail_visible = True
 
@@ -65,6 +71,16 @@ class AdminScreen(ft.Container):
         self._needs_refresh = False
         self.content = self._build_content()
         self._page.update()
+
+    def _toggle_nav_rail(self, e=None):
+        """Toggle navigation rail visibility"""
+        self._nav_rail_visible = not self._nav_rail_visible
+        try:
+            self.content.content.controls[0].visible = self._nav_rail_visible
+            self.content.content.controls[1].visible = self._nav_rail_visible
+            self._page.update()
+        except Exception as ex:
+            print(f"Error toggling nav rail: {ex}")
 
     def refresh_dashboard(self):
         """Refresh only the dashboard stats without rebuilding entire screen"""
@@ -154,6 +170,14 @@ class AdminScreen(ft.Container):
             (22, "Data Entry", ft.Icons.TABLE_ROWS, ft.Icons.TABLE_ROWS_OUTLINED),
             (23, "Inventory", ft.Icons.INVENTORY, ft.Icons.INVENTORY_OUTLINED),
             (24, "Transactions", ft.Icons.PAYMENT, ft.Icons.PAYMENT_OUTLINED),
+            # New Business Features
+            (25, "CRM", ft.Icons.PEOPLE, ft.Icons.PEOPLE_OUTLINED),
+            (26, "Invoicing", ft.Icons.RECEIPT_LONG,
+             ft.Icons.RECEIPT_LONG_OUTLINED),
+            (27, "Assets", ft.Icons.INVENTORY_2, ft.Icons.INVENTORY_2_OUTLINED),
+            (28, "Time Track", ft.Icons.TIMER, ft.Icons.TIMER_OUTLINED),
+            # Storage Management - NEW
+            (29, "Storage", ft.Icons.CLOUD, ft.Icons.CLOUD_OUTLINED),
         ]
 
         # Track selected index
@@ -317,6 +341,16 @@ class AdminScreen(ft.Container):
         elif index == 24:
             from screens.transactions_screen import TransactionsScreen
             return ft.Container(content=TransactionsScreen(self.page, self.current_user), expand=True)
+        elif index == 25:
+            return self._create_crm_tab()
+        elif index == 26:
+            return self._create_invoicing_tab()
+        elif index == 27:
+            return self._create_assets_tab()
+        elif index == 28:
+            return self._create_time_tracking_tab()
+        elif index == 29:
+            return self._create_storage_tab()
         return self._create_dashboard_tab()
 
     def _get_tab_content(self, index):
@@ -366,6 +400,17 @@ class AdminScreen(ft.Container):
                     color=PRIMARY
                 ),
                 ft.Container(expand=True),
+                # Loading indicator
+                self._loading_progress,
+                ft.Container(width=10),
+                # Refresh button
+                ft.IconButton(
+                    icon=ft.Icons.REFRESH,
+                    tooltip="Refresh Dashboard",
+                    on_click=lambda e: self.refresh_dashboard(),
+                    icon_color=PRIMARY
+                ),
+                ft.Container(width=5),
                 ft.Text(
                     f"Welcome, {self.current_user.get('username', 'Admin') if isinstance(self.current_user, dict) else 'Admin'}",
                     size=14,
@@ -499,25 +544,29 @@ class AdminScreen(ft.Container):
                     ft.ElevatedButton(
                         "Add New Employee",
                         icon=ft.Icons.PERSON_ADD,
-                        on_click=self._show_add_employee_from_admin,
+                        on_click=lambda _: self._navigate_to_tab(
+                            5),  # Fixed: was 8
                         style=ft.ButtonStyle(bgcolor=PRIMARY, color="white")
                     ),
                     ft.ElevatedButton(
                         "Manage Employees",
                         icon=ft.Icons.BADGE,
-                        on_click=lambda _: self._navigate_to_tab(8),
+                        on_click=lambda _: self._navigate_to_tab(
+                            5),  # Fixed: was 8
                         style=ft.ButtonStyle(bgcolor=ORANGE_500, color="white")
                     ),
                     ft.ElevatedButton(
                         "View Reports",
                         icon=ft.Icons.ASSESSMENT,
-                        on_click=lambda _: self._navigate_to_tab(13),
+                        on_click=lambda _: self._navigate_to_tab(
+                            17),  # Fixed: was 13
                         style=ft.ButtonStyle(bgcolor=PURPLE_500, color="white")
                     ),
                     ft.ElevatedButton(
                         "System Settings",
                         icon=ft.Icons.SETTINGS,
-                        on_click=lambda _: self._navigate_to_tab(14),
+                        on_click=lambda _: self._navigate_to_tab(
+                            18),  # Fixed: was 14
                         style=ft.ButtonStyle(bgcolor=TEAL_500, color="white")
                     ),
                 ], spacing=10),
@@ -545,9 +594,9 @@ class AdminScreen(ft.Container):
                     self._create_module_card(
                         "Todo", ft.Icons.LIST_ALT, "Todo Lists", 4, CYAN_600),
                     self._create_module_card(
-                        "Departments", ft.Icons.BUSINESS, "Departments", 5, GREEN_500),
+                        "Departments", ft.Icons.BUSINESS, "Departments", 6, GREEN_500),
                     self._create_module_card(
-                        "Attendance", ft.Icons.EVENT, "Attendance", 6, BLUE_500),
+                        "Attendance", ft.Icons.EVENT, "Attendance", 8, BLUE_500),
                 ], spacing=15),
 
                 ft.Container(height=15),
@@ -557,13 +606,13 @@ class AdminScreen(ft.Container):
                 ft.Container(height=8),
                 ft.Row([
                     self._create_module_card(
-                        "Leave", ft.Icons.EVENT_BUSY, "Leave Management", 7, PURPLE_500),
+                        "Leave", ft.Icons.EVENT_BUSY, "Leave Management", 9, PURPLE_500),
                     self._create_module_card(
-                        "Announcements", ft.Icons.CAMPAIGN, "News & Updates", 10, RED_500),
+                        "Announcements", ft.Icons.CAMPAIGN, "News & Updates", 14, RED_500),
                     self._create_module_card(
-                        "Documents", ft.Icons.FOLDER, "Documents", 11, AMBER_500),
+                        "Documents", ft.Icons.FOLDER, "Documents", 15, AMBER_500),
                     self._create_module_card(
-                        "Positions", ft.Icons.WORK, "Job Positions", 9, INDIGO_500),
+                        "Positions", ft.Icons.WORK, "Job Positions", 7, INDIGO_500),
                 ], spacing=15),
 
                 ft.Container(height=15),
@@ -573,11 +622,11 @@ class AdminScreen(ft.Container):
                 ft.Container(height=8),
                 ft.Row([
                     self._create_module_card(
-                        "Performance", ft.Icons.TRENDING_UP, "Performance Reviews", 12, PINK_500),
+                        "Performance", ft.Icons.TRENDING_UP, "Performance Reviews", 16, PINK_500),
                     self._create_module_card(
-                        "Reports", ft.Icons.ASSESSMENT, "Reports & Analytics", 13, CYAN_600),
+                        "Reports", ft.Icons.ASSESSMENT, "Reports & Analytics", 17, CYAN_600),
                     self._create_module_card(
-                        "Settings", ft.Icons.SETTINGS, "System Settings", 14, TEAL_500),
+                        "Settings", ft.Icons.SETTINGS, "System Settings", 18, TEAL_500),
                     self._create_module_card(
                         "Chat", ft.Icons.CHAT, "Team Chat", 1, BLUE_500),
                 ], spacing=15),
@@ -596,9 +645,9 @@ class AdminScreen(ft.Container):
                 ft.Container(height=10),
                 ft.Row([
                     self._create_module_card(
-                        "Employees", ft.Icons.BADGE, "Employee Mgmt", 8, SUCCESS),
+                        "Employees", ft.Icons.BADGE, "Employee Mgmt", 5, SUCCESS),
                     self._create_module_card(
-                        "Audit Logs", ft.Icons.HISTORY, "Activity Logs", 15, ERROR),
+                        "Audit Logs", ft.Icons.HISTORY, "Activity Logs", 19, ERROR),
                 ], spacing=15),
 
             ], scroll=ft.ScrollMode.AUTO),
@@ -772,7 +821,7 @@ class AdminScreen(ft.Container):
         )
 
     def _get_dashboard_stats(self):
-        """Get dashboard statistics using SQLAlchemy operations"""
+        """Get dashboard statistics directly from database for real-time data"""
         stats = {
             'total_users': 0,
             'active_users': 0,
@@ -785,13 +834,67 @@ class AdminScreen(ft.Container):
             'positions': 0,
         }
         try:
-            # Use SQLAlchemy operations for database access
-            db = get_db_session()
-            db_stats = get_db_stats(db)
-            stats.update(db_stats)
-            db.close()
+            from datetime import date
+            from database.models import User, Employee, Department, Position, Attendance, LeaveRequest, Task, UserStatus
+            from sqlalchemy import func, and_
+
+            with get_session() as session:
+                # Total users
+                stats['total_users'] = session.query(
+                    func.count(User.id)).scalar() or 0
+
+                # Active users
+                stats['active_users'] = session.query(func.count(User.id)).filter(
+                    User.status == UserStatus.ACTIVE
+                ).scalar() or 0
+
+                # Total employees
+                stats['total_employees'] = session.query(
+                    func.count(Employee.id)).scalar() or 0
+
+                # Active employees
+                stats['active_employees'] = session.query(func.count(Employee.id)).filter(
+                    Employee.is_active == True
+                ).scalar() or 0
+
+                # Departments
+                stats['departments'] = session.query(func.count(Department.id)).filter(
+                    Department.is_active == True
+                ).scalar() or 0
+
+                # Positions
+                stats['positions'] = session.query(func.count(Position.id)).filter(
+                    Position.is_active == True
+                ).scalar() or 0
+
+                # Present today
+                today = date.today()
+                stats['present_today'] = session.query(func.count(Attendance.id)).filter(
+                    and_(
+                        Attendance.date == today,
+                        Attendance.status == 'present'
+                    )
+                ).scalar() or 0
+
+                # On leave today
+                stats['on_leave'] = session.query(func.count(LeaveRequest.id)).filter(
+                    and_(
+                        LeaveRequest.status == 'approved',
+                        LeaveRequest.start_date <= today,
+                        LeaveRequest.end_date >= today
+                    )
+                ).scalar() or 0
+
+                # Pending tasks
+                stats['pending_tasks'] = session.query(func.count(Task.id)).filter(
+                    Task.status != 'completed'
+                ).scalar() or 0
+
+            print(f"Dashboard stats loaded: {stats}")
         except Exception as e:
-            print(f"Error getting stats: {e}")
+            print(f"Error getting dashboard stats: {e}")
+            import traceback
+            traceback.print_exc()
         return stats
 
     def _create_users_tab(self):
@@ -835,7 +938,7 @@ class AdminScreen(ft.Container):
 
     def _create_employees_tab(self):
         """Create employee management tab with full CRUD and filters"""
-        from database.connection import get_db_session
+        from database.session_manager import get_session, get_db_session, check_db_connection
         from database.models import Employee, Department, Position
         from sqlalchemy.orm import joinedload
 
@@ -1055,13 +1158,33 @@ class AdminScreen(ft.Container):
 
         return ft.Container(
             content=ft.Column([
-                ft.Row([
-                    ft.Text("Employee Management", size=24,
-                            weight=ft.FontWeight.BOLD, color=PRIMARY),
-                    ft.Container(expand=True),
-                    ft.Text(
-                        f"Total: {len(load_employees())} employees", size=14, color=TEXT_SECONDARY),
-                ]),
+                # Header with navigation toggle and back button
+                ft.Container(
+                    padding=ft.padding.symmetric(horizontal=10, vertical=10),
+                    content=ft.Row([
+                        # Navigation hide/show button
+                        ft.IconButton(
+                            icon=ft.Icons.MENU,
+                            tooltip="Toggle Navigation",
+                            on_click=self._toggle_nav_rail,
+                            icon_color=PRIMARY,
+                        ),
+                        ft.Container(width=5),
+                        # Back button
+                        ft.IconButton(
+                            icon=ft.Icons.ARROW_BACK,
+                            tooltip="Back to Dashboard",
+                            on_click=lambda e: self._navigate_to_tab(0),
+                            icon_color=PRIMARY,
+                        ),
+                        ft.Container(width=10),
+                        ft.Text("Employee Management", size=24,
+                                weight=ft.FontWeight.BOLD, color=PRIMARY),
+                        ft.Container(expand=True),
+                        ft.Text(
+                            f"Total: {len(load_employees())} employees", size=14, color=TEXT_SECONDARY),
+                    ], alignment=ft.MainAxisAlignment.START)
+                ),
                 ft.Container(height=10),
                 # Search and Add button row
                 ft.Row([
@@ -1082,7 +1205,7 @@ class AdminScreen(ft.Container):
                 ], spacing=10),
                 ft.Container(height=10),
                 emp_list,
-            ], scroll=ft.ScrollMode.AUTO, expand=True),
+            ],  expand=True),
             padding=ft.padding.all(10),
             expand=True,
         )
@@ -1650,7 +1773,7 @@ class AdminScreen(ft.Container):
                         size=12, color=TEXT_SECONDARY),
                 ft.Divider(),
                 ft.Container(height=10),
-                ft.Column(access_items, scroll=ft.ScrollMode.AUTO, spacing=5),
+                ft.Column(access_items,  spacing=5),
             ], scroll=ft.ScrollMode.AUTO)
 
             dialog_width = 500
@@ -1695,7 +1818,7 @@ class AdminScreen(ft.Container):
                         size=12, color=TEXT_SECONDARY),
                 ft.Divider(),
                 ft.Container(height=10),
-                ft.Column(access_items, scroll=ft.ScrollMode.AUTO, spacing=5),
+                ft.Column(access_items,  spacing=5),
             ], scroll=ft.ScrollMode.AUTO)
 
             dialog_width = 500
@@ -1772,7 +1895,8 @@ class AdminScreen(ft.Container):
         from screens.inventory_screen import InventoryScreen
         return ft.Container(
             content=InventoryScreen(self.page, self.current_user),
-            expand=True
+            expand=True,
+
         )
 
     def _create_transactions_tab(self):
@@ -1780,7 +1904,404 @@ class AdminScreen(ft.Container):
         from screens.transactions_screen import TransactionsScreen
         return ft.Container(
             content=TransactionsScreen(self.page, self.current_user),
-            expand=True
+            expand=True,
+
+        )
+
+    # ============ NEW BUSINESS FEATURE TABS ============
+
+    def _create_crm_tab(self):
+        """Create CRM tab"""
+        from screens.crm_screen import CRMScreen
+        return ft.Container(
+            content=CRMScreen(self.page, self.current_user),
+            expand=True,
+
+        )
+
+    def _create_invoicing_tab(self):
+        """Create Invoicing tab"""
+        from screens.invoicing_screen import InvoicingScreen
+        return ft.Container(
+            content=InvoicingScreen(self.page, self.current_user),
+            expand=True,
+
+        )
+
+    def _create_assets_tab(self):
+        """Create Asset Management tab"""
+        from screens.asset_management_screen import AssetManagementScreen
+        return ft.Container(
+            content=AssetManagementScreen(self.page, self.current_user),
+            expand=True,
+
+        )
+
+    def _create_time_tracking_tab(self):
+        """Create Time Tracking tab"""
+        from screens.time_tracking_screen import TimeTrackingScreen
+        return ft.Container(
+            content=TimeTrackingScreen(self.page, self.current_user),
+            expand=True,
+        )
+
+    def _create_storage_tab(self):
+        """Create Storage Management tab with database backup and data export features"""
+        # Get database stats
+        db_stats = self._get_database_stats()
+
+        def export_data(export_type):
+            """Export data to file"""
+            import csv
+            from datetime import datetime
+            import os
+
+            try:
+                # Create reports directory if not exists
+                export_dir = "reports"
+                if not os.path.exists(export_dir):
+                    os.makedirs(export_dir)
+
+                timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+                db = get_db_session()
+
+                if export_type == "employees":
+                    from database.models import Employee
+                    employees = db.query(Employee).all()
+                    filename = f"{export_dir}/employees_{timestamp}.csv"
+                    with open(filename, 'w', newline='') as f:
+                        writer = csv.writer(f)
+                        writer.writerow(['ID', 'Code', 'First Name', 'Last Name',
+                                        'Email', 'Phone', 'Department', 'Position', 'Status'])
+                        for emp in employees:
+                            dept = emp.department.name if emp.department else ""
+                            pos = emp.position.title if emp.position else ""
+                            writer.writerow([emp.id, emp.employee_code, emp.first_name, emp.last_name,
+                                            emp.email, emp.phone, dept, pos, "Active" if emp.is_active else "Inactive"])
+                    self._show_message(
+                        f"Employees exported to {filename}", "success")
+
+                elif export_type == "users":
+                    from database.models import User
+                    users = db.query(User).all()
+                    filename = f"{export_dir}/users_{timestamp}.csv"
+                    with open(filename, 'w', newline='') as f:
+                        writer = csv.writer(f)
+                        writer.writerow(
+                            ['ID', 'Username', 'Email', 'Role ID', 'Status'])
+                        for user in users:
+                            writer.writerow(
+                                [user.id, user.username, user.email, user.role_id, user.status.value if user.status else ""])
+                    self._show_message(
+                        f"Users exported to {filename}", "success")
+
+                elif export_type == "departments":
+                    from database.models import Department
+                    depts = db.query(Department).all()
+                    filename = f"{export_dir}/departments_{timestamp}.csv"
+                    with open(filename, 'w', newline='') as f:
+                        writer = csv.writer(f)
+                        writer.writerow(
+                            ['ID', 'Name', 'Code', 'Head ID', 'Status'])
+                        for dept in depts:
+                            writer.writerow(
+                                [dept.id, dept.name, dept.code, dept.head_id, "Active" if dept.is_active else "Inactive"])
+                    self._show_message(
+                        f"Departments exported to {filename}", "success")
+
+                elif export_type == "attendance":
+                    from database.models import Attendance
+                    from datetime import date
+                    # Get last 30 days attendance
+                    from datetime import timedelta
+                    end_date = date.today()
+                    start_date = end_date - timedelta(days=30)
+                    attendances = db.query(Attendance).filter(
+                        Attendance.date >= start_date,
+                        Attendance.date <= end_date
+                    ).all()
+                    filename = f"{export_dir}/attendance_{timestamp}.csv"
+                    with open(filename, 'w', newline='') as f:
+                        writer = csv.writer(f)
+                        writer.writerow(
+                            ['ID', 'Employee ID', 'Date', 'Status', 'Check In', 'Check Out'])
+                        for att in attendances:
+                            writer.writerow(
+                                [att.id, att.employee_id, att.date, att.status.value if att.status else "", att.check_in, att.check_out])
+                    self._show_message(
+                        f"Attendance exported to {filename}", "success")
+
+                db.close()
+                self._page.update()
+
+            except Exception as e:
+                self._show_message(f"Export failed: {str(e)}", "error")
+                print(f"Export error: {e}")
+
+        def run_backup():
+            """Run database backup"""
+            import os
+            from datetime import datetime
+
+            try:
+                # Create backup directory
+                backup_dir = "backups"
+                if not os.path.exists(backup_dir):
+                    os.makedirs(backup_dir)
+
+                timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+                filename = f"{backup_dir}/vernika_backup_{timestamp}.json"
+
+                # Export all critical data to JSON
+                import json
+                db = get_db_session()
+
+                backup_data = {
+                    "timestamp": timestamp,
+                    "version": "1.0",
+                    "data": {}
+                }
+
+                # Export employees
+                from database.models import Employee
+                employees = db.query(Employee).all()
+                backup_data["data"]["employees"] = [
+                    {
+                        "id": e.id,
+                        "employee_code": e.employee_code,
+                        "first_name": e.first_name,
+                        "last_name": e.last_name,
+                        "email": e.email,
+                        "phone": e.phone,
+                        "department_id": e.department_id,
+                        "position_id": e.position_id,
+                        "is_active": e.is_active
+                    } for e in employees
+                ]
+
+                # Export users
+                from database.models import User
+                users = db.query(User).all()
+                backup_data["data"]["users"] = [
+                    {
+                        "id": u.id,
+                        "username": u.username,
+                        "email": u.email,
+                        "role_id": u.role_id,
+                        "status": u.status.value if u.status else ""
+                    } for u in users
+                ]
+
+                # Export departments
+                from database.models import Department
+                depts = db.query(Department).all()
+                backup_data["data"]["departments"] = [
+                    {"id": d.id, "name": d.name, "code": d.code,
+                        "is_active": d.is_active}
+                    for d in depts
+                ]
+
+                # Export positions
+                from database.models import Position
+                positions = db.query(Position).all()
+                backup_data["data"]["positions"] = [
+                    {"id": p.id, "title": p.title, "code": p.code,
+                        "department_id": p.department_id, "is_active": p.is_active}
+                    for p in positions
+                ]
+
+                db.close()
+
+                # Save to file
+                with open(filename, 'w') as f:
+                    json.dump(backup_data, f, indent=2, default=str)
+
+                self._show_message(f"Backup created: {filename}", "success")
+                self._page.update()
+
+            except Exception as e:
+                self._show_message(f"Backup failed: {str(e)}", "error")
+                print(f"Backup error: {e}")
+
+        return ft.Container(
+            content=ft.Column([
+                ft.Row([
+                    ft.Icon(ft.Icons.CLOUD, size=32, color=PRIMARY),
+                    ft.Text("Storage Management", size=24,
+                            weight=ft.FontWeight.BOLD, color=PRIMARY),
+                ]),
+                ft.Container(height=20),
+
+                # Database Stats Section
+                ft.Text("Database Statistics", size=18,
+                        weight=ft.FontWeight.BOLD, color=TEXT_PRIMARY),
+                ft.Container(height=10),
+                ft.Row([
+                    self._create_storage_card("Total Employees", str(
+                        db_stats.get('total_employees', 0)), ft.Icons.PEOPLE, BLUE_500),
+                    self._create_storage_card("Total Users", str(db_stats.get(
+                        'total_users', 0)), ft.Icons.ACCOUNT_CIRCLE, GREEN_500),
+                    self._create_storage_card("Departments", str(db_stats.get(
+                        'total_departments', 0)), ft.Icons.BUSINESS, ORANGE_500),
+                    self._create_storage_card("Positions", str(db_stats.get(
+                        'total_positions', 0)), ft.Icons.WORK, PURPLE_500),
+                ], spacing=20),
+
+                ft.Container(height=30),
+                ft.Divider(),
+                ft.Container(height=20),
+
+                # Backup Section
+                ft.Text("Database Backup", size=18,
+                        weight=ft.FontWeight.BOLD, color=TEXT_PRIMARY),
+                ft.Container(height=10),
+                ft.Container(
+                    content=ft.Column([
+                        ft.Row([
+                            ft.Icon(ft.Icons.BACKUP, size=40, color=PRIMARY),
+                            ft.Column([
+                                ft.Text("Create Full Backup", size=16,
+                                        weight=ft.FontWeight.BOLD),
+                                ft.Text(
+                                    "Export all database data to a JSON backup file", size=12, color=TEXT_SECONDARY),
+                            ], expand=True),
+                        ]),
+                        ft.Container(height=15),
+                        ft.ElevatedButton(
+                            "Create Backup",
+                            icon=ft.Icons.SAVE,
+                            on_click=lambda e: run_backup(),
+                            style=ft.ButtonStyle(
+                                bgcolor=PRIMARY, color="white")
+                        ),
+                    ]),
+                    padding=20,
+                    bgcolor=SURFACE,
+                    border_radius=10,
+                    shadow=ft.BoxShadow(
+                        spread_radius=1, blur_radius=5, color="#00000010"),
+                ),
+
+                ft.Container(height=30),
+                ft.Divider(),
+                ft.Container(height=20),
+
+                # Data Export Section
+                ft.Text("Export Data", size=18,
+                        weight=ft.FontWeight.BOLD, color=TEXT_PRIMARY),
+                ft.Container(height=10),
+                ft.Container(
+                    content=ft.Column([
+                        ft.Text("Export specific data to CSV files",
+                                size=14, color=TEXT_SECONDARY),
+                        ft.Container(height=15),
+                        ft.Row([
+                            ft.ElevatedButton(
+                                "Employees",
+                                icon=ft.Icons.PEOPLE,
+                                on_click=lambda e: export_data("employees"),
+                                style=ft.ButtonStyle(
+                                    bgcolor=BLUE_500, color="white")
+                            ),
+                            ft.ElevatedButton(
+                                "Users",
+                                icon=ft.Icons.ACCOUNT_CIRCLE,
+                                on_click=lambda e: export_data("users"),
+                                style=ft.ButtonStyle(
+                                    bgcolor=GREEN_500, color="white")
+                            ),
+                            ft.ElevatedButton(
+                                "Departments",
+                                icon=ft.Icons.BUSINESS,
+                                on_click=lambda e: export_data("departments"),
+                                style=ft.ButtonStyle(
+                                    bgcolor=ORANGE_500, color="white")
+                            ),
+                            ft.ElevatedButton(
+                                "Attendance",
+                                icon=ft.Icons.EVENT,
+                                on_click=lambda e: export_data("attendance"),
+                                style=ft.ButtonStyle(
+                                    bgcolor=PURPLE_500, color="white")
+                            ),
+                        ], spacing=10),
+                    ]),
+                    padding=20,
+                    bgcolor=SURFACE,
+                    border_radius=10,
+                    shadow=ft.BoxShadow(
+                        spread_radius=1, blur_radius=5, color="#00000010"),
+                ),
+
+                ft.Container(height=30),
+                ft.Divider(),
+                ft.Container(height=20),
+
+                # Storage Info Section
+                ft.Text("Storage Information", size=18,
+                        weight=ft.FontWeight.BOLD, color=TEXT_PRIMARY),
+                ft.Container(height=10),
+                ft.Container(
+                    content=ft.Column([
+                        ft.Row([
+                            ft.Icon(ft.Icons.INFO_OUTLINE,
+                                    size=20, color=INFO),
+                            ft.Text("Data is stored in PostgreSQL database. Backups are saved locally in 'backups' folder.",
+                                    size=12, color=TEXT_SECONDARY),
+                        ]),
+                        ft.Container(height=10),
+                        ft.Row([
+                            ft.Icon(ft.Icons.FOLDER, size=20, color=INFO),
+                            ft.Text("Export files are saved in 'reports' folder.",
+                                    size=12, color=TEXT_SECONDARY),
+                        ]),
+                    ]),
+                    padding=15,
+                    bgcolor=SURFACE_VARIANT,
+                    border_radius=8,
+                ),
+
+            ], scroll=ft.ScrollMode.AUTO),
+            padding=20,
+            expand=True,
+        )
+
+    def _get_database_stats(self):
+        """Get database statistics for storage management"""
+        stats = {
+            'total_employees': 0,
+            'total_users': 0,
+            'total_departments': 0,
+            'total_positions': 0,
+        }
+        try:
+            db = get_db_session()
+            from database.models import Employee, User, Department, Position
+
+            stats['total_employees'] = db.query(Employee).count()
+            stats['total_users'] = db.query(User).count()
+            stats['total_departments'] = db.query(Department).count()
+            stats['total_positions'] = db.query(Position).count()
+
+            db.close()
+        except Exception as e:
+            print(f"Error getting database stats: {e}")
+        return stats
+
+    def _create_storage_card(self, title, value, icon_name, color):
+        """Create a storage stat card"""
+        return ft.Card(
+            content=ft.Container(
+                content=ft.Column([
+                    ft.Icon(icon=icon_name, size=32, color=color),
+                    ft.Text(value, size=24, weight=ft.FontWeight.BOLD),
+                    ft.Text(title, size=12, color=TEXT_SECONDARY),
+                ], horizontal_alignment=ft.CrossAxisAlignment.CENTER, spacing=5),
+                padding=ft.padding.all(15),
+                width=140,
+                alignment=ft.alignment.Alignment(0, 0)
+            ),
+            elevation=2
         )
 
     # ============ NEW TAB METHODS FOR ALL SCREENS ============

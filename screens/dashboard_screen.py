@@ -1,16 +1,16 @@
 """
 Vernika HRA - Dashboard Screen
-Main dashboard with navigation to all modules
+Modern dashboard with sidebar navigation matching admin_screen style
 """
 
 import flet as ft
 from datetime import datetime
-from database.connection import get_db_session
+from database.session_manager import get_session, get_db_session, check_db_connection
 from database.models import Employee, Attendance, LeaveRequest, Task
 from sqlalchemy import func, and_
 
 
-# Theme colors
+# Theme colors - matching admin_screen
 PRIMARY = "#2E86AB"
 SECONDARY = "#A23B72"
 SUCCESS = "#4CAF50"
@@ -18,6 +18,9 @@ WARNING = "#FF9800"
 ERROR = "#F44336"
 INFO = "#2196F3"
 BACKGROUND = "#F5F5F5"
+SURFACE = "#FFFFFF"
+TEXT_PRIMARY = "#1A1C1E"
+TEXT_SECONDARY = "#6C757D"
 
 
 class DashboardScreen(ft.Container):
@@ -30,16 +33,13 @@ class DashboardScreen(ft.Container):
         self.content = self._build_content()
 
     def refresh(self):
-        """Refresh the dashboard content including stats"""
+        """Refresh the dashboard content"""
         self.content = self._build_content()
         self._page.update()
 
-    def _get_db(self):
-        """Get database session"""
-        return get_db_session()
-
     def _build_content(self):
-        """Build the dashboard content"""
+        """Build dashboard with modern sidebar navigation"""
+
         # Get user info
         username = "User"
         user_id = None
@@ -49,319 +49,342 @@ class DashboardScreen(ft.Container):
             username = self.user.get('username', 'User')
             user_id = self.user.get('id')
             user_role = self.user.get('role', 'employee').lower()
-        elif hasattr(self.user, 'username'):
-            username = self.user.username
-            if hasattr(self.user, 'id'):
-                user_id = self.user.id
-            if hasattr(self.user, 'role'):
-                user_role = self.user.role.lower() if isinstance(
-                    self.user.role, str) else 'employee'
 
-        # Get screen access for this user
-        from utils.screen_access import get_user_screen_access, get_user_button_access
-
-        screen_access = {}
-        button_access = {}
-
-        if user_id:
-            try:
-                screen_access = get_user_screen_access(user_id)
-                button_access = get_user_button_access(user_id)
-            except Exception as e:
-                print(f"Error getting access: {e}")
-
-        # For admin, show all; for employees, filter by access
         is_admin = user_role == 'admin'
 
         # Get stats
         stats = self._get_dashboard_stats()
 
-        # Header
-        header = ft.Container(
-            padding=15,
-            bgcolor=PRIMARY,
-            content=ft.Row([
-                ft.Row([
-                    ft.Icon(ft.Icons.DASHBOARD, color="WHITE", size=24),
-                    ft.Text("Vernika HRA", size=18, color="WHITE",
-                            weight=ft.FontWeight.BOLD),
-                ], spacing=10),
-                ft.Container(expand=True),
-                ft.Row([
-                    ft.Icon(ft.Icons.NOTIFICATIONS, color="WHITE", size=20),
-                    ft.Text(f"Welcome, {username}", size=14, color="WHITE"),
-                    ft.Container(width=10),
-                    ft.IconButton(
-                        icon=ft.Icons.LOGOUT,
-                        icon_color="WHITE",
-                        on_click=self.logout,
-                        tooltip="Logout"
+        # Navigation items - simplified for dashboard
+        nav_items = []
+
+        # Define navigation
+        nav_data = [
+            (0, "Dashboard", ft.Icons.DASHBOARD, ft.Icons.DASHBOARD_OUTLINED),
+            (1, "Profile", ft.Icons.PERSON, ft.Icons.PERSON_OUTLINED),
+            (2, "Chat", ft.Icons.CHAT, ft.Icons.CHAT_OUTLINED),
+            (3, "Mail", ft.Icons.EMAIL, ft.Icons.EMAIL_OUTLINED),
+            (4, "Tasks", ft.Icons.TASK, ft.Icons.TASK_OUTLINED),
+            (5, "Leave", ft.Icons.CALENDAR_MONTH,
+             ft.Icons.CALENDAR_MONTH_OUTLINED),
+            (6, "Attendance", ft.Icons.EVENT, ft.Icons.EVENT_OUTLINED),
+        ]
+
+        if is_admin:
+            nav_data.extend([
+                (7, "Employees", ft.Icons.BADGE, ft.Icons.BADGE_OUTLINED),
+                (8, "Departments", ft.Icons.BUSINESS, ft.Icons.BUSINESS_OUTLINED),
+                (9, "Teams", ft.Icons.GROUP, ft.Icons.GROUP_OUTLINED),
+                (10, "Projects", ft.Icons.WORK, ft.Icons.WORK_OUTLINED),
+                (11, "Reports", ft.Icons.ASSESSMENT, ft.Icons.ASSESSMENT_OUTLINED),
+            ])
+
+        self._selected_nav_index = 0
+
+        def create_nav_item(index, label, selected_icon, unselected_icon):
+            def on_click(e):
+                self._selected_nav_index = index
+                for item in nav_items:
+                    item.bgcolor = "transparent" if item != nav_items[index] else PRIMARY + "15"
+                content_area.content = self._get_tab_content(index)
+                self._page.update()
+
+            return ft.Container(
+                content=ft.Row([
+                    ft.Icon(
+                        selected_icon if index == self._selected_nav_index else unselected_icon,
+                        size=20,
+                        color=PRIMARY if index == self._selected_nav_index else TEXT_SECONDARY,
                     ),
-                ], spacing=5),
-            ], alignment=ft.MainAxisAlignment.SPACE_BETWEEN),
-        )
-
-        # Quick stats
-        stats_row = ft.Container(
-            padding=ft.padding.symmetric(horizontal=20, vertical=15),
-            content=ft.Row([
-                self._create_stat_card("Total Employees", str(stats.get('total_employees', 0)),
-                                       ft.Icons.PEOPLE, INFO),
-                self._create_stat_card("Present Today", str(stats.get('present_today', 0)),
-                                       ft.Icons.CHECK_CIRCLE, SUCCESS),
-                self._create_stat_card("On Leave", str(stats.get('on_leave', 0)),
-                                       ft.Icons.EVENT_BUSY, WARNING),
-                self._create_stat_card("Pending Tasks", str(stats.get('pending_tasks', 0)),
-                                       ft.Icons.TASK, ERROR),
-            ], spacing=20),
-        )
-
-        # Quick actions grid - filter based on access
-        quick_actions_controls = []
-
-        # Always show Profile
-        quick_actions_controls.append(
-            self._create_action_card("My Profile", ft.Icons.PERSON, "View profile",
-                                     PRIMARY, self._go_to_profile)
-        )
-
-        # Show Attendance if user has access
-        if is_admin or screen_access.get('attendance', False):
-            quick_actions_controls.append(
-                self._create_action_card("Attendance", ft.Icons.EVENT, "Mark attendance",
-                                         WARNING, self._go_to_attendance)
+                    ft.Text(
+                        label,
+                        size=13,
+                        weight=ft.FontWeight.W_500 if index == self._selected_nav_index else ft.FontWeight.W_400,
+                        color=PRIMARY if index == self._selected_nav_index else TEXT_SECONDARY,
+                    ),
+                ], spacing=8, alignment=ft.MainAxisAlignment.START),
+                padding=ft.padding.symmetric(horizontal=12, vertical=10),
+                border_radius=8,
+                bgcolor=PRIMARY + "15" if index == self._selected_nav_index else "transparent",
+                on_click=on_click,
+                ink=True,
             )
 
-        # Show Leave if user has access
-        if is_admin or screen_access.get('leaves', False):
-            quick_actions_controls.append(
-                self._create_action_card("Leave", ft.Icons.CALENDAR_MONTH, "Apply leave",
-                                         SECONDARY, self._go_to_leaves)
-            )
+        # Create nav items
+        for idx, label, sel_icon, unsel_icon in nav_data:
+            nav_items.append(create_nav_item(idx, label, sel_icon, unsel_icon))
 
-        # Show Tasks if user has access
-        if is_admin or screen_access.get('tasks', False):
-            quick_actions_controls.append(
-                self._create_action_card("Tasks", ft.Icons.TASK, "View tasks",
-                                         INFO, self._go_to_tasks)
-            )
-
-        # Row 2 - only for admins or employees with specific access
-        quick_actions_row2 = []
-
-        if is_admin or screen_access.get('employees', False):
-            quick_actions_row2.append(
-                self._create_action_card("Employees", ft.Icons.BADGE, "Manage employees",
-                                         SUCCESS, self._go_to_employees)
-            )
-
-        if is_admin or screen_access.get('departments', False):
-            quick_actions_row2.append(
-                self._create_action_card("Departments", ft.Icons.BUSINESS, "Manage departments",
-                                         "#009688", self._go_to_departments)
-            )
-
-        if is_admin or screen_access.get('positions', False):
-            quick_actions_row2.append(
-                self._create_action_card("Positions", ft.Icons.WORK, "Manage positions",
-                                         "#673AB7", self._go_to_positions)
-            )
-
-        if is_admin or screen_access.get('chat', False):
-            quick_actions_row2.append(
-                self._create_action_card("Chat", ft.Icons.CHAT, "Team chat",
-                                         "#FF5722", self._go_to_chat)
-            )
-
-        quick_actions = ft.Container(
-            padding=ft.padding.symmetric(horizontal=20, vertical=10),
+        # Sidebar
+        sidebar = ft.Container(
+            width=180,
+            bgcolor=SURFACE,
             content=ft.Column([
-                ft.Text("Quick Actions", size=16,
-                        weight=ft.FontWeight.BOLD, color="#333"),
-                ft.Container(height=10),
-                ft.Row(quick_actions_controls, spacing=15),
-            ], spacing=0),
-        )
-
-        # Add row 2 if there are items - rebuild quick_actions with both rows
-        if quick_actions_row2:
-            quick_actions = ft.Container(
-                padding=ft.padding.symmetric(horizontal=20, vertical=10),
-                content=ft.Column([
-                    ft.Text("Quick Actions", size=16,
-                            weight=ft.FontWeight.BOLD, color="#333"),
-                    ft.Container(height=10),
-                    ft.Row(quick_actions_controls, spacing=15),
-                    ft.Container(height=15),
-                    ft.Row(quick_actions_row2, spacing=15),
-                ], spacing=0),
-            )
-
-        # Admin section (for admin users)
-        admin_section = ft.Container()
-        user_role = ""
-        if isinstance(self.user, dict):
-            user_role = self.user.get('role', '').lower()
-        elif hasattr(self.user, 'role'):
-            user_role = self.user.role.lower()
-
-        if user_role == 'admin':
-            admin_section = ft.Container(
-                padding=ft.padding.symmetric(horizontal=20, vertical=10),
-                content=ft.Column([
-                    ft.Text("Administration", size=16,
-                            weight=ft.FontWeight.BOLD, color="#333"),
-                    ft.Container(height=10),
-                    ft.Row([
-                        self._create_action_card("Admin Panel", ft.Icons.ADMIN_PANEL_SETTINGS,
-                                                 "Full admin access", PRIMARY, self._go_to_admin),
-                        self._create_action_card("Reports", ft.Icons.ASSESSMENT, "View reports",
-                                                 "#607D8B", self._go_to_reports),
-                        self._create_action_card("Settings", ft.Icons.SETTINGS, "System settings",
-                                                 "#795548", self._go_to_settings),
-                        self._create_action_card("Announcements", ft.Icons.CAMPAIGN,
-                                                 "Company news", "#E91E63", self._go_to_announcements),
-                    ], spacing=15),
-                ], spacing=0),
-            )
-
-        # Get recent activities
-        recent_activities = self._get_recent_activities()
-
-        # Recent activity
-        recent_activity = ft.Container(
-            padding=ft.padding.symmetric(horizontal=20, vertical=10),
-            content=ft.Column([
-                ft.Text("Recent Activity", size=16,
-                        weight=ft.FontWeight.BOLD, color="#333"),
-                ft.Container(height=10),
+                # Logo
                 ft.Container(
-                    content=ft.Column([
-                        self._create_activity_item(
-                            activity['text'], activity['time'], activity['icon'])
-                        for activity in recent_activities
-                    ]),
-                    bgcolor="white",
-                    padding=15,
-                    border_radius=10,
+                    content=ft.Image(
+                        src="assets/logo/Vernikalogo.png",
+                        width=100,
+                        height=60,
+                    ),
+                    alignment=ft.alignment.Alignment(0, 0),
+                    padding=ft.padding.only(top=15, bottom=10),
+                ),
+                ft.Divider(height=1),
+                # Navigation
+                ft.ListView(
+                    controls=nav_items,
+                    spacing=2,
+                    padding=10,
+                    expand=True,
                 ),
             ], spacing=0),
         )
 
-        return ft.Column([
-            header,
-            ft.Column([
-                stats_row,
-                ft.Divider(),
-                quick_actions,
-                admin_section,
-                ft.Divider(),
-                recent_activity,
-            ], spacing=0, scroll=ft.ScrollMode.AUTO, expand=True),
-        ], spacing=0, scroll=ft.ScrollMode.AUTO, expand=True)
+        # Header
+        header = ft.Container(
+            content=ft.Row([
+                ft.Text(
+                    "Vernika HRA - Dashboard",
+                    size=18,
+                    weight=ft.FontWeight.BOLD,
+                    color=PRIMARY
+                ),
+                ft.Container(expand=True),
+                ft.Text(
+                    f"Welcome, {username}",
+                    size=14,
+                    color=TEXT_SECONDARY
+                ),
+                ft.IconButton(
+                    icon=ft.Icons.LOGOUT,
+                    tooltip="Logout",
+                    on_click=self.logout,
+                    icon_color=ERROR
+                )
+            ], alignment=ft.MainAxisAlignment.SPACE_BETWEEN),
+            padding=ft.padding.symmetric(horizontal=20, vertical=15),
+            bgcolor=SURFACE,
+        )
+
+        # Main content area
+        content_area = ft.Container(
+            content=self._get_tab_content(0),
+            expand=True,
+        )
+
+        # Main layout
+        return ft.Container(
+            content=ft.Row([
+                sidebar,
+                ft.VerticalDivider(width=1),
+                ft.Container(
+                    content=ft.Column([
+                        header,
+                        content_area,
+                    ], expand=True),
+                    expand=True,
+                ),
+            ], expand=True),
+            expand=True,
+        )
+
+    def _get_tab_content(self, index):
+        """Get content for the selected tab"""
+        if index == 0:
+            return self._create_dashboard_tab()
+        elif index == 1:
+            return self._create_profile_tab()
+        elif index == 2:
+            return self._create_chat_tab()
+        elif index == 3:
+            return self._create_mail_tab()
+        elif index == 4:
+            return self._create_tasks_tab()
+        elif index == 5:
+            return self._create_leaves_tab()
+        elif index == 6:
+            return self._create_attendance_tab()
+        elif index == 7 and self._is_admin():
+            return self._create_employees_tab()
+        elif index == 8 and self._is_admin():
+            return self._create_departments_tab()
+        elif index == 9 and self._is_admin():
+            return self._create_teams_tab()
+        elif index == 10 and self._is_admin():
+            return self._create_projects_tab()
+        elif index == 11 and self._is_admin():
+            return self._create_reports_tab()
+        return self._create_dashboard_tab()
+
+    def _is_admin(self):
+        """Check if user is admin"""
+        user_role = ""
+        if isinstance(self.user, dict):
+            user_role = self.user.get('role', '').lower()
+        return user_role == 'admin'
+
+    def _create_dashboard_tab(self):
+        """Create main dashboard tab"""
+        stats = self._get_dashboard_stats()
+
+        return ft.Container(
+            content=ft.Column([
+                ft.Text("Dashboard Overview", size=24,
+                        weight=ft.FontWeight.BOLD, color=PRIMARY),
+                ft.Container(height=20),
+
+                # Stats cards
+                ft.Row([
+                    self._create_stat_card("Total Employees", str(
+                        stats.get('total_employees', 0)), ft.Icons.PEOPLE, INFO),
+                    self._create_stat_card("Present Today", str(
+                        stats.get('present_today', 0)), ft.Icons.CHECK_CIRCLE, SUCCESS),
+                    self._create_stat_card("On Leave", str(
+                        stats.get('on_leave', 0)), ft.Icons.EVENT_BUSY, WARNING),
+                    self._create_stat_card("Pending Tasks", str(
+                        stats.get('pending_tasks', 0)), ft.Icons.TASK, ERROR),
+                ], spacing=20),
+
+                ft.Container(height=30),
+
+                # Quick actions
+                ft.Text("Quick Actions", size=18,
+                        weight=ft.FontWeight.BOLD, color=TEXT_PRIMARY),
+                ft.Container(height=10),
+                ft.Row([
+                    self._create_action_btn(
+                        "My Profile", ft.Icons.PERSON, PRIMARY, self._go_to_profile),
+                    self._create_action_btn(
+                        "View Tasks", ft.Icons.TASK, INFO, self._go_to_tasks),
+                    self._create_action_btn(
+                        "Apply Leave", ft.Icons.CALENDAR_MONTH, SECONDARY, self._go_to_leaves),
+                    self._create_action_btn(
+                        "Attendance", ft.Icons.EVENT, WARNING, self._go_to_attendance),
+                ], spacing=15),
+
+                ft.Container(height=30),
+
+                # Recent activity
+                ft.Text("Recent Activity", size=18,
+                        weight=ft.FontWeight.BOLD, color=TEXT_PRIMARY),
+                ft.Container(height=10),
+                self._create_recent_activity(),
+
+            ], scroll=ft.ScrollMode.AUTO),
+            padding=20,
+        )
+
+    def _create_stat_card(self, title, value, icon_name, color):
+        """Create a statistics card"""
+        return ft.Card(
+            content=ft.Container(
+                content=ft.Column([
+                    ft.Icon(icon=icon_name, size=32, color=color),
+                    ft.Text(value, size=28,
+                            weight=ft.FontWeight.BOLD, color=color),
+                    ft.Text(title, size=12, color=TEXT_SECONDARY),
+                ], horizontal_alignment=ft.CrossAxisAlignment.CENTER, spacing=5),
+                padding=20,
+                width=150,
+                alignment=ft.alignment.Alignment(0, 0)
+            ),
+            elevation=2
+        )
+
+    def _create_action_btn(self, title, icon_name, color, on_click):
+        """Create action button"""
+        return ft.Container(
+            content=ft.ElevatedButton(
+                title,
+                icon=icon_name,
+                on_click=on_click,
+                style=ft.ButtonStyle(bgcolor=color, color="WHITE"),
+                height=45,
+            ),
+        )
+
+    def _create_recent_activity(self):
+        """Create recent activity section"""
+        activities = self._get_recent_activities()
+
+        if not activities:
+            return ft.Container(
+                content=ft.Text("No recent activity", size=14,
+                                color=TEXT_SECONDARY),
+                padding=20,
+            )
+
+        items = []
+        for activity in activities:
+            items.append(
+                ft.Container(
+                    content=ft.Row([
+                        ft.Icon(activity['icon'], size=18, color=PRIMARY),
+                        ft.Text(activity['text'], size=13, expand=True),
+                        ft.Text(activity['time'], size=11,
+                                color=TEXT_SECONDARY),
+                    ], spacing=10),
+                    padding=10,
+                    border=ft.border.only(bottom=ft.BorderSide(1, "#eee")),
+                )
+            )
+
+        return ft.Container(
+            content=ft.Column(items, spacing=0),
+            bgcolor=SURFACE,
+            border_radius=10,
+            padding=10,
+        )
 
     def _get_dashboard_stats(self):
-        """Get dashboard statistics"""
-        stats = {
-            'total_employees': 0,
-            'present_today': 0,
-            'on_leave': 0,
-            'pending_tasks': 0,
+        """Get dashboard statistics with caching for better performance"""
+        # Use cached version for better performance
+        from utils.cache import get_cached_dashboard_stats
+        stats = get_cached_dashboard_stats()
+
+        # Return the cached stats
+        return {
+            'total_employees': stats.get('total_employees', 0),
+            'present_today': stats.get('present_today', 0),
+            'on_leave': stats.get('on_leave', 0),
+            'pending_tasks': stats.get('pending_tasks', 0),
         }
-        try:
-            session = self._get_db()
-
-            # Total employees
-            from database.models import Employee
-            total = session.query(func.count(Employee.id)).filter(
-                Employee.is_active == True).scalar()
-            stats['total_employees'] = total or 0
-
-            # Present today
-            from database.models import Attendance, AttendanceStatus
-            today = datetime.now().date()
-            present = session.query(func.count(Attendance.id)).filter(
-                and_(
-                    Attendance.date == today,
-                    Attendance.status == AttendanceStatus.PRESENT
-                )
-            ).scalar()
-            stats['present_today'] = present or 0
-
-            # On leave
-            from database.models import LeaveRequest, LeaveStatus
-            on_leave = session.query(func.count(LeaveRequest.id)).filter(
-                and_(
-                    LeaveRequest.status == LeaveStatus.APPROVED,
-                    LeaveRequest.start_date <= today,
-                    LeaveRequest.end_date >= today
-                )
-            ).scalar()
-            stats['on_leave'] = on_leave or 0
-
-            # Pending tasks
-            from database.models import Task, TaskStatus
-            pending = session.query(func.count(Task.id)).filter(
-                Task.status.in_([TaskStatus.TODO, TaskStatus.IN_PROGRESS])
-            ).scalar()
-            stats['pending_tasks'] = pending or 0
-
-            session.close()
-        except Exception as e:
-            print(f"Error getting dashboard stats: {e}")
-
-        return stats
 
     def _get_recent_activities(self):
-        """Get recent activities from database"""
+        """Get recent activities"""
         activities = []
         try:
-            session = self._get_db()
+            # Use context manager for proper session handling
+            with get_session() as session:
+                # Get recent leave requests with eager loading
+                from database.models import LeaveRequest
+                recent_leaves = session.query(LeaveRequest).order_by(
+                    LeaveRequest.created_at.desc()
+                ).limit(3).all()
 
-            # Get recent leave requests
-            from database.models import LeaveRequest
-            recent_leaves = session.query(LeaveRequest).order_by(
-                LeaveRequest.created_at.desc()
-            ).limit(5).all()
+                for lr in recent_leaves:
+                    if lr.employee_id:
+                        emp = session.query(Employee).filter(
+                            Employee.id == lr.employee_id).first()
+                        if emp:
+                            emp_name = f"{emp.first_name} {emp.last_name}"
+                        else:
+                            emp_name = "Unknown"
+                    else:
+                        emp_name = "Unknown"
 
-            for lr in recent_leaves:
-                from database.operations import get_employee_by_id
-                emp = get_employee_by_id(
-                    session, lr.employee_id) if lr.employee_id else None
-                emp_name = f"{emp.first_name} {emp.last_name}" if emp else "Unknown"
-                status_str = str(lr.status.value) if hasattr(
-                    lr.status, 'value') else str(lr.status)
-                activities.append({
-                    'text': f"Leave: {emp_name} - {status_str}",
-                    'icon': ft.Icons.CALENDAR_MONTH,
-                    'time': self._format_time_ago(lr.created_at) if lr.created_at else "Recently"
-                })
+                    status_str = str(lr.status.value) if hasattr(
+                        lr.status, 'value') else str(lr.status)
+                    activities.append({
+                        'text': f"Leave: {emp_name} - {status_str}",
+                        'icon': ft.Icons.CALENDAR_MONTH,
+                        'time': self._format_time_ago(lr.created_at) if lr.created_at else "Recently"
+                    })
 
-            # Get recent attendances
-            from database.models import Attendance
-            recent_att = session.query(Attendance).order_by(
-                Attendance.created_at.desc()
-            ).limit(5).all()
-
-            for att in recent_att:
-                from database.operations import get_employee_by_id
-                emp = get_employee_by_id(
-                    session, att.employee_id) if att.employee_id else None
-                emp_name = f"{emp.first_name} {emp.last_name}" if emp else "Unknown"
-                status_str = str(att.status.value) if hasattr(
-                    att.status, 'value') else str(att.status)
-                activities.append({
-                    'text': f"Attendance: {emp_name} - {status_str}",
-                    'icon': ft.Icons.CHECK,
-                    'time': self._format_time_ago(att.created_at) if att.created_at else "Recently"
-                })
-
-            session.close()
         except Exception as e:
             print(f"Error getting recent activities: {e}")
 
-        # Return empty list if no activities (no fallback data)
-        return activities[:4]
+        return activities[:5]
 
     def _format_time_ago(self, dt):
         """Format datetime as time ago"""
@@ -372,166 +395,92 @@ class DashboardScreen(ft.Container):
             dt = dt.replace(tzinfo=None)
         diff = now - dt
         if diff.days > 0:
-            return f"{diff.days} day{'s' if diff.days > 1 else ''} ago"
+            return f"{diff.days}d ago"
         elif diff.seconds >= 3600:
             hours = diff.seconds // 3600
-            return f"{hours} hour{'s' if hours > 1 else ''} ago"
+            return f"{hours}h ago"
         elif diff.seconds >= 60:
             minutes = diff.seconds // 60
-            return f"{minutes} minute{'s' if minutes > 1 else ''} ago"
+            return f"{minutes}m ago"
         else:
             return "Just now"
 
-    def _create_stat_card(self, title: str, value: str, icon_name, color: str):
-        """Create a statistics card"""
-        return ft.Card(
-            content=ft.Container(
-                content=ft.Column([
-                    ft.Icon(icon=icon_name, size=28, color=color),
-                    ft.Text(value, size=24,
-                            weight=ft.FontWeight.BOLD, color=color),
-                    ft.Text(title, size=12, color="#666"),
-                ], horizontal_alignment=ft.CrossAxisAlignment.CENTER, spacing=5),
-                padding=15,
-                width=130,
-                alignment=ft.alignment.Alignment(0, 0)
-            ),
-            elevation=2
-        )
-
-    def _create_action_card(self, title: str, icon_name, subtitle: str, color: str, on_click):
-        """Create an action card"""
-        return ft.Card(
-            content=ft.Container(
-                content=ft.Column([
-                    ft.Icon(icon=icon_name, size=32, color=color),
-                    ft.Text(title, size=14, weight=ft.FontWeight.BOLD),
-                    ft.Text(subtitle, size=11, color="#666"),
-                ], horizontal_alignment=ft.CrossAxisAlignment.CENTER, spacing=5),
-                padding=15,
-                width=120,
-                alignment=ft.alignment.Alignment(0, 0),
-                ink=True,
-                on_click=on_click,
-            ),
-            elevation=2,
-        )
-
-    def _create_activity_item(self, text: str, time_ago: str, icon_name):
-        """Create a recent activity item"""
-        return ft.Container(
-            content=ft.Row([
-                ft.Icon(icon_name, size=18, color=PRIMARY),
-                ft.Text(text, size=13, expand=True),
-                ft.Text(time_ago, size=11, color="#999"),
-            ], spacing=10),
-            padding=ft.padding.symmetric(vertical=8),
-            border=ft.border.only(bottom=ft.BorderSide(1, "#eee")),
-        )
-
-    def _go_to_profile(self, e):
-        """Navigate to profile screen"""
+    # Tab content methods
+    def _create_profile_tab(self):
         from screens.profile_screen import ProfileScreen
-        self._page.clean()
-        self._page.add(ProfileScreen(self._page, self.user))
+        return ft.Container(content=ProfileScreen(self._page, self.user), expand=True)
 
-    def _go_to_attendance(self, e):
-        """Navigate to attendance screen"""
-        from screens.attendance_screen import AttendanceScreen
-        # Determine view mode based on user role
-        user_role = ""
-        if isinstance(self.user, dict):
-            user_role = self.user.get('role', '').lower()
-        view_mode = "admin" if user_role == 'admin' else "employee"
-        self._page.clean()
-        self._page.add(AttendanceScreen(
-            self._page, self.user, view_mode=view_mode))
+    def _create_chat_tab(self):
+        from screens.chat_screen import ChatScreen
+        return ft.Container(content=ChatScreen(self._page, self.user), expand=True)
 
-    def _go_to_leaves(self, e):
-        """Navigate to leaves screen"""
+    def _create_mail_tab(self):
+        from screens.mail_screen import MailScreen
+        return ft.Container(content=MailScreen(self._page, self.user), expand=True)
+
+    def _create_tasks_tab(self):
+        from screens.tasks_screen import TasksScreen
+        return ft.Container(content=TasksScreen(self._page, self.user), expand=True)
+
+    def _create_leaves_tab(self):
         from screens.leaves_screen import LeavesScreen
-        # Determine view mode based on user role
-        user_role = ""
-        if isinstance(self.user, dict):
-            user_role = self.user.get('role', '').lower()
-        view_mode = "admin" if user_role == 'admin' else "employee"
-        self._page.clean()
-        self._page.add(LeavesScreen(
-            self._page, self.user, view_mode=view_mode))
+        view_mode = "admin" if self._is_admin() else "employee"
+        return ft.Container(content=LeavesScreen(self._page, self.user, view_mode=view_mode), expand=True)
+
+    def _create_attendance_tab(self):
+        from screens.attendance_screen import AttendanceScreen
+        view_mode = "admin" if self._is_admin() else "employee"
+        return ft.Container(content=AttendanceScreen(self._page, self.user, view_mode=view_mode), expand=True)
+
+    def _create_employees_tab(self):
+        from screens.employees_screen import show_employees
+        show_employees(self._page, self.user)
+        return ft.Container()
+
+    def _create_departments_tab(self):
+        from screens.departments_screen import show_departments
+        show_departments(self._page, self.user)
+        return ft.Container()
+
+    def _create_teams_tab(self):
+        from screens.teams_screen import TeamsScreen
+        return ft.Container(content=TeamsScreen(self._page, self.user), expand=True)
+
+    def _create_projects_tab(self):
+        from screens.projects_screen import ProjectsScreen
+        return ft.Container(content=ProjectsScreen(self._page, self.user), expand=True)
+
+    def _create_reports_tab(self):
+        from screens.reports_screen import ReportsScreen
+        return ft.Container(content=ReportsScreen(self._page), expand=True)
+
+    # Navigation methods
+    def _go_to_profile(self, e):
+        self._selected_nav_index = 1
+        content_area = self.content.content.controls[1]
+        content_area.content.controls[1].content = self._create_profile_tab()
+        self._page.update()
 
     def _go_to_tasks(self, e):
-        """Navigate to tasks screen"""
         from screens.tasks_screen import TasksScreen
         self._page.clean()
         self._page.add(TasksScreen(self._page, self.user))
 
-    def _go_to_employees(self, e):
-        """Navigate to employees screen"""
-        # Check if user has access
-        user_role = ""
-        if isinstance(self.user, dict):
-            user_role = self.user.get('role', '').lower()
-        elif hasattr(self.user, 'role'):
-            user_role = self.user.role.lower()
-
-        # Only admin can access employees management
-        if user_role != 'admin':
-            # Show access denied message
-            snack = ft.SnackBar(
-                content=ft.Text(
-                    "Access Restricted: Only administrators can manage employees"),
-                bgcolor="#F44336"
-            )
-            self._page.overlay.append(snack)
-            snack.open = True
-            self._page.update()
-            return
-
-        from screens.employees_screen import show_employees
-        show_employees(self._page, self.user)
-
-    def _go_to_departments(self, e):
-        """Navigate to departments screen"""
-        from screens.departments_screen import show_departments
-        show_departments(self._page, self.user)
-
-    def _go_to_positions(self, e):
-        """Navigate to positions screen"""
-        from screens.positions_screen import show_positions
-        show_positions(self._page, self.user)
-
-    def _go_to_chat(self, e):
-        """Navigate to chat screen"""
-        from screens.chat_screen import ChatScreen
+    def _go_to_leaves(self, e):
+        from screens.leaves_screen import LeavesScreen
+        view_mode = "admin" if self._is_admin() else "employee"
         self._page.clean()
-        self._page.add(ChatScreen(self._page, self.user))
+        self._page.add(LeavesScreen(
+            self._page, self.user, view_mode=view_mode))
 
-    def _go_to_admin(self, e):
-        """Navigate to admin screen"""
-        from screens.admin_screen import AdminScreen
+    def _go_to_attendance(self, e):
+        from screens.attendance_screen import AttendanceScreen
+        view_mode = "admin" if self._is_admin() else "employee"
         self._page.clean()
-        self._page.add(AdminScreen(self._page, self.user))
-
-    def _go_to_reports(self, e):
-        """Navigate to reports screen"""
-        from screens.reports_screen import ReportsScreen
-        self._page.clean()
-        self._page.add(ReportsScreen(self._page))
-
-    def _go_to_settings(self, e):
-        """Navigate to settings screen"""
-        from screens.settings_screen import SettingsScreen
-        self._page.clean()
-        self._page.add(SettingsScreen(self._page, self.user))
-
-    def _go_to_announcements(self, e):
-        """Navigate to announcements screen"""
-        from screens.announcements_screen import AnnouncementsScreen
-        self._page.clean()
-        self._page.add(AnnouncementsScreen(self._page))
+        self._page.add(AttendanceScreen(
+            self._page, self.user, view_mode=view_mode))
 
     def logout(self, e):
-        """Handle logout"""
         from screens.login_screen import LoginScreen
         self._page.clean()
         self._page.add(LoginScreen(self._page))

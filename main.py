@@ -1,6 +1,6 @@
 """
 Vernika HRA - Main Entry Point
-Fixed version with proper initialization and responsive design
+Fixed version with proper session management and performance optimizations
 """
 import flet as ft
 import logging
@@ -13,28 +13,44 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-# Initialize database before importing screens
-
 
 def init_db():
     """Initialize database on startup"""
     try:
-        from database.connection import get_engine, Base
+        # Import from new session manager
+        from database.session_manager import get_engine, init_db as create_tables
         from database.models import init_database
+
         # Create all tables
-        Base.metadata.create_all(bind=get_engine())
+        create_tables()
+
         # Initialize default data
         init_database()
         logger.info("✓ Database initialized successfully!")
-        # Run user-employee sync to ensure all data is properly linked
-        try:
-            from fix_user_employee_sync import sync_user_employee
-            sync_user_employee()
-        except Exception as e:
-            logger.warning(f"⚠ User-employee sync failed (optional): {e}")
+
         return True
     except Exception as e:
         logger.error(f"✗ Database initialization error: {e}")
+        import traceback
+        traceback.print_exc()
+        return False
+
+
+def check_database_health():
+    """Check database health on startup"""
+    try:
+        from database.session_manager import get_db_health, check_db_connection
+
+        if check_db_connection():
+            health = get_db_health()
+            logger.info(
+                f"✓ Database connected! Response time: {health.get('response_time_ms', 0)}ms")
+            return True
+        else:
+            logger.error("✗ Database connection failed!")
+            return False
+    except Exception as e:
+        logger.error(f"✗ Database health check failed: {e}")
         return False
 
 
@@ -46,19 +62,28 @@ def main(page: ft.Page):
         page.window.min_width = WINDOW_MIN_WIDTH
         page.window.min_height = WINDOW_MIN_HEIGHT
         page.window.resizable = WINDOW_RESIZABLE
-        page.window.maximized = WINDOW_MAXIMIZED  # Always start maximized
-
-        # Center window on startup
-        # page.window.center()
+        page.window.maximized = WINDOW_MAXIMIZED
 
         page.fonts = {
-            "Roboto": "https://fonts.googleapis.com/css2?family=Roboto:wght@400;500;700&display=swap"}
+            "Roboto": "https://fonts.googleapis.com/css2?family=Roboto:wght@400;500;700&display=swap"
+        }
 
         # Handle lifecycle events for connection monitoring
         def on_app_lifecycle_change(e):
             logger.info(f"App lifecycle state changed to: {e.state}")
 
         page.on_app_lifecycle_state_change = on_app_lifecycle_change
+
+        # Check database health first
+        if not check_database_health():
+            page.add(ft.Column([
+                ft.Icon(ft.Icons.WARNING, size=48, color=ft.Colors.RED),
+                ft.Text("Database Connection Error",
+                        size=24, color=ft.Colors.RED),
+                ft.Text(
+                    "Failed to connect to database. Please check your internet connection.", size=14),
+            ], horizontal_alignment=ft.CrossAxisAlignment.CENTER, spacing=20))
+            return
 
         # Initialize database
         db_initialized = init_db()
@@ -72,19 +97,27 @@ def main(page: ft.Page):
             ]))
             return
 
+        # Initialize navigation manager
+        from core.navigation_v2 import init_navigation
+        init_navigation(page)
+
+        # Show login screen
         from screens.login_screen import LoginScreen
         login_screen = LoginScreen(page)
         page.add(login_screen)
-        logger.info("Application started successfully")
+
+        logger.info("✓ Application started successfully")
 
     except Exception as e:
         logger.error(f"Fatal error in main: {e}")
+        import traceback
+        traceback.print_exc()
         raise
 
 
 if __name__ == "__main__":
     try:
-        ft.app(target=main, view=ft.AppView.FLET_APP)
+        ft.app(target=main)
     except KeyboardInterrupt:
         logger.info("Application stopped by user")
     except Exception as e:

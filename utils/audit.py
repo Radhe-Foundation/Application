@@ -6,7 +6,7 @@ Tracks all user activities and system changes
 import flet as ft
 from datetime import datetime
 from typing import Optional, List, Dict
-from database.connection import get_db_session
+from database.session_manager import get_db_session, get_session
 from database.models import AuditLog
 
 
@@ -123,7 +123,7 @@ class AuditLogger:
             List of audit log dictionaries
         """
         from database.operations import get_all_audit_logs
-        from database.connection import get_db_session
+        from database.session_manager import get_db_session, get_session
 
         try:
             db = get_db_session()

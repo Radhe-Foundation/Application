@@ -1,58 +1,43 @@
 """
 Vernika HRA - Internal Mail Screen
-Industry-Level Human Resource Management System
-
-This module provides the internal email/mail system for the organization.
-Features:
-- Compose and send internal emails
-- Inbox, Sent, Drafts folders
-- Reply and Forward functionality
-- Search emails
-- Announcement system
-- Offer letter and official document sharing
-- Document attachment support
+Improved UI with compact cards, popup modals, and better UX
+Fixed: Multiple CC/BCC, Bulk Send, Professional Compose UI, Improved Recipient Picker
 """
 
 import flet as ft
 from datetime import datetime
-from typing import List, Optional
-from database.connection import get_db_session
-from database.models import (
-    User, Employee, EmailMessage, EmailRecipient,
-    EmailCategory, Document
-)
+from database.session_manager import get_session, get_db_session, check_db_connection
+from database.models import EmailCategory
 from database.operations import (
     send_email, get_user_emails, get_email_by_id,
-    mark_email_as_read, delete_email, get_unread_email_count,
-    get_all_users, upload_document
+    mark_email_as_read, delete_email, get_unread_email_count, get_all_users,
+    create_email_group, add_email_group_member, get_user_email_groups,
+    get_email_group_members, get_email_group_member_ids, get_all_email_groups,
+    remove_email_group_member
 )
 
-
-# Theme colors
-PRIMARY = "#2E86AB"
-SECONDARY = "#A23B72"
-SUCCESS = "#4CAF50"
-ERROR = "#F44336"
-WARNING = "#FF9800"
-INFO = "#2196F3"
-BACKGROUND = "#F5F5F5"
-SURFACE = "#FFFFFF"
+# Teams-like palette
+TEAMS_BLUE = "#6264A7"
+TEAMS_BG = "#F3F2F1"
+TEAMS_WHITE = "#FFFFFF"
+TEAMS_GRAY = "#F0F0F0"
+TEAMS_TEXT = "#323130"
+TEAMS_SUBTEXT = "#605E5C"
+PRIMARY = TEAMS_BLUE
+SUCCESS = "#107C10"
+ERROR = "#D13438"
+WARNING = "#FFB900"
+BORDER = "#E0E0E0"
 
 
 class MailScreen(ft.Container):
-    """
-    Internal Mail Screen with compose, inbox, sent, drafts,
-    announcement, and document sharing capabilities.
-    """
-
     def __init__(self, page: ft.Page, user=None):
         super().__init__()
         self._page = page
         self.user = user
         self.expand = True
-        self.bgcolor = BACKGROUND
+        self.bgcolor = TEAMS_BG
 
-        # Get current user info
         self.current_user_id = None
         self.current_username = "User"
         if isinstance(user, dict):
@@ -62,374 +47,856 @@ class MailScreen(ft.Container):
             self.current_user_id = user.id
             self.current_username = getattr(user, 'username', 'User')
 
-        # State
         self.current_folder = "inbox"
         self.emails = []
-        self.draft_content = {}
+        self.selected_emails = set()
         self.search_query = ""
         self.reply_to_email = None
         self.forward_email = None
+        self.email_detail_dialog = None
+        self._hovered_email = None
 
-        # Build UI
+        # Multi-select recipients
+        self._to_recipients = []
+        self._cc_recipients = []
+        self._bcc_recipients = []
+
+        # Email groups
+        self._email_groups = []
+        self._load_email_groups()
+
+        # All users for selection
+        self._all_users = []
+        self._load_all_users()
+
         self.content = self._build_content()
-
-        # Load emails
         self._load_emails()
 
+    def _load_email_groups(self):
+        """Load user's email groups"""
+        try:
+            db = get_db_session()
+            self._email_groups = get_user_email_groups(
+                db, self.current_user_id)
+            db.close()
+        except:
+            pass
+
+    def _load_all_users(self):
+        try:
+            db = get_db_session()
+            self._all_users = get_all_users(db)
+            db.close()
+        except:
+            pass
+
     def _build_content(self):
-        """Build the main content"""
         return ft.Container(
             content=ft.Row([
-                # Sidebar with folders
-                self._build_sidebar(),
-                ft.VerticalDivider(width=1, color="#E0E0E0"),
-                # Main content area
-                self._build_main_content(),
+                self._build_left_nav(),
+                ft.VerticalDivider(width=1, color="#E1DFDD"),
+                self._build_main_panel()
             ], expand=True),
             expand=True,
         )
 
-    def _build_sidebar(self):
-        """Build sidebar with folder navigation"""
-        def create_folder_item(icon, label, folder, count=None):
-            is_selected = self.current_folder == folder
-
-            def handle_click(e):
+    def _build_left_nav(self):
+        def nav_item(icon, label, folder, count=0, is_active=False):
+            def click(e):
                 self.current_folder = folder
+                self.selected_emails = set()
                 self.content = self._build_content()
                 self._load_emails()
                 self._page.update()
-
             return ft.Container(
-                on_click=handle_click,
-                padding=ft.padding.symmetric(horizontal=12, vertical=10),
-                bgcolor=PRIMARY if is_selected else "transparent",
-                border_radius=8,
+                on_click=click,
+                padding=ft.padding.symmetric(horizontal=12, vertical=8),
+                bgcolor=TEAMS_BLUE if is_active else "transparent",
+                border_radius=4,
                 content=ft.Row([
                     ft.Icon(icon, size=20,
-                            color="WHITE" if is_selected else "#666"),
-                    ft.Text(label, size=14, color="WHITE" if is_selected else "#333",
-                            weight=ft.FontWeight.W_500 if is_selected else ft.FontWeight.NORMAL),
+                            color="white" if is_active else "#605E5C"),
+                    ft.Container(width=12),
+                    ft.Text(label, size=14, color="white" if is_active else TEAMS_TEXT,
+                            weight=ft.FontWeight.W_500 if is_active else ft.FontWeight.NORMAL),
                     ft.Container(expand=True),
-                    ft.Text(str(count), size=12,
-                            color="WHITE" if is_selected else "#666")
-                    if count is not None else ft.Container(),
-                ]),
+                    ft.Text(str(count), size=12, color="white" if is_active else TEAMS_SUBTEXT,
+                            weight=ft.FontWeight.W_500) if count > 0 else ft.Container(),
+                ], spacing=0),
             )
 
-        # Get unread counts
-        unread_inbox = 0
-        try:
-            db = get_db_session()
-            unread_inbox = get_unread_email_count(db, self.current_user_id)
-            db.close()
-        except:
-            pass
-
+        stats = self._get_mail_stats()
         return ft.Container(
-            width=220,
-            bgcolor=SURFACE,
-            padding=ft.padding.all(10),
+            width=260,
+            bgcolor=TEAMS_GRAY,
+            padding=ft.padding.all(8),
             content=ft.Column([
                 ft.Container(
-                    padding=ft.padding.all(10),
+                    padding=12,
                     content=ft.Row([
-                        ft.Icon(ft.Icons.EMAIL, color=PRIMARY, size=28),
-                        ft.Text("Internal Mail", size=18,
-                                weight=ft.FontWeight.BOLD, color=PRIMARY),
-                    ]),
+                        ft.Icon(ft.Icons.MAIL, size=24, color=TEAMS_BLUE),
+                        ft.Text("Mail", size=18,
+                                weight=ft.FontWeight.W_600, color=TEAMS_TEXT)
+                    ])
                 ),
-                ft.Divider(),
-                ft.Container(height=5),
-                create_folder_item(ft.Icons.INBOX_OUTLINED, "Inbox",
-                                   "inbox", unread_inbox),
-                create_folder_item(ft.Icons.SEND_OUTLINED, "Sent", "sent"),
-                create_folder_item(ft.Icons.DRAFTS_OUTLINED,
-                                   "Drafts", "drafts"),
-                ft.Divider(),
-                ft.Container(height=5),
-                ft.Text("Compose & Share", size=12, color="#999",
-                        weight=ft.FontWeight.W_500),
-                create_folder_item(ft.Icons.EDIT_OUTLINED,
-                                   "Compose", "compose"),
-                create_folder_item(ft.Icons.CAMPAIGN,
-                                   "Announcements", "announcement"),
-                create_folder_item(ft.Icons.DESCRIPTION,
-                                   "Offer Letters", "offer_letter"),
-                create_folder_item(ft.Icons.FOLDER_OPEN,
-                                   "Documents", "documents"),
-            ], spacing=2),
+                ft.Divider(height=1, color="#E1DFDD"),
+                ft.Container(height=8),
+                ft.Container(
+                    on_click=lambda e: self._go_to_compose(),
+                    padding=16,
+                    bgcolor=TEAMS_BLUE,
+                    border_radius=4,
+                    content=ft.Row([
+                        ft.Icon(ft.Icons.ADD, size=20, color="white"),
+                        ft.Text("New mail", size=14, color="white",
+                                weight=ft.FontWeight.W_500)
+                    ])
+                ),
+                ft.Container(height=16),
+                nav_item(ft.Icons.INBOX, "Inbox", "inbox", stats.get(
+                    'inbox', 0), self.current_folder == "inbox"),
+                nav_item(ft.Icons.SEND, "Sent", "sent", stats.get(
+                    'sent', 0), self.current_folder == "sent"),
+                nav_item(ft.Icons.DRAFTS_OUTLINED, "Drafts", "drafts", stats.get(
+                    'drafts', 0), self.current_folder == "drafts"),
+                nav_item(ft.Icons.STAR, "Starred", "starred",
+                         0, self.current_folder == "starred"),
+                ft.Divider(height=24, color="#E1DFDD"),
+                ft.Text("CREATE", size=11, weight=ft.FontWeight.W_600,
+                        color=TEAMS_SUBTEXT),
+                ft.Container(height=8),
+                nav_item(ft.Icons.CAMPAIGN, "Announcements", "announcement",
+                         0, self.current_folder == "announcement"),
+                nav_item(ft.Icons.DESCRIPTION, "Offer Letters",
+                         "offer_letter", 0, self.current_folder == "offer_letter"),
+                ft.Divider(height=24, color="#E1DFDD"),
+                ft.Text("GROUPS", size=11, weight=ft.FontWeight.W_600,
+                        color=TEAMS_SUBTEXT),
+                ft.Container(height=8),
+                ft.Container(
+                    on_click=lambda e: self._show_create_email_group_dialog(),
+                    padding=ft.padding.symmetric(horizontal=12, vertical=8),
+                    border_radius=4,
+                    content=ft.Row([
+                        ft.Icon(ft.Icons.GROUP_ADD, size=20, color=TEAMS_BLUE),
+                        ft.Container(width=12),
+                        ft.Text("Create Group", size=14, color=TEAMS_TEXT,
+                                weight=ft.FontWeight.W_500),
+                    ], spacing=0),
+                ),
+                ft.Container(height=4),
+                ft.Container(
+                    on_click=lambda e: self._show_email_groups_list(),
+                    padding=ft.padding.symmetric(horizontal=12, vertical=8),
+                    border_radius=4,
+                    content=ft.Row([
+                        ft.Icon(ft.Icons.FOLDER, size=20, color=TEAMS_BLUE),
+                        ft.Container(width=12),
+                        ft.Text("My Groups", size=14, color=TEAMS_TEXT,
+                                weight=ft.FontWeight.W_500),
+                    ], spacing=0),
+                ),
+                ft.Container(expand=True),
+                ft.Container(
+                    padding=12,
+                    bgcolor=TEAMS_WHITE,
+                    border_radius=8,
+                    content=ft.Column([
+                        ft.Text("Your stats", size=12,
+                                weight=ft.FontWeight.W_600, color=TEAMS_TEXT),
+                        ft.Container(height=8),
+                        ft.Row([
+                            ft.Column([
+                                ft.Text(str(stats.get('total', 0)), size=20,
+                                        weight=ft.FontWeight.BOLD, color=TEAMS_BLUE),
+                                ft.Text("Total", size=10, color=TEAMS_SUBTEXT)
+                            ]),
+                            ft.Column([
+                                ft.Text(str(stats.get('unread', 0)), size=20,
+                                        weight=ft.FontWeight.BOLD, color=ERROR),
+                                ft.Text("Unread", size=10, color=TEAMS_SUBTEXT)
+                            ])
+                        ], spacing=30)
+                    ])
+                )
+            ], spacing=0)
         )
 
-    def _build_main_content(self):
-        """Build main content area"""
-        if self.current_folder == "compose":
-            return self._build_compose_view()
-        elif self.current_folder == "reply":
-            return self._build_compose_view(is_reply=True)
-        elif self.current_folder == "forward":
-            return self._build_compose_view(is_forward=True)
-        elif self.current_folder == "announcement":
-            return self._build_announcement_view()
-        elif self.current_folder == "offer_letter":
-            return self._build_offer_letter_view()
-        elif self.current_folder in ["inbox", "sent", "drafts"]:
-            return self._build_email_list_view()
-        else:
-            return self._build_email_list_view()
-
-    def _build_compose_view(self):
-        """Build compose email view"""
-        # Get all users for recipients
-        all_users = []
+    def _get_mail_stats(self):
+        stats = {'inbox': 0, 'sent': 0, 'drafts': 0, 'unread': 0, 'total': 0}
         try:
             db = get_db_session()
-            all_users = get_all_users(db)
+            stats['unread'] = get_unread_email_count(db, self.current_user_id)
+            stats['inbox'] = len(get_user_emails(
+                db, self.current_user_id, "inbox", 1000))
+            stats['sent'] = len(get_user_emails(
+                db, self.current_user_id, "sent", 1000))
+            stats['drafts'] = len(get_user_emails(
+                db, self.current_user_id, "drafts", 1000))
+            stats['total'] = stats['inbox'] + stats['sent'] + stats['drafts']
+            db.close()
+        except:
+            pass
+        return stats
+
+    def _build_main_panel(self):
+        if self.current_folder == "compose":
+            return self._build_compose_panel()
+        elif self.current_folder == "reply":
+            return self._build_compose_panel(is_reply=True)
+        elif self.current_folder == "forward":
+            return self._build_compose_panel(is_forward=True)
+        elif self.current_folder == "announcement":
+            return self._build_announcement_panel()
+        elif self.current_folder == "offer_letter":
+            return self._build_offer_letter_panel()
+        return self._build_email_list_panel()
+
+    def _build_recipient_selector(self, label, recipients, recipient_type):
+        chips = []
+        for uid, uname in recipients:
+            # Check if it's an email group (starts with "group_")
+            if isinstance(uid, str) and uid.startswith("group_"):
+                chip = ft.Container(
+                    padding=ft.padding.symmetric(horizontal=10, vertical=6),
+                    bgcolor="#E91E63" + "15",
+                    border_radius=16,
+                    content=ft.Row([
+                        ft.Icon(ft.Icons.GROUP, size=12, color="#E91E63"),
+                        ft.Text(uname, size=12, color="#E91E63",
+                                weight=ft.FontWeight.W_500),
+                        ft.Container(
+                            on_click=lambda e, u=uid, rt=recipient_type: self._remove_recipient(
+                                u, rt),
+                            padding=2,
+                            content=ft.Icon(ft.Icons.CLOSE, size=12,
+                                            color="#E91E63"),
+                        )
+                    ], spacing=4)
+                )
+            else:
+                chip = ft.Container(
+                    padding=ft.padding.symmetric(horizontal=10, vertical=6),
+                    bgcolor=TEAMS_BLUE + "15",
+                    border_radius=16,
+                    content=ft.Row([
+                        ft.Text(uname, size=12, color=TEAMS_BLUE,
+                                weight=ft.FontWeight.W_500),
+                        ft.Container(
+                            on_click=lambda e, u=uid, rt=recipient_type: self._remove_recipient(
+                                u, rt),
+                            padding=2,
+                            content=ft.Icon(ft.Icons.CLOSE, size=12,
+                                            color=TEAMS_BLUE),
+                        )
+                    ], spacing=4)
+                )
+            chips.append(chip)
+
+        def add_recipient(e):
+            self._show_recipient_picker(recipient_type)
+
+        return ft.Column([
+            ft.Text(label, size=13, color=TEAMS_SUBTEXT,
+                    weight=ft.FontWeight.W_600),
+            ft.Container(
+                bgcolor=TEAMS_WHITE,
+                border=ft.border.all(1, "#D0D0D0"),
+                border_radius=8,
+                padding=ft.padding.all(10),
+                content=ft.Column([
+                    ft.Row(
+                        controls=chips + [
+                            ft.Container(
+                                on_click=add_recipient,
+                                padding=ft.padding.symmetric(
+                                    horizontal=12, vertical=6),
+                                bgcolor=TEAMS_BLUE + "15",
+                                border_radius=16,
+                                content=ft.Row([
+                                    ft.Icon(ft.Icons.ADD, size=14,
+                                            color=TEAMS_BLUE),
+                                    ft.Text("Add", size=12, color=TEAMS_BLUE,
+                                            weight=ft.FontWeight.W_500),
+                                ], spacing=4)
+                            )
+                        ],
+                        wrap=True,
+                        spacing=6,
+                        vertical_alignment=ft.CrossAxisAlignment.CENTER
+                    ) if chips else ft.Container(
+                        on_click=add_recipient,
+                        padding=ft.padding.symmetric(
+                            horizontal=12, vertical=10),
+                        bgcolor=TEAMS_BLUE + "10",
+                        border_radius=8,
+                        content=ft.Row([
+                            ft.Icon(ft.Icons.PERSON_ADD,
+                                    size=16, color=TEAMS_BLUE),
+                            ft.Text(f"Add {label.lower()}...",
+                                    size=13, color=TEAMS_BLUE),
+                        ], spacing=6)
+                    )
+                ], tight=True)
+            )
+        ])
+
+    def _show_recipient_picker(self, recipient_type):
+        if recipient_type == "to":
+            current_recipients = self._to_recipients
+        elif recipient_type == "cc":
+            current_recipients = self._cc_recipients
+        else:
+            current_recipients = self._bcc_recipients
+
+        user_list = [
+            (u.id, u.username, u.email or f"{u.username}@vernika.local")
+            for u in self._all_users
+            if u.id != self.current_user_id
+        ]
+
+        # Get email groups for this user
+        email_group_list = []
+        try:
+            db = get_db_session()
+            all_groups = get_all_email_groups(db)
+            for g in all_groups:
+                member_ids = get_email_group_member_ids(db, g.id)
+                # Show groups user has created or is a member of
+                if g.created_by == self.current_user_id or self.current_user_id in member_ids:
+                    email_group_list.append((g.id, g.name, len(member_ids)))
             db.close()
         except:
             pass
 
-        user_options = [ft.dropdown.Option(str(u.id), f"{u.username} ({u.email})")
-                        for u in all_users if u.id != self.current_user_id]
+        filtered_users = list(user_list)
 
-        to_field = ft.Dropdown(
-            label="To *",
-            width=400,
-            options=user_options,
+        def build_user_tiles():
+            tiles = []
+            for uid, uname, uemail in filtered_users:
+                is_sel = (uid, uname) in current_recipients
+                colors = [TEAMS_BLUE, "#107C10",
+                          "#D13438", "#FFB900", "#8764B8"]
+                avatar_color = colors[sum(ord(c)
+                                          for c in str(uname)) % len(colors)]
+
+                tile = ft.Container(
+                    padding=ft.padding.symmetric(horizontal=12, vertical=8),
+                    bgcolor=TEAMS_BLUE + "10" if is_sel else "transparent",
+                    border_radius=8,
+                    on_click=lambda e, u=uid, n=uname: toggle_user(u, n),
+                    content=ft.Row([
+                        ft.Container(
+                            width=24,
+                            height=24,
+                            border=ft.border.all(
+                                2, TEAMS_BLUE if is_sel else "#C8C8C8"),
+                            bgcolor=TEAMS_BLUE if is_sel else "transparent",
+                            border_radius=4,
+                            content=ft.Icon(
+                                ft.Icons.CHECK, size=16, color="white") if is_sel else None,
+                        ),
+                        ft.Container(width=12),
+                        ft.Container(
+                            width=36,
+                            height=36,
+                            bgcolor=avatar_color,
+                            border_radius=18,
+                            content=ft.Text(
+                                str(uname)[0].upper(), size=14, color="white", weight=ft.FontWeight.BOLD),
+                            alignment=ft.alignment.Alignment(0, 0)
+                        ),
+                        ft.Container(width=12),
+                        ft.Column([
+                            ft.Text(
+                                str(uname), size=14, weight=ft.FontWeight.W_600 if is_sel else ft.FontWeight.W_500, color=TEAMS_TEXT),
+                            ft.Text(str(uemail), size=11, color=TEAMS_SUBTEXT),
+                        ], expand=True, spacing=0),
+                    ], spacing=0)
+                )
+                tiles.append(tile)
+            return tiles
+
+        def build_group_tiles():
+            tiles = []
+            for gid, gname, member_count in email_group_list:
+                group_key = (f"group_{gid}", gname)
+                is_sel = group_key in current_recipients
+                colors = ["#E91E63", "#9C27B0",
+                          "#3F51B5", "#009688", "#FF5722"]
+                group_color = colors[gid % len(colors)]
+
+                tile = ft.Container(
+                    padding=ft.padding.symmetric(horizontal=12, vertical=8),
+                    bgcolor=TEAMS_BLUE + "10" if is_sel else "transparent",
+                    border_radius=8,
+                    on_click=lambda e, g=gid, n=gname: toggle_group(g, n),
+                    content=ft.Row([
+                        ft.Container(
+                            width=24,
+                            height=24,
+                            border=ft.border.all(
+                                2, TEAMS_BLUE if is_sel else "#C8C8C8"),
+                            bgcolor=TEAMS_BLUE if is_sel else "transparent",
+                            border_radius=4,
+                            content=ft.Icon(
+                                ft.Icons.CHECK, size=16, color="white") if is_sel else None,
+                        ),
+                        ft.Container(width=12),
+                        ft.Container(
+                            width=36,
+                            height=36,
+                            bgcolor=group_color,
+                            border_radius=18,
+                            content=ft.Icon(
+                                ft.Icons.GROUP, size=18, color="white"),
+                            alignment=ft.alignment.Alignment(0, 0)
+                        ),
+                        ft.Container(width=12),
+                        ft.Column([
+                            ft.Text(
+                                str(gname), size=14, weight=ft.FontWeight.W_600 if is_sel else ft.FontWeight.W_500, color=TEAMS_TEXT),
+                            ft.Text(f"{member_count} members",
+                                    size=11, color=TEAMS_SUBTEXT),
+                        ], expand=True, spacing=0),
+                    ], spacing=0)
+                )
+                tiles.append(tile)
+            return tiles
+
+        def toggle_user(uid, username):
+            if recipient_type == "to":
+                if (uid, username) in self._to_recipients:
+                    self._to_recipients.remove((uid, username))
+                else:
+                    self._to_recipients.append((uid, username))
+            elif recipient_type == "cc":
+                if (uid, username) in self._cc_recipients:
+                    self._cc_recipients.remove((uid, username))
+                else:
+                    self._cc_recipients.append((uid, username))
+            elif recipient_type == "bcc":
+                if (uid, username) in self._bcc_recipients:
+                    self._bcc_recipients.remove((uid, username))
+                else:
+                    self._bcc_recipients.append((uid, username))
+
+            user_column.controls = build_user_tiles()
+            update_count()
+            self._page.update()
+
+        def toggle_group(gid, gname):
+            group_key = (f"group_{gid}", gname)
+            if recipient_type == "to":
+                if group_key in self._to_recipients:
+                    self._to_recipients.remove(group_key)
+                else:
+                    self._to_recipients.append(group_key)
+            elif recipient_type == "cc":
+                if group_key in self._cc_recipients:
+                    self._cc_recipients.remove(group_key)
+                else:
+                    self._cc_recipients.append(group_key)
+            elif recipient_type == "bcc":
+                if group_key in self._bcc_recipients:
+                    self._bcc_recipients.remove(group_key)
+                else:
+                    self._bcc_recipients.append(group_key)
+
+            group_column.controls = build_group_tiles()
+            update_count()
+            self._page.update()
+
+        def update_count():
+            count = len(current_recipients)
+            count_text.value = f"{count} selected"
+            count_text.visible = count > 0
+
+        def on_search(e):
+            query = e.control.value.lower()
+            if query:
+                filtered = [(uid, uname, uemail) for uid, uname, uemail in user_list
+                            if query in str(uname).lower() or query in str(uemail).lower()]
+            else:
+                filtered = list(user_list)
+            filtered_users.clear()
+            filtered_users.extend(filter)
+            user_column.controls = build_user_tiles()
+            self._page.update()
+
+        def close_dlg(e):
+            self._page.pop_dialog()
+            # Refresh the compose panel to show selected recipients
+            self.content = self._build_content()
+            self._page.update()
+
+        search_field = ft.TextField(
+            hint_text="Search users...",
+            prefix_icon=ft.Icons.SEARCH,
+            on_change=on_search,
+            border_color=TEAMS_BLUE,
+            focused_border_color=PRIMARY,
+            text_size=14,
         )
 
-        cc_field = ft.Dropdown(
-            label="CC",
-            width=400,
-            options=user_options,
+        count_text = ft.Text("", size=12, color=TEAMS_SUBTEXT, visible=False)
+
+        user_column = ft.Column(
+            controls=build_user_tiles(),
+            spacing=4,
+            scroll=ft.ScrollMode.AUTO,
+            expand=True
         )
+
+        group_column = ft.Column(
+            controls=build_group_tiles(),
+            spacing=4,
+            scroll=ft.ScrollMode.AUTO,
+            expand=False
+        )
+
+        # Build tabs content
+        tabs_content = ft.Column([
+            ft.Container(
+                padding=ft.padding.symmetric(vertical=8),
+                content=ft.Text("Groups", size=13,
+                                weight=ft.FontWeight.W_600, color=TEAMS_SUBTEXT)
+            ) if email_group_list else ft.Container(),
+            group_column,
+            ft.Container(
+                padding=ft.padding.symmetric(vertical=8),
+                content=ft.Text("Individuals", size=13,
+                                weight=ft.FontWeight.W_600, color=TEAMS_SUBTEXT)
+            ),
+            user_column
+        ], spacing=0)
+
+        title_icon = ft.Icons.PERSON_ADD if recipient_type == "to" else (
+            ft.Icons.COPY if recipient_type == "cc" else ft.Icons.VISIBILITY_OFF)
+
+        dlg = ft.AlertDialog(
+            title=ft.Container(
+                padding=ft.padding.only(bottom=8),
+                content=ft.Column([
+                    ft.Row([
+                        ft.Icon(title_icon, color=TEAMS_BLUE, size=24),
+                        ft.Text(f"Select {recipient_type.upper()} Recipients",
+                                size=18, weight=ft.FontWeight.W_600),
+                    ]),
+                    ft.Container(height=8),
+                    search_field,
+                    ft.Container(height=4),
+                    count_text,
+                ], spacing=0)
+            ),
+            content=ft.Container(
+                width=450,
+                height=400,
+                content=tabs_content
+            ),
+            actions=[
+                ft.TextButton("Cancel", on_click=close_dlg,
+                              style=ft.ButtonStyle(color=TEAMS_SUBTEXT)),
+                ft.ElevatedButton(
+                    "Done",
+                    on_click=close_dlg,
+                    bgcolor=TEAMS_BLUE,
+                    color="white",
+                    style=ft.ButtonStyle(padding=ft.padding.symmetric(
+                        horizontal=20, vertical=10))
+                ),
+            ],
+            actions_alignment=ft.MainAxisAlignment.END,
+        )
+
+        self._page.show_dialog(dlg)
+
+    def _remove_recipient(self, uid, recipient_type):
+        if recipient_type == "to":
+            self._to_recipients = [(id, name)
+                                   for id, name in self._to_recipients if id != uid]
+        elif recipient_type == "cc":
+            self._cc_recipients = [(id, name)
+                                   for id, name in self._cc_recipients if id != uid]
+        elif recipient_type == "bcc":
+            self._bcc_recipients = [
+                (id, name) for id, name in self._bcc_recipients if id != uid]
+        self.content = self._build_content()
+        self._page.update()
+
+    def _update_recipient_display(self, recipient_type):
+        self.content = self._build_content()
+        self._page.update()
+
+    def _get_recipient_ids(self, recipients):
+        """Get list of recipient IDs, expanding groups to member IDs"""
+        recipient_ids = []
+        for uid, _ in recipients:
+            # Check if it's an email group (starts with "group_")
+            if isinstance(uid, str) and uid.startswith("group_"):
+                group_id = int(uid.replace("group_", ""))
+                try:
+                    db = get_db_session()
+                    member_ids = get_email_group_member_ids(db, group_id)
+                    recipient_ids.extend(member_ids)
+                    db.close()
+                except:
+                    pass
+            else:
+                recipient_ids.append(uid)
+        return recipient_ids
+
+    def _build_compose_panel(self, is_reply=False, is_forward=False):
+        # Recipients are preserved in instance variables
+        # They are only cleared in _go_to_compose() when starting a new message
+
+        default_subject, default_body = "", ""
+
+        if is_reply and self.reply_to_email:
+            sender = getattr(self.reply_to_email, 'sender', None)
+            if sender and sender.id != self.current_user_id:
+                if (sender.id, sender.username) not in self._to_recipients:
+                    self._to_recipients = [(sender.id, sender.username)]
+            default_subject = f"Re: {getattr(self.reply_to_email, 'subject', '')}"
+            sender_name = getattr(
+                getattr(self.reply_to_email, 'sender', None), 'username', 'Unknown')
+            default_body = f"\n\n----- Original from {sender_name} -----\n{getattr(self.reply_to_email, 'body', '')}"
+
+        if is_forward and self.forward_email:
+            default_subject = f"Fwd: {getattr(self.forward_email, 'subject', '')}"
+            sender_name = getattr(
+                getattr(self.forward_email, 'sender', None), 'username', 'Unknown')
+            default_body = f"\n\n----- Forwarded -----\nFrom: {sender_name}\n{getattr(self.forward_email, 'body', '')}"
+
+        to_selector = self._build_recipient_selector(
+            "To", self._to_recipients, "to")
+        cc_selector = self._build_recipient_selector(
+            "CC", self._cc_recipients, "cc")
+        bcc_selector = self._build_recipient_selector(
+            "BCC", self._bcc_recipients, "bcc")
 
         subject_field = ft.TextField(
-            label="Subject *",
-            width=500,
+            label="Subject",
+            value=default_subject,
+            border_color=TEAMS_BLUE,
+            focused_border_color=PRIMARY,
+            text_size=14,
         )
 
         body_field = ft.TextField(
             label="Message",
-            width=500,
-            min_lines=10,
+            value=default_body,
+            border_color=TEAMS_BLUE,
+            focused_border_color=PRIMARY,
+            min_lines=12,
+            max_lines=20,
             multiline=True,
+            text_size=14,
+            expand=True,
         )
 
-        # Category dropdown
-        category_options = [
+        category_opts = [
             ft.dropdown.Option("general", "General"),
-            ft.dropdown.Option("hr_communication", "HR Communication"),
-            ft.dropdown.Option("meeting_request", "Meeting Request"),
-            ft.dropdown.Option("announcement", "Announcement"),
+            ft.dropdown.Option("hr_communication", "HR"),
+            ft.dropdown.Option("meeting_request", "Meeting"),
+            ft.dropdown.Option("announcement", "Announcement")
         ]
         category_dropdown = ft.Dropdown(
             label="Category",
-            width=200,
-            options=category_options,
+            width=150,
+            options=category_opts,
             value="general",
+            border_color=TEAMS_BLUE,
+            focused_border_color=PRIMARY,
         )
+        error_txt = ft.Text("", color=ERROR, size=12, visible=False)
 
-        error_text = ft.Text("", color=ERROR, size=12, visible=False)
-
-        def send_email_handler(e):
-            if not to_field.value or not subject_field.value:
-                error_text.value = "Please fill in required fields!"
-                error_text.visible = True
+        def send(e):
+            if not self._to_recipients:
+                error_txt.value = "Please select at least one recipient"
+                error_txt.visible = True
+                self._page.update()
+                return
+            if not subject_field.value:
+                error_txt.value = "Please enter a subject"
+                error_txt.visible = True
                 self._page.update()
                 return
 
             try:
                 db = get_db_session()
-                recipient_ids = [int(to_field.value)]
-                cc_ids = [int(cc_field.value)] if cc_field.value else None
-
-                category = EmailCategory.GENERAL
+                cat = EmailCategory.GENERAL
                 if category_dropdown.value:
-                    category = EmailCategory(category_dropdown.value)
+                    cat = EmailCategory(category_dropdown.value)
 
-                send_email(
-                    db,
-                    sender_id=self.current_user_id,
-                    subject=subject_field.value,
-                    body=body_field.value,
-                    recipient_ids=recipient_ids,
-                    category=category,
-                    cc_ids=cc_ids
-                )
+                recipient_ids = self._get_recipient_ids(self._to_recipients)
+                cc_ids = self._get_recipient_ids(self._cc_recipients)
+                bcc_ids = self._get_recipient_ids(self._bcc_recipients)
+
+                send_email(db, self.current_user_id, subject_field.value, body_field.value,
+                           recipient_ids, cat, cc_ids=cc_ids, bcc_ids=bcc_ids)
                 db.close()
-
-                self._show_success("Email sent successfully!")
+                self._show_success("Mail sent successfully")
+                self._to_recipients = []
+                self._cc_recipients = []
+                self._bcc_recipients = []
                 self.current_folder = "sent"
                 self.content = self._build_content()
                 self._load_emails()
                 self._page.update()
             except Exception as ex:
-                error_text.value = f"Error: {str(ex)}"
-                error_text.visible = True
+                error_txt.value = str(ex)
+                error_txt.visible = True
                 self._page.update()
-
-        def save_draft(e):
-            try:
-                self.draft_content = {
-                    'to': to_field.value,
-                    'cc': cc_field.value,
-                    'subject': subject_field.value,
-                    'body': body_field.value,
-                    'category': category_dropdown.value,
-                }
-                self._show_success("Draft saved!")
-            except Exception as ex:
-                self._show_error(str(ex))
-            self._page.update()
 
         return ft.Container(
             expand=True,
-            padding=20,
+            padding=16,
             content=ft.Column([
-                ft.Text("Compose Email", size=24,
-                        weight=ft.FontWeight.BOLD, color=PRIMARY),
-                ft.Container(height=20),
-                to_field,
-                cc_field,
-                subject_field,
-                category_dropdown,
-                body_field,
-                error_text,
-                ft.Container(height=20),
+                ft.Container(
+                    padding=12,
+                    bgcolor=TEAMS_WHITE,
+                    border_radius=8,
+                    content=ft.Row([
+                        ft.Icon(ft.Icons.EDIT, size=20, color=TEAMS_BLUE),
+                        ft.Text("New message" if not is_reply and not is_forward else ("Reply" if is_reply else "Forward"),
+                                size=16, weight=ft.FontWeight.W_600, color=TEAMS_TEXT)
+                    ])
+                ),
+                ft.Container(height=12),
+                ft.Container(
+                    padding=16,
+                    bgcolor=TEAMS_WHITE,
+                    border_radius=8,
+                    content=ft.Column([
+                        to_selector,
+                        ft.Container(height=8),
+                        cc_selector,
+                        ft.Container(height=8),
+                        bcc_selector,
+                        ft.Container(height=12),
+                        subject_field,
+                        ft.Container(height=12),
+                        body_field,
+                        ft.Container(height=8),
+                        ft.Row([
+                            category_dropdown,
+                            ft.Container(expand=True),
+                            ft.IconButton(
+                                icon=ft.Icons.ATTACH_FILE,
+                                tooltip="Attach File",
+                                on_click=self._attach_file_in_compose,
+                                icon_color=TEAMS_BLUE,
+                            ),
+                            ft.IconButton(
+                                icon=ft.Icons.DELETE,
+                                tooltip="Delete Draft",
+                                on_click=lambda e: self._clear_compose(),
+                                icon_color=ERROR,
+                            ),
+                        ]),
+                        error_txt
+                    ], spacing=0)
+                ),
+                ft.Container(height=12),
                 ft.Row([
-                    ft.ElevatedButton(
-                        "Send",
-                        icon=ft.Icons.SEND,
-                        on_click=send_email_handler,
-                        style=ft.ButtonStyle(bgcolor=PRIMARY, color="WHITE"),
+                    ft.Container(expand=True),
+                    ft.Container(
+                        on_click=lambda e: self._show_success("Draft saved"),
+                        padding=ft.padding.symmetric(
+                            horizontal=16, vertical=8),
+                        bgcolor=TEAMS_GRAY,
+                        border_radius=20,
+                        content=ft.Row([
+                            ft.Icon(ft.Icons.SAVE, size=16, color=TEAMS_TEXT),
+                            ft.Text("Save Draft", size=13, color=TEAMS_TEXT)
+                        ])
                     ),
-                    ft.ElevatedButton(
-                        "Save Draft",
-                        icon=ft.Icons.DRAFTS_OUTLINED,
-                        on_click=save_draft,
-                        style=ft.ButtonStyle(bgcolor="#757575", color="WHITE"),
-                    ),
-                ]),
-            ], scroll=ft.ScrollMode.AUTO),
+                    ft.Container(width=8),
+                    ft.Container(
+                        on_click=send,
+                        padding=ft.padding.symmetric(
+                            horizontal=20, vertical=8),
+                        bgcolor=TEAMS_BLUE,
+                        border_radius=20,
+                        content=ft.Row([
+                            ft.Icon(ft.Icons.SEND, size=16, color="white"),
+                            ft.Text("Send", size=13, color="white",
+                                    weight=ft.FontWeight.W_500)
+                        ])
+                    )
+                ])
+            ], scroll=ft.ScrollMode.AUTO)
         )
 
-    def _build_announcement_view(self):
-        """Build announcement creation view"""
-        # Get all employees
-        all_users = []
-        try:
-            db = get_db_session()
-            all_users = get_all_users(db)
-            db.close()
-        except:
-            pass
-
-        user_options = [ft.dropdown.Option(str(u.id), f"{u.username} ({u.email})")
-                        for u in all_users if u.id != self.current_user_id]
-
+    def _build_announcement_panel(self):
         title_field = ft.TextField(
-            label="Announcement Title *",
-            width=500,
-        )
+            label="Title", border_color=TEAMS_BLUE, focused_border_color=PRIMARY)
+        content_field = ft.TextField(label="Content", border_color=TEAMS_BLUE,
+                                     focused_border_color=PRIMARY, min_lines=8, multiline=True)
+        error_txt = ft.Text("", color=ERROR, size=12, visible=False)
 
-        content_field = ft.TextField(
-            label="Announcement Content *",
-            width=500,
-            min_lines=8,
-            multiline=True,
-        )
-
-        priority_options = [
-            ft.dropdown.Option("normal", "Normal"),
-            ft.dropdown.Option("important", "Important"),
-            ft.dropdown.Option("high", "High Priority"),
-        ]
-        priority_dropdown = ft.Dropdown(
-            label="Priority",
-            width=200,
-            options=priority_options,
-            value="normal",
-        )
-
-        type_options = [
-            ft.dropdown.Option("general", "General"),
-            ft.dropdown.Option("event", "Event"),
-            ft.dropdown.Option("policy", "Policy Update"),
-            ft.dropdown.Option("meeting", "Meeting Notice"),
-        ]
-        type_dropdown = ft.Dropdown(
-            label="Type",
-            width=200,
-            options=type_options,
-            value="general",
-        )
-
-        error_text = ft.Text("", color=ERROR, size=12, visible=False)
-
-        def send_announcement(e):
+        def publish(e):
             if not title_field.value or not content_field.value:
-                error_text.value = "Please fill in required fields!"
-                error_text.visible = True
+                error_txt.value = "Fill all fields"
+                error_txt.visible = True
                 self._page.update()
                 return
-
             try:
                 db = get_db_session()
-                # Get all active users for announcement
                 recipient_ids = [u.id for u in get_all_users(
                     db) if u.id != self.current_user_id]
-
-                send_email(
-                    db,
-                    sender_id=self.current_user_id,
-                    subject=title_field.value,
-                    body=content_field.value,
-                    recipient_ids=recipient_ids,
-                    category=EmailCategory.ANNOUNCEMENT,
-                )
+                send_email(db, self.current_user_id, title_field.value, content_field.value,
+                           recipient_ids, EmailCategory.ANNOUNCEMENT)
                 db.close()
-
-                self._show_success("Announcement sent to all employees!")
+                self._show_success("Published!")
                 self.current_folder = "sent"
                 self.content = self._build_content()
                 self._load_emails()
                 self._page.update()
             except Exception as ex:
-                error_text.value = f"Error: {str(ex)}"
-                error_text.visible = True
+                error_txt.value = str(ex)
+                error_txt.visible = True
                 self._page.update()
 
         return ft.Container(
             expand=True,
-            padding=20,
+            padding=24,
             content=ft.Column([
-                ft.Row([
-                    ft.Icon(ft.Icons.CAMPAIGN, color=PRIMARY, size=28),
-                    ft.Text("Create Announcement", size=24,
-                            weight=ft.FontWeight.BOLD, color=PRIMARY),
-                ]),
-                ft.Container(height=10),
-                ft.Text("Send announcements to all employees",
-                        size=14, color="#666"),
-                ft.Container(height=20),
-                title_field,
-                ft.Row([type_dropdown, priority_dropdown], spacing=20),
-                content_field,
-                error_text,
-                ft.Container(height=20),
-                ft.ElevatedButton(
-                    "Publish Announcement",
-                    icon=ft.Icons.CAMPAIGN,
-                    on_click=send_announcement,
-                    style=ft.ButtonStyle(bgcolor=ERROR, color="WHITE"),
+                ft.Container(
+                    padding=16,
+                    bgcolor=TEAMS_WHITE,
+                    border_radius=8,
+                    content=ft.Row([
+                        ft.Icon(ft.Icons.CAMPAIGN, size=24, color=ERROR),
+                        ft.Text("Announcement", size=20,
+                                weight=ft.FontWeight.W_600, color=TEAMS_TEXT)
+                    ])
                 ),
-            ], scroll=ft.ScrollMode.AUTO),
+                ft.Container(height=16),
+                ft.Container(
+                    padding=20,
+                    bgcolor=TEAMS_WHITE,
+                    border_radius=8,
+                    content=ft.Column([title_field, ft.Container(
+                        height=12), content_field, error_txt])
+                ),
+                ft.Container(height=16),
+                ft.Container(
+                    on_click=publish,
+                    padding=16,
+                    bgcolor=ERROR,
+                    border_radius=4,
+                    content=ft.Row([
+                        ft.Icon(ft.Icons.CAMPAIGN, size=18, color="white"),
+                        ft.Text("Publish", size=14, color="white",
+                                weight=ft.FontWeight.W_500)
+                    ])
+                )
+            ], scroll=ft.ScrollMode.AUTO)
         )
 
-    def _build_offer_letter_view(self):
-        """Build offer letter creation view"""
-        # Get all employees
+    def _build_offer_letter_panel(self):
         all_users = []
         try:
             db = get_db_session()
@@ -438,431 +905,1058 @@ class MailScreen(ft.Container):
         except:
             pass
 
-        user_options = [ft.dropdown.Option(str(u.id), f"{u.username} ({u.email})")
-                        for u in all_users if u.id != self.current_user_id]
+        user_opts = [ft.dropdown.Option(
+            str(u.id), f"{u.username}") for u in all_users if u.id != self.current_user_id]
+        to_dropdown = ft.Dropdown(
+            label="Employee", width=350, options=user_opts)
+        position_field = ft.TextField(label="Position", width=350)
+        salary_field = ft.TextField(label="Salary", width=200)
+        date_field = ft.TextField(label="Start Date", width=200)
+        terms_field = ft.TextField(label="Terms", width=500, min_lines=5, multiline=True,
+                                   value="1. Subject to verification\n2. 30 days notice\n3. Company policies")
+        error_txt = ft.Text("", color=ERROR, size=12, visible=False)
 
-        to_field = ft.Dropdown(
-            label="Send To (Employee) *",
-            width=400,
-            options=user_options,
-        )
-
-        position_field = ft.TextField(
-            label="Position/Designation *",
-            width=400,
-        )
-
-        salary_field = ft.TextField(
-            label="Salary Package",
-            width=200,
-        )
-
-        start_date_field = ft.TextField(
-            label="Proposed Start Date",
-            width=200,
-            hint_text="YYYY-MM-DD",
-        )
-
-        terms_field = ft.TextField(
-            label="Terms & Conditions",
-            width=500,
-            min_lines=6,
-            multiline=True,
-            value="1. Employment is subject to background verification.\n2. Notice period of 30 days applies.\n3. Company policies apply.",
-        )
-
-        error_text = ft.Text("", color=ERROR, size=12, visible=False)
-
-        def send_offer_letter(e):
-            if not to_field.value or not position_field.value:
-                error_text.value = "Please fill in required fields!"
-                error_text.visible = True
+        def send_offer(e):
+            if not to_dropdown.value or not position_field.value:
+                error_txt.value = "Fill required fields"
+                error_txt.visible = True
                 self._page.update()
                 return
-
-            # Build offer letter content
-            subject = f"Offer Letter - {position_field.value}"
-            body = f"""
-Dear Employee,
-
-We are pleased to offer you the position of {position_field.value}.
-
-{'Salary: ' + salary_field.value if salary_field.value else ''}
-{'Proposed Start Date: ' + start_date_field.value if start_date_field.value else ''}
-
-Terms and Conditions:
-{terms_field.value}
-
-Please sign and return the acceptance copy.
-
-Best regards,
-{self.current_username}
-HR Department
-            """
-
+            body = f"Dear Employee,\n\nWe offer you {position_field.value}.\n\nSalary: {salary_field.value or 'Negotiable'}\nStart: {date_field.value or 'TBD'}\n\nTerms:\n{terms_field.value}\n\nBest,\n{self.current_username}\nHR"
             try:
                 db = get_db_session()
-                send_email(
-                    db,
-                    sender_id=self.current_user_id,
-                    subject=subject,
-                    body=body,
-                    recipient_ids=[int(to_field.value)],
-                    category=EmailCategory.PROMOTION,
-                )
+                send_email(db, self.current_user_id, f"Offer - {position_field.value}",
+                           body, [int(to_dropdown.value)], EmailCategory.PROMOTION)
                 db.close()
-
-                self._show_success("Offer letter sent successfully!")
+                self._show_success("Sent!")
                 self.current_folder = "sent"
                 self.content = self._build_content()
                 self._load_emails()
                 self._page.update()
             except Exception as ex:
-                error_text.value = f"Error: {str(ex)}"
-                error_text.visible = True
+                error_txt.value = str(ex)
+                error_txt.visible = True
                 self._page.update()
 
         return ft.Container(
             expand=True,
-            padding=20,
+            padding=24,
             content=ft.Column([
-                ft.Row([
-                    ft.Icon(ft.Icons.DESCRIPTION, color=PRIMARY, size=28),
-                    ft.Text("Send Offer Letter", size=24,
-                            weight=ft.FontWeight.BOLD, color=PRIMARY),
-                ]),
-                ft.Container(height=10),
-                ft.Text(
-                    "Generate and send official offer letters to employees", size=14, color="#666"),
-                ft.Container(height=20),
-                to_field,
-                position_field,
-                ft.Row([salary_field, start_date_field], spacing=20),
-                terms_field,
-                error_text,
-                ft.Container(height=20),
-                ft.ElevatedButton(
-                    "Send Offer Letter",
-                    icon=ft.Icons.SEND,
-                    on_click=send_offer_letter,
-                    style=ft.ButtonStyle(bgcolor=SUCCESS, color="WHITE"),
+                ft.Container(
+                    padding=16,
+                    bgcolor=TEAMS_WHITE,
+                    border_radius=8,
+                    content=ft.Row([
+                        ft.Icon(ft.Icons.DESCRIPTION, size=24, color=SUCCESS),
+                        ft.Text("Offer Letter", size=20,
+                                weight=ft.FontWeight.W_600, color=TEAMS_TEXT)
+                    ])
                 ),
-            ], scroll=ft.ScrollMode.AUTO),
+                ft.Container(height=16),
+                ft.Container(
+                    padding=20,
+                    bgcolor=TEAMS_WHITE,
+                    border_radius=8,
+                    content=ft.Column([
+                        to_dropdown,
+                        ft.Container(height=12),
+                        position_field,
+                        ft.Container(height=12),
+                        ft.Row([salary_field, date_field], spacing=20),
+                        ft.Container(height=12),
+                        terms_field,
+                        error_txt
+                    ])
+                ),
+                ft.Container(height=16),
+                ft.Container(
+                    on_click=send_offer,
+                    padding=16,
+                    bgcolor=SUCCESS,
+                    border_radius=4,
+                    content=ft.Row([
+                        ft.Icon(ft.Icons.SEND, size=18, color="white"),
+                        ft.Text("Send", size=14, color="white",
+                                weight=ft.FontWeight.W_500)
+                    ])
+                )
+            ], scroll=ft.ScrollMode.AUTO)
         )
 
-    def _build_email_list_view(self):
-        """Build email list view for inbox/sent/drafts"""
-        header_text = {
-            "inbox": "Inbox",
-            "sent": "Sent Messages",
-            "drafts": "Drafts"
-        }.get(self.current_folder, "Emails")
+    def _build_email_list_panel(self):
+        folder_names = {
+            "inbox": ("Inbox", ft.Icons.INBOX),
+            "sent": ("Sent", ft.Icons.SEND),
+            "drafts": ("Drafts", ft.Icons.DRAFTS_OUTLINED),
+            "starred": ("Starred", ft.Icons.STAR),
+            "announcement": ("Announcements", ft.Icons.CAMPAIGN),
+            "offer_letter": ("Offer Letters", ft.Icons.DESCRIPTION)
+        }
+        title, icon = folder_names.get(
+            self.current_folder, ("Mail", ft.Icons.MAIL))
 
-        # Search bar
-        search_field = ft.TextField(
-            hint_text="Search emails...",
-            width=300,
-            dense=True,
+        search = ft.TextField(
+            hint_text="Search", width=200, dense=True,
             prefix_icon=ft.Icons.SEARCH,
-            value=self.search_query,
-            on_change=self._handle_search,
+            on_change=lambda e: self._handle_search(e)
         )
+
+        def refresh(e):
+            self._load_emails()
+            self.content = self._build_content()
+            self._page.update()
+
+        def bulk_delete(e):
+            if self.selected_emails:
+                for eid in list(self.selected_emails):
+                    try:
+                        db = get_db_session()
+                        delete_email(db, eid)
+                        db.close()
+                    except:
+                        pass
+                self._show_success(f"Deleted {len(self.selected_emails)}")
+                self.selected_emails = set()
+                self._load_emails()
+                self.content = self._build_content()
+                self._page.update()
+
+        def bulk_send(e):
+            if self.selected_emails:
+                self._show_bulk_send_dialog()
 
         if not self.emails:
             return ft.Container(
                 expand=True,
                 content=ft.Column([
                     ft.Container(
-                        padding=20,
-                        content=ft.Column([
-                            ft.Row([
-                                ft.Text(
-                                    header_text, size=24, weight=ft.FontWeight.BOLD, color=PRIMARY),
-                                ft.Container(expand=True),
-                                search_field,
-                                ft.ElevatedButton(
-                                    "Compose",
-                                    icon=ft.Icons.EDIT_OUTLINED,
-                                    on_click=lambda e: self._go_to_compose(),
-                                    style=ft.ButtonStyle(
-                                        bgcolor=PRIMARY, color="WHITE"),
-                                ),
-                            ]),
-                        ]),
+                        padding=16,
+                        bgcolor=TEAMS_WHITE,
+                        content=ft.Row([
+                            ft.Icon(icon, size=22, color=TEAMS_BLUE),
+                            ft.Text(
+                                title, size=18, weight=ft.FontWeight.W_600, color=TEAMS_TEXT),
+                            ft.Container(expand=True),
+                            search,
+                            ft.Container(on_click=refresh, padding=8, bgcolor=TEAMS_GRAY, border_radius=4,
+                                         content=ft.Icon(ft.Icons.REFRESH, size=18, color=TEAMS_TEXT))
+                        ])
                     ),
                     ft.Container(
                         expand=True,
                         content=ft.Column([
-                            ft.Icon(ft.Icons.INBOX_OUTLINED,
-                                    size=64, color="#BDBDBD"),
-                            ft.Text("No emails yet", size=16, color="#757575"),
+                            ft.Container(padding=30, bgcolor=TEAMS_WHITE, border_radius=50,
+                                         content=ft.Icon(icon, size=48, color="#C8C8C8")),
+                            ft.Text("No messages", size=16,
+                                    color=TEAMS_SUBTEXT),
+                            ft.Container(height=10),
+                            ft.Container(on_click=lambda e: self._go_to_compose(), padding=16,
+                                         bgcolor=TEAMS_BLUE, border_radius=4,
+                                         content=ft.Text("New mail", size=14, color="white"))
                         ], horizontal_alignment=ft.CrossAxisAlignment.CENTER),
-                        alignment=ft.alignment.Alignment(0, 0),
-                    ),
-                ]),
+                        alignment=ft.alignment.Alignment(0, 0)
+                    )
+                ])
             )
 
-        # Build email cards
-        email_cards = []
-        for email in self.emails:
-            card = self._build_email_card(email)
-            email_cards.append(card)
+        email_items = [self._build_email_item(e) for e in self.emails]
 
         return ft.Container(
             expand=True,
             content=ft.Column([
                 ft.Container(
-                    padding=20,
+                    padding=12,
+                    bgcolor=TEAMS_WHITE,
                     content=ft.Row([
-                        ft.Text(header_text, size=24,
-                                weight=ft.FontWeight.BOLD, color=PRIMARY),
+                        ft.Icon(icon, size=20, color=TEAMS_BLUE),
+                        ft.Text(title, size=16,
+                                weight=ft.FontWeight.W_600, color=TEAMS_TEXT),
+                        ft.Text(f"({len(self.emails)})",
+                                size=12, color=TEAMS_SUBTEXT),
                         ft.Container(expand=True),
-                        search_field,
-                        ft.ElevatedButton(
-                            "Compose",
-                            icon=ft.Icons.EDIT_OUTLINED,
-                            on_click=lambda e: self._go_to_compose(),
-                            style=ft.ButtonStyle(
-                                bgcolor=PRIMARY, color="WHITE"),
-                        ),
-                    ]),
+                        search,
+                        ft.Container(width=8),
+                        ft.Container(on_click=refresh, padding=6, bgcolor=TEAMS_GRAY, border_radius=4,
+                                     content=ft.Icon(ft.Icons.REFRESH, size=16, color=TEAMS_TEXT)),
+                        ft.Container(width=8),
+                        ft.Container(on_click=bulk_send, padding=6,
+                                     bgcolor=SUCCESS if self.selected_emails else TEAMS_GRAY, border_radius=4,
+                                     content=ft.Row([
+                                         ft.Icon(
+                                             ft.Icons.SEND, size=16, color="white" if self.selected_emails else TEAMS_TEXT),
+                                         ft.Text(
+                                             "Send to Selected", size=11, color="white" if self.selected_emails else TEAMS_TEXT)
+                                     ], spacing=4)) if self.selected_emails else ft.Container(),
+                        ft.Container(width=8),
+                        ft.Container(on_click=bulk_delete, padding=6,
+                                     bgcolor=ERROR if self.selected_emails else TEAMS_GRAY, border_radius=4,
+                                     content=ft.Icon(ft.Icons.DELETE, size=16, color="white" if self.selected_emails else TEAMS_TEXT)) if self.selected_emails else ft.Container()
+                    ])
                 ),
-                ft.Column(email_cards, spacing=10, scroll=ft.ScrollMode.AUTO),
-            ]),
+                ft.Container(
+                    padding=8,
+                    bgcolor="#FFF8E1" if self.selected_emails else "transparent",
+                    content=ft.Text(f"{len(self.selected_emails)} selected",
+                                    size=13, color=WARNING, weight=ft.FontWeight.W_500)
+                    if self.selected_emails else ft.Container()
+                ) if self.selected_emails else ft.Container(),
+                ft.Column(email_items, spacing=2,
+                          scroll=ft.ScrollMode.AUTO, expand=True)
+            ])
         )
 
-    def _build_email_card(self, email):
-        """Build an email card"""
+    def _show_bulk_send_dialog(self):
+        def close_dlg(e):
+            self._page.pop_dialog()
+            self._page.update()
+
+        subject_field = ft.TextField(label="Subject", border_color=TEAMS_BLUE)
+        body_field = ft.TextField(
+            label="Message", multiline=True, min_lines=5, border_color=TEAMS_BLUE)
+        error_txt = ft.Text("", color=ERROR, size=12, visible=False)
+
+        def send_bulk(e):
+            if not subject_field.value or not body_field.value:
+                error_txt.value = "Please fill all fields"
+                error_txt.visible = True
+                self._page.update()
+                return
+
+            sender_ids = set()
+            for email in self.emails:
+                if getattr(email, 'id', 0) in self.selected_emails:
+                    sender = getattr(email, 'sender', None)
+                    if sender and sender.id != self.current_user_id:
+                        sender_ids.add(sender.id)
+
+            if not sender_ids:
+                error_txt.value = "No valid recipients found"
+                error_txt.visible = True
+                self._page.update()
+                return
+
+            try:
+                db = get_db_session()
+                for recipient_id in sender_ids:
+                    send_email(db, self.current_user_id, subject_field.value, body_field.value,
+                               [recipient_id], EmailCategory.GENERAL)
+                db.close()
+                self._show_success(f"Sent to {len(sender_ids)} recipients")
+                self.selected_emails = set()
+                close_dlg(e)
+                self.current_folder = "sent"
+                self.content = self._build_content()
+                self._load_emails()
+                self._page.update()
+            except Exception as ex:
+                error_txt.value = str(ex)
+                error_txt.visible = True
+                self._page.update()
+
+        dlg = ft.AlertDialog(
+            title=ft.Text("Send to Selected Contacts"),
+            content=ft.Column([
+                ft.Text(
+                    f"Sending to {len(self.selected_emails)} selected emails", size=12, color=TEAMS_SUBTEXT),
+                ft.Container(height=12),
+                subject_field,
+                ft.Container(height=8),
+                body_field,
+                error_txt
+            ], tight=True),
+            actions=[
+                ft.TextButton("Cancel", on_click=close_dlg),
+                ft.ElevatedButton("Send", on_click=send_bulk,
+                                  bgcolor=TEAMS_BLUE, color="white")
+            ]
+        )
+        self._page.show_dialog(dlg)
+
+    def _build_email_item(self, email):
         is_unread = not getattr(email, 'is_read', False)
-
-        # Get sender info
+        email_id = getattr(email, 'id', 0)
+        is_selected = email_id in self.selected_emails
         sender = getattr(email, 'sender', None)
-        sender_name = sender.username if sender else "Unknown"
-        sender_email = sender.email if sender else ""
-
-        # Get subject
+        sender_name = getattr(sender, 'username',
+                              'Unknown') if sender else "Unknown"
         subject = getattr(email, 'subject', 'No Subject')
-
-        # Get body preview
         body = getattr(email, 'body', '')
-        body_preview = body[:100] + '...' if len(body) > 100 else body
+        preview = body[:60] + '...' if len(body) > 60 else body
+        category = getattr(email, 'category', EmailCategory.GENERAL)
+        created_at = getattr(email, 'created_at', datetime.now())
 
-        def handle_reply(e):
+        cat_color = {
+            EmailCategory.GENERAL: TEAMS_BLUE,
+            EmailCategory.HR_COMMUNICATION: SUCCESS,
+            EmailCategory.MEETING_REQUEST: WARNING,
+            EmailCategory.ANNOUNCEMENT: ERROR,
+            EmailCategory.PROMOTION: "#8764B8"
+        }.get(category, TEAMS_BLUE)
+
+        def toggle_select(e):
+            if is_selected:
+                self.selected_emails.discard(email_id)
+            else:
+                self.selected_emails.add(email_id)
+            self.content = self._build_content()
+            self._page.update()
+
+        def reply(e):
+            e.stop_propagation()
             self.reply_to_email = email
             self.current_folder = "reply"
             self.content = self._build_content()
             self._page.update()
 
-        def handle_forward(e):
+        def forward(e):
+            e.stop_propagation()
             self.forward_email = email
             self.current_folder = "forward"
             self.content = self._build_content()
             self._page.update()
 
-        def handle_delete(e):
-            self._delete_email(email)
+        def delete_item(e):
+            e.stop_propagation()
+            try:
+                db = get_db_session()
+                delete_email(db, email_id)
+                db.close()
+                self._show_success("Deleted")
+                self._load_emails()
+                self.content = self._build_content()
+                self._page.update()
+            except:
+                pass
 
-        def handle_card_click(e):
-            self._view_email(email.id)
+        action_buttons = ft.Container(
+            opacity=0,
+            animate_opacity=200,
+            content=ft.Row([
+                ft.IconButton(icon=ft.Icons.REPLY, icon_size=16,
+                              tooltip="Reply", on_click=reply, bgcolor="transparent"),
+                ft.IconButton(icon=ft.Icons.FORWARD, icon_size=16,
+                              tooltip="Forward", on_click=forward, bgcolor="transparent"),
+                ft.IconButton(icon=ft.Icons.DELETE, icon_size=16, tooltip="Delete",
+                              on_click=delete_item, bgcolor="transparent"),
+            ], spacing=0)
+        )
 
-        # Build card content
-        card_content = ft.Container(
-            padding=15,
-            on_click=handle_card_click,
-            content=ft.Column([
-                ft.Row([
-                    ft.Column([
+        container_ref = {"container": None}
+
+        def on_hover(e):
+            if e.data == "true":
+                if container_ref["container"]:
+                    container_ref["container"].bgcolor = "#F5F5F5"
+                action_buttons.opacity = 1
+            else:
+                if container_ref["container"]:
+                    container_ref["container"].bgcolor = TEAMS_WHITE
+                action_buttons.opacity = 0
+            self._page.update()
+
+        if created_at.date() == datetime.now().date():
+            time_str = created_at.strftime('%I:%M %p')
+        elif created_at.date() == datetime.now().date() - __import__('datetime').timedelta(days=1):
+            time_str = "Yesterday"
+        else:
+            time_str = created_at.strftime('%b %d')
+
+        email_container = ft.Container(
+            on_click=lambda e: self._show_email_popup(email),
+            on_hover=on_hover,
+            padding=ft.padding.symmetric(horizontal=12, vertical=8),
+            bgcolor=TEAMS_WHITE,
+            border=ft.border.only(bottom=ft.BorderSide(1, "#EDEBE9")),
+            content=ft.Row([
+                ft.Container(
+                    on_click=toggle_select,
+                    padding=4,
+                    content=ft.Container(
+                        width=18,
+                        height=18,
+                        border=ft.border.all(
+                            2, TEAMS_BLUE if is_selected else "#C8C8C8"),
+                        bgcolor=TEAMS_BLUE if is_selected else "transparent",
+                        border_radius=4,
+                        content=ft.Icon(ft.Icons.CHECK, size=14,
+                                        color="white") if is_selected else None
+                    )
+                ),
+                ft.Container(width=8),
+                ft.Icon(ft.Icons.STAR, size=16, color=WARNING if getattr(
+                    email, 'is_starred', False) else "#C8C8C8"),
+                ft.Container(width=8),
+                ft.Container(
+                    width=36,
+                    height=36,
+                    bgcolor=TEAMS_BLUE,
+                    border_radius=18,
+                    content=ft.Text(sender_name[0].upper(
+                    ), size=14, color="white", weight=ft.FontWeight.BOLD),
+                    alignment=ft.alignment.Alignment(0, 0)
+                ),
+                ft.Container(width=12),
+                ft.Column([
+                    ft.Row([
                         ft.Text(
-                            sender_name,
-                            size=14, weight=ft.FontWeight.BOLD if is_unread else ft.FontWeight.NORMAL,
-                        ),
-                        ft.Text(
-                            sender_email,
-                            size=11, color="#999",
-                        ),
-                    ], expand=True),
-                    ft.Column([
-                        ft.Text(
-                            getattr(email, 'created_at', datetime.now()
-                                    ).strftime('%Y-%m-%d %H:%M'),
-                            size=11, color="#999",
-                        ),
-                        ft.Container(height=5),
-                        ft.Row([
-                            ft.IconButton(
-                                icon=ft.Icons.REPLY,
-                                icon_size=18,
-                                tooltip="Reply",
-                                on_click=handle_reply,
-                            ),
-                            ft.IconButton(
-                                icon=ft.Icons.FORWARD,
-                                icon_size=18,
-                                tooltip="Forward",
-                                on_click=handle_forward,
-                            ),
-                            ft.IconButton(
-                                icon=ft.Icons.DELETE_OUTLINE,
-                                icon_size=18,
-                                tooltip="Delete",
-                                icon_color=ERROR,
-                                on_click=handle_delete,
-                            ),
-                        ], spacing=0),
+                            sender_name, size=13, weight=ft.FontWeight.W_600 if is_unread else ft.FontWeight.NORMAL, color=TEAMS_TEXT),
+                        ft.Container(expand=True),
+                        ft.Text(time_str, size=11, color=TEAMS_SUBTEXT),
                     ]),
-                ]),
-                ft.Text(
-                    subject,
-                    size=14, weight=ft.FontWeight.BOLD if is_unread else ft.FontWeight.NORMAL,
+                    ft.Container(height=1),
+                    ft.Text(subject, size=12, weight=ft.FontWeight.W_600 if is_unread else ft.FontWeight.NORMAL,
+                            color=TEAMS_TEXT, overflow=ft.TextOverflow.ELLIPSIS),
+                    ft.Text(preview, size=11, color=TEAMS_SUBTEXT,
+                            max_lines=1, overflow=ft.TextOverflow.ELLIPSIS)
+                ], expand=True, spacing=0),
+                ft.Container(width=8),
+                ft.Container(
+                    padding=ft.padding.symmetric(horizontal=6, vertical=2),
+                    bgcolor=cat_color,
+                    border_radius=8,
+                    content=ft.Text(category.name[:3].upper() if hasattr(
+                        category, 'name') else "GEN", size=9, color="white", weight=ft.FontWeight.BOLD)
                 ),
-                ft.Text(
-                    body_preview,
-                    size=12, color="#666",
-                ),
-            ]),
+                ft.Container(width=8),
+                action_buttons
+            ], spacing=0, vertical_alignment=ft.CrossAxisAlignment.CENTER)
         )
 
-        return ft.Card(
-            content=card_content,
-            elevation=1 if is_unread else 0,
-        )
+        container_ref["container"] = email_container
+        return email_container
+
+    def _handle_search(self, e):
+        self.search_query = e.control.value.lower()
+        self._load_emails()
+        if self.search_query:
+            self.emails = [em for em in self.emails
+                           if self.search_query in getattr(em, 'subject', '').lower()
+                           or self.search_query in getattr(em, 'body', '').lower()]
+        self.content = self._build_content()
+        self._page.update()
 
     def _go_to_compose(self):
-        """Go to compose view"""
+        # Clear recipients when starting a new compose
+        self._to_recipients = []
+        self._cc_recipients = []
+        self._bcc_recipients = []
         self.current_folder = "compose"
         self.content = self._build_content()
         self._page.update()
 
-    def _handle_search(self, e):
-        """Handle search input"""
-        self.search_query = e.control.value.lower()
-        self._load_emails()
-        self._refresh_email_list()
-
-    def _refresh_email_list(self):
-        """Refresh email list"""
-        if self.emails and self.search_query:
-            # Filter emails by search query
-            filtered = []
-            for email in self.emails:
-                subject = getattr(email, 'subject', '').lower()
-                body = getattr(email, 'body', '').lower()
-                sender = getattr(getattr(email, 'sender', None), 'username', '').lower(
-                ) if hasattr(email, 'sender') else ''
-                if self.search_query in subject or self.search_query in body or self.search_query in sender:
-                    filtered.append(email)
-            self.emails = filtered
+    def _clear_compose(self):
+        """Clear compose fields and go back to inbox"""
+        self._to_recipients = []
+        self._cc_recipients = []
+        self._bcc_recipients = []
+        self.current_folder = "inbox"
         self.content = self._build_content()
         self._page.update()
 
+    def _attach_file_in_compose(self, e=None):
+        """Attach file in compose mail"""
+        # Initialize file picker if not already done
+        if not hasattr(self, '_file_picker') or not self._file_picker:
+            self._file_picker = ft.FilePicker()
+            self._page.services.append(self._file_picker)
+
+        # Store selected file path
+        self._attached_file_path = {"path": None, "name": None}
+
+        def handle_picked_files(files):
+            """Process picked files after selection"""
+            try:
+                if not files:
+                    return
+
+                file_info = files[0]
+                file_path = file_info.path if hasattr(
+                    file_info, 'path') else str(file_info)
+                file_name = file_path.split(
+                    '/')[-1] if '/' in file_path else file_path
+
+                # Store the file path
+                self._attached_file_path["path"] = file_path
+                self._attached_file_path["name"] = file_name
+
+                # Show success message with filename
+                snack = ft.SnackBar(content=ft.Text(
+                    f"Attached: {file_name}"), bgcolor=SUCCESS)
+                self._page.overlay.append(snack)
+                snack.open = True
+                self._page.update()
+
+            except Exception as ex:
+                print(f"[Mail] Error handling attached file: {ex}")
+                snack = ft.SnackBar(content=ft.Text(
+                    f"Error attaching file: {ex}"), bgcolor=ERROR)
+                self._page.overlay.append(snack)
+                snack.open = True
+                self._page.update()
+
+        async def pick_and_attach():
+            """Async function to pick files"""
+            try:
+                files = await self._file_picker.pick_files(
+                    dialog_title="Choose a file to attach",
+                    file_type=ft.FilePickerFileType.ANY,
+                )
+                handle_picked_files(files)
+            except Exception as ex:
+                print(f"[Mail] File picker error: {ex}")
+                snack = ft.SnackBar(content=ft.Text(
+                    f"Error opening file picker: {ex}"), bgcolor=ERROR)
+                self._page.overlay.append(snack)
+                snack.open = True
+                self._page.update()
+
+        # Run the async function
+        self._page.run_task(pick_and_attach)
+
     def _load_emails(self):
-        """Load emails for current folder"""
         self.emails = []
         try:
             db = get_db_session()
             self.emails = get_user_emails(
                 db, self.current_user_id, self.current_folder)
             db.close()
-        except Exception as e:
-            print(f"Error loading emails: {e}")
+        except:
+            pass
 
     def _view_email(self, email_id):
-        """View email details"""
         try:
             db = get_db_session()
             email = get_email_by_id(db, email_id)
-
-            # Mark as read
             if email and not email.is_read:
                 mark_email_as_read(db, email_id, self.current_user_id)
-
             db.close()
-
-            # Show email detail
             if email:
-                self._show_email_detail(email)
-        except Exception as e:
-            print(f"Error viewing email: {e}")
+                self._show_email_popup(email)
+        except:
+            pass
 
-    def _delete_email(self, email):
-        """Delete an email"""
-        try:
-            db = get_db_session()
-            delete_email(db, email.id)
-            db.close()
-            self._show_success("Email deleted!")
-            self._load_emails()
+    def _show_email_popup(self, email):
+        sender = getattr(email, 'sender', None)
+        sender_name = getattr(sender, 'username',
+                              'Unknown') if sender else "Unknown"
+        sender_email = getattr(sender, 'email', '') if sender else ""
+        subject = getattr(email, 'subject', 'No Subject')
+        body = getattr(email, 'body', '')
+        created_at = getattr(email, 'created_at', datetime.now())
+        category = getattr(email, 'category', EmailCategory.GENERAL)
+        email_id = getattr(email, 'id', 0)
+
+        cat_color = {
+            EmailCategory.GENERAL: TEAMS_BLUE,
+            EmailCategory.HR_COMMUNICATION: SUCCESS,
+            EmailCategory.MEETING_REQUEST: WARNING,
+            EmailCategory.ANNOUNCEMENT: ERROR,
+            EmailCategory.PROMOTION: "#8764B8"
+        }.get(category, TEAMS_BLUE)
+
+        def close_dialog(e=None):
+            self._page.pop_dialog()
+            self._page.update()
+
+        def reply(e):
+            close_dialog()
+            self.reply_to_email = email
+            self.current_folder = "reply"
             self.content = self._build_content()
             self._page.update()
-        except Exception as e:
-            self._show_error(f"Error deleting email: {e}")
 
-    def _show_email_detail(self, email):
-        """Show email in detail dialog"""
-        def close_dlg(e):
-            self.page.dialog.open = False
-            self.page.update()
+        def forward(e):
+            close_dialog()
+            self.forward_email = email
+            self.current_folder = "forward"
+            self.content = self._build_content()
+            self._page.update()
 
-        detail_content = ft.Container(
-            width=500,
+        def delete_email_action(e):
+            try:
+                db = get_db_session()
+                delete_email(db, email_id)
+                db.close()
+                close_dialog()
+                self._show_success("Deleted")
+                self._load_emails()
+                self.content = self._build_content()
+                self._page.update()
+            except:
+                pass
+
+        try:
+            db = get_db_session()
+            if not getattr(email, 'is_read', False):
+                mark_email_as_read(db, email_id, self.current_user_id)
+            db.close()
+        except:
+            pass
+
+        email_content = ft.Container(
+            width=600,
+            height=500,
+            padding=20,
             content=ft.Column([
-                ft.Text(getattr(email, 'subject', 'No Subject'),
-                        size=20, weight=ft.FontWeight.BOLD),
-                ft.Divider(),
-                ft.Row([
-                    ft.Text("From: ", size=12, weight=ft.FontWeight.BOLD),
-                    ft.Text(
-                        getattr(email, 'sender', None).username if hasattr(
-                            email, 'sender') else "Unknown",
-                        size=12,
-                    ),
-                ]),
-                ft.Row([
-                    ft.Text("Date: ", size=12, weight=ft.FontWeight.BOLD),
-                    ft.Text(
-                        getattr(email, 'created_at', datetime.now()
-                                ).strftime('%Y-%m-%d %H:%M'),
-                        size=12,
-                    ),
-                ]),
-                ft.Divider(),
-                ft.Text(getattr(email, 'body', ''), size=14),
-            ], scroll=ft.ScrollMode.AUTO),
-            height=400,
+                ft.Container(
+                    content=ft.Row([
+                        ft.Container(
+                            width=48,
+                            height=48,
+                            bgcolor=TEAMS_BLUE,
+                            border_radius=24,
+                            content=ft.Text(sender_name[0].upper(
+                            ), size=20, color="white", weight=ft.FontWeight.BOLD),
+                            alignment=ft.alignment.Alignment(0, 0)
+                        ),
+                        ft.Container(width=12),
+                        ft.Column([
+                            ft.Row([
+                                ft.Text(
+                                    sender_name, size=16, weight=ft.FontWeight.W_600, color=TEAMS_TEXT),
+                                ft.Container(width=8),
+                                ft.Container(
+                                    padding=ft.padding.symmetric(
+                                        horizontal=8, vertical=2),
+                                    bgcolor=cat_color,
+                                    border_radius=10,
+                                    content=ft.Text(category.name.upper() if hasattr(
+                                        category, 'name') else "GENERAL", size=10, color="white", weight=ft.FontWeight.BOLD)
+                                ),
+                            ]),
+                            ft.Text(sender_email, size=12,
+                                    color=TEAMS_SUBTEXT),
+                        ]),
+                        ft.Container(expand=True),
+                        ft.Text(created_at.strftime('%b %d, %Y %I:%M %p'),
+                                size=12, color=TEAMS_SUBTEXT),
+                    ], alignment=ft.MainAxisAlignment.CENTER)
+                ),
+                ft.Divider(height=24, color="#E1DFDD"),
+                ft.Text(subject, size=18, weight=ft.FontWeight.W_600,
+                        color=TEAMS_TEXT),
+                ft.Container(height=16),
+                ft.Container(
+                    expand=True,
+                    content=ft.Text(body, size=14, color=TEAMS_TEXT,
+                                    selectable=True, text_align=ft.TextAlign.LEFT)
+                ),
+            ], scroll=ft.ScrollMode.AUTO)
         )
 
+        self.email_detail_dialog = ft.AlertDialog(
+            modal=True,
+            title=ft.Container(
+                padding=ft.padding.only(bottom=8),
+                content=ft.Row([
+                    ft.Icon(ft.Icons.MAIL, size=20, color=TEAMS_BLUE),
+                    ft.Text("Email", size=16, weight=ft.FontWeight.W_600),
+                ])
+            ),
+            content=email_content,
+            actions=[
+                ft.TextButton(content=ft.Row([ft.Icon(ft.Icons.DELETE, size=16), ft.Text(
+                    "Delete")]), on_click=delete_email_action),
+                ft.TextButton(content=ft.Row(
+                    [ft.Icon(ft.Icons.FORWARD, size=16), ft.Text("Forward")]), on_click=forward),
+                ft.TextButton(content=ft.Row(
+                    [ft.Icon(ft.Icons.REPLY, size=16), ft.Text("Reply")]), on_click=reply),
+                ft.ElevatedButton(content=ft.Text("Close"),
+                                  on_click=close_dialog),
+            ],
+            actions_alignment=ft.MainAxisAlignment.END,
+        )
+
+        self._page.show_dialog(self.email_detail_dialog)
+        self._page.update()
+
+    def _show_email_detail(self, email):
+        self._show_email_popup(email)
+
+    def _show_success(self, msg):
+        snack = ft.SnackBar(content=ft.Text(msg), bgcolor=SUCCESS)
+        self._page.overlay.append(snack)
+        snack.open = True
+
+    def _show_create_email_group_dialog(self):
+        """Show dialog to create a new email group"""
+        def close_dlg(ev):
+            self._page.pop_dialog()
+            self._page.update()
+
+        name_field = ft.TextField(
+            label="Group Name", border_color=TEAMS_BLUE, focused_border_color=PRIMARY)
+        desc_field = ft.TextField(label="Description", border_color=TEAMS_BLUE,
+                                  focused_border_color=PRIMARY, multiline=True, min_lines=2)
+        error_txt = ft.Text("", color=ERROR, size=12, visible=False)
+
+        def create_group(ev):
+            if not name_field.value:
+                error_txt.value = "Please enter a group name"
+                error_txt.visible = True
+                self._page.update()
+                return
+
+            try:
+                db = get_db_session()
+                create_email_group(db, name_field.value,
+                                   desc_field.value or "", self.current_user_id)
+                db.close()
+                self._show_success(f"Group '{name_field.value}' created!")
+                self._load_email_groups()
+                close_dlg(ev)
+            except Exception as ex:
+                error_txt.value = str(ex)
+                error_txt.visible = True
+                self._page.update()
+
         dlg = ft.AlertDialog(
-            title=ft.Text("Email"),
-            content=detail_content,
+            title=ft.Row([
+                ft.Icon(ft.Icons.GROUP_ADD, color=TEAMS_BLUE, size=24),
+                ft.Text("Create Email Group", size=18,
+                        weight=ft.FontWeight.W_600),
+            ]),
+            content=ft.Column([
+                name_field,
+                ft.Container(height=8),
+                desc_field,
+                error_txt
+            ], tight=True),
+            actions=[
+                ft.TextButton("Cancel", on_click=close_dlg),
+                ft.ElevatedButton("Create", on_click=create_group,
+                                  bgcolor=TEAMS_BLUE, color="white"),
+            ],
+            actions_alignment=ft.MainAxisAlignment.END,
+        )
+        self._page.show_dialog(dlg)
+
+    def _show_email_groups_list(self):
+        """Show dialog with list of email groups and ability to add members"""
+        def close_dlg(ev):
+            self._page.pop_dialog()
+            self._page.update()
+
+        # Get all groups the user is a member of
+        user_groups = []
+        try:
+            db = get_db_session()
+            user_groups = get_user_email_groups(db, self.current_user_id)
+            db.close()
+        except:
+            pass
+
+        def show_group_details(group):
+            self._page.pop_dialog()
+            self._show_email_group_details(group)
+            self._page.update()
+
+        group_items = []
+        for g in user_groups:
+            member_count = 0
+            try:
+                db = get_db_session()
+                members = get_email_group_members(db, g.id)
+                member_count = len(members)
+                db.close()
+            except:
+                pass
+
+            group_items.append(
+                ft.Container(
+                    padding=12,
+                    bgcolor=TEAMS_WHITE,
+                    border_radius=8,
+                    on_click=lambda e, grp=g: show_group_details(grp),
+                    content=ft.Row([
+                        ft.Container(
+                            width=40,
+                            height=40,
+                            bgcolor="#E91E63",
+                            border_radius=20,
+                            content=ft.Icon(
+                                ft.Icons.GROUP, size=20, color="white"),
+                            alignment=ft.alignment.Alignment(0, 0)
+                        ),
+                        ft.Container(width=12),
+                        ft.Column([
+                            ft.Text(str(g.name), size=14,
+                                    weight=ft.FontWeight.W_600, color=TEAMS_TEXT),
+                            ft.Text(f"{member_count} members",
+                                    size=11, color=TEAMS_SUBTEXT),
+                        ], expand=True, spacing=0),
+                        ft.Icon(ft.Icons.CHEVRON_RIGHT,
+                                size=20, color=TEAMS_SUBTEXT),
+                    ], spacing=0)
+                )
+            )
+
+        if not group_items:
+            content = ft.Column([
+                ft.Container(
+                    padding=40,
+                    content=ft.Column([
+                        ft.Icon(ft.Icons.GROUP, size=48, color="#C8C8C8"),
+                        ft.Container(height=12),
+                        ft.Text("No email groups yet",
+                                size=14, color=TEAMS_SUBTEXT),
+                        ft.Container(height=8),
+                        ft.Text("Create a group to send emails to multiple people at once",
+                                size=12, color=TEAMS_SUBTEXT, text_align=ft.TextAlign.CENTER),
+                    ], horizontal_alignment=ft.CrossAxisAlignment.CENTER),
+                    alignment=ft.alignment.Alignment(0, 0)
+                )
+            ], horizontal_alignment=ft.CrossAxisAlignment.CENTER)
+        else:
+            content = ft.Column(group_items, spacing=8)
+
+        dlg = ft.AlertDialog(
+            title=ft.Row([
+                ft.Icon(ft.Icons.FOLDER, color=TEAMS_BLUE, size=24),
+                ft.Text("My Email Groups", size=18,
+                        weight=ft.FontWeight.W_600),
+            ]),
+            content=ft.Container(
+                width=400,
+                height=350,
+                content=content
+            ),
             actions=[
                 ft.TextButton("Close", on_click=close_dlg),
             ],
+            actions_alignment=ft.MainAxisAlignment.END,
+        )
+        self._page.show_dialog(dlg)
+
+    def _show_email_group_details(self, group):
+        """Show details of an email group with option to add members"""
+        def close_dlg(ev):
+            self._page.pop_dialog()
+            self._page.update()
+
+        group_id = group.id
+        group_name = group.name
+
+        # Get current members
+        members = []
+        try:
+            db = get_db_session()
+            members = get_email_group_members(db, group_id)
+            db.close()
+        except:
+            pass
+
+        # Get member user details
+        member_details = []
+        for m in members:
+            try:
+                db = get_db_session()
+                user = db.query(__import__('database.models', fromlist=[
+                                'User']).User).filter_by(id=m.user_id).first()
+                if user:
+                    member_details.append(
+                        {'id': user.id, 'username': user.username, 'role': m.role})
+                db.close()
+            except:
+                pass
+
+        member_list = ft.Column(spacing=4, scroll=ft.ScrollMode.AUTO)
+
+        colors = [TEAMS_BLUE, "#107C10", "#D13438", "#FFB900", "#8764B8"]
+        for i, member in enumerate(member_details):
+            avatar_color = colors[i % len(colors)]
+            member_list.controls.append(
+                ft.Container(
+                    padding=8,
+                    bgcolor=TEAMS_WHITE,
+                    border_radius=8,
+                    content=ft.Row([
+                        ft.Container(
+                            width=32,
+                            height=32,
+                            bgcolor=avatar_color,
+                            border_radius=16,
+                            content=ft.Text(member['username'][0].upper(
+                            ), size=12, color="white", weight=ft.FontWeight.BOLD),
+                            alignment=ft.alignment.Alignment(0, 0)
+                        ),
+                        ft.Container(width=8),
+                        ft.Column([
+                            ft.Text(
+                                member['username'], size=13, weight=ft.FontWeight.W_500, color=TEAMS_TEXT),
+                            ft.Text(member['role'], size=10,
+                                    color=TEAMS_SUBTEXT),
+                        ], spacing=0, expand=True),
+                    ], spacing=0)
+                )
+            )
+
+        def add_members(ev):
+            self._page.pop_dialog()
+            self._show_add_group_members_dialog(group)
+            self._page.update()
+
+        dlg = ft.AlertDialog(
+            title=ft.Row([
+                ft.Icon(ft.Icons.GROUP, color="#E91E63", size=24),
+                ft.Text(group_name, size=18, weight=ft.FontWeight.W_600),
+            ]),
+            content=ft.Container(
+                width=350,
+                height=300,
+                content=ft.Column([
+                    ft.Text(f"{len(member_details)} Members", size=13,
+                            weight=ft.FontWeight.W_600, color=TEAMS_SUBTEXT),
+                    ft.Container(height=8),
+                    member_list
+                ], spacing=8)
+            ),
+            actions=[
+                ft.TextButton("Add Members", on_click=add_members),
+                ft.TextButton("Close", on_click=close_dlg),
+            ],
+            actions_alignment=ft.MainAxisAlignment.END,
+        )
+        self._page.show_dialog(dlg)
+
+    def _show_add_group_members_dialog(self, group):
+        """Show dialog to add members to an email group"""
+        def close_dlg(ev):
+            self._page.pop_dialog()
+            self._page.update()
+
+        group_id = group.id
+        group_name = group.name
+
+        # Get current member IDs
+        current_member_ids = set()
+        try:
+            db = get_db_session()
+            current_members = get_email_group_members(db, group_id)
+            current_member_ids = {m.user_id for m in current_members}
+            db.close()
+        except:
+            pass
+
+        # Get available users (not already in group)
+        available_users = [u for u in self._all_users if u.id !=
+                           self.current_user_id and u.id not in current_member_ids]
+
+        selected_members = set()
+
+        def build_user_tiles():
+            tiles = []
+            for u in available_users:
+                is_sel = u.id in selected_members
+                colors = [TEAMS_BLUE, "#107C10",
+                          "#D13438", "#FFB900", "#8764B8"]
+                avatar_color = colors[sum(ord(c)
+                                          for c in str(u.username)) % len(colors)]
+
+                tile = ft.Container(
+                    padding=ft.padding.symmetric(horizontal=12, vertical=8),
+                    bgcolor=TEAMS_BLUE + "10" if is_sel else "transparent",
+                    border_radius=8,
+                    on_click=lambda e, uid=u.id: toggle_user(uid),
+                    content=ft.Row([
+                        ft.Container(
+                            width=24,
+                            height=24,
+                            border=ft.border.all(
+                                2, TEAMS_BLUE if is_sel else "#C8C8C8"),
+                            bgcolor=TEAMS_BLUE if is_sel else "transparent",
+                            border_radius=4,
+                            content=ft.Icon(
+                                ft.Icons.CHECK, size=16, color="white") if is_sel else None,
+                        ),
+                        ft.Container(width=12),
+                        ft.Container(
+                            width=32,
+                            height=32,
+                            bgcolor=avatar_color,
+                            border_radius=16,
+                            content=ft.Text(str(u.username)[0].upper(
+                            ), size=12, color="white", weight=ft.FontWeight.BOLD),
+                            alignment=ft.alignment.Alignment(0, 0)
+                        ),
+                        ft.Container(width=12),
+                        ft.Text(str(u.username), size=14,
+                                weight=ft.FontWeight.W_500, color=TEAMS_TEXT),
+                    ], spacing=0)
+                )
+                tiles.append(tile)
+            return tiles
+
+        def toggle_user(uid):
+            if uid in selected_members:
+                selected_members.discard(uid)
+            else:
+                selected_members.add(uid)
+            user_column.controls = build_user_tiles()
+            update_count()
+            self._page.update()
+
+        def update_count():
+            count = len(selected_members)
+            count_text.value = f"{count} selected"
+            count_text.visible = count > 0
+
+        def add_members(ev):
+            if not selected_members:
+                return
+
+            try:
+                db = get_db_session()
+                for member_id in selected_members:
+                    add_email_group_member(
+                        db, group_id, member_id, role="member")
+                db.close()
+                self._show_success(
+                    f"Added {len(selected_members)} member(s) to '{group_name}'!")
+                self._load_email_groups()
+                close_dlg(ev)
+            except Exception as ex:
+                error_txt.value = str(ex)
+                error_txt.visible = True
+                self._page.update()
+
+        count_text = ft.Text("", size=12, color=TEAMS_SUBTEXT, visible=False)
+        error_txt = ft.Text("", color=ERROR, size=12, visible=False)
+
+        user_column = ft.Column(
+            controls=build_user_tiles(),
+            spacing=4,
+            scroll=ft.ScrollMode.AUTO,
+            expand=True
         )
 
-        self.page.dialog = dlg
-        dlg.open = True
-        self.page.update()
-
-        # Reload emails to reflect read status
-        self._load_emails()
-        self.content = self._build_content()
-        self._page.update()
-
-    def _show_success(self, message):
-        """Show success message"""
-        snack = ft.SnackBar(content=ft.Text(message), bgcolor=SUCCESS)
-        self._page.overlay.append(snack)
-        snack.open = True
-
-    def _show_error(self, message):
-        """Show error message"""
-        snack = ft.SnackBar(content=ft.Text(message), bgcolor=ERROR)
-        self._page.overlay.append(snack)
-        snack.open = True
+        dlg = ft.AlertDialog(
+            title=ft.Row([
+                ft.Icon(ft.Icons.PERSON_ADD, color=TEAMS_BLUE, size=24),
+                ft.Text(f"Add Members to '{group_name}'",
+                        size=18, weight=ft.FontWeight.W_600),
+            ]),
+            content=ft.Container(
+                width=350,
+                height=300,
+                content=ft.Column([
+                    count_text,
+                    ft.Container(height=4),
+                    user_column,
+                    error_txt
+                ], spacing=0)
+            ),
+            actions=[
+                ft.TextButton("Cancel", on_click=close_dlg),
+                ft.ElevatedButton("Add Members", on_click=add_members,
+                                  bgcolor=TEAMS_BLUE, color="white"),
+            ],
+            actions_alignment=ft.MainAxisAlignment.END,
+        )
+        self._page.show_dialog(dlg)
 
 
 def show_mail(page: ft.Page, user=None):
-    """Helper function to show mail screen"""
     page.clean()
     page.add(MailScreen(page, user))
     page.update()

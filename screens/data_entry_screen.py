@@ -6,7 +6,7 @@ Tab-based Multi-View Interface with Advanced Features
 import flet as ft
 import os
 from datetime import datetime
-from database.connection import get_db_session
+from database.session_manager import get_session, get_db_session, check_db_connection
 from database.models import DataSheet, DataSheetColumn, DataSheetRow
 
 
@@ -19,6 +19,37 @@ BG_COLOR = "#F5F7FA"
 SURFACE_COLOR = "#FFFFFF"
 TEXT_COLOR = "#2C3E50"
 TEXT_MUTED = "#7F8C8D"
+
+
+def _safe_navigate_to_home(page, user=None):
+    """Safely navigate to home screen"""
+    try:
+        from screens.admin_screen import AdminScreen
+        from screens.employee_screen import EmployeeScreen
+        page.clean()
+        if user and isinstance(user, dict):
+            role = user.get('role', 'employee').lower()
+        elif user and hasattr(user, 'role'):
+            role = user.role.name.lower() if user.role else 'employee'
+        else:
+            role = 'employee'
+
+        if role == 'admin':
+            page.add(AdminScreen(page, user))
+        else:
+            page.add(EmployeeScreen(page, user))
+    except Exception as e:
+        print(f"Navigation error: {e}")
+        from screens.login_screen import LoginScreen
+        page.clean()
+        page.add(LoginScreen(page))
+
+
+# Import navigate_to_home for compatibility (wrapped)
+try:
+    from core.navigation import navigate_to_home
+except ImportError:
+    navigate_to_home = _safe_navigate_to_home
 
 
 class DataEntryScreen(ft.Container):
@@ -475,7 +506,7 @@ class DataEntryScreen(ft.Container):
                     col_name = col.column_name
                 if col.width:
                     col_width = col.width
-            except:
+            except Exception:
                 pass
 
             header_row.append(
@@ -508,7 +539,7 @@ class DataEntryScreen(ft.Container):
             try:
                 if row.row_data:
                     row_data = row.row_data
-            except:
+            except Exception:
                 pass
 
             bg = "#FFFFFF" if idx % 2 == 0 else "#FAFAFA"
@@ -521,7 +552,7 @@ class DataEntryScreen(ft.Container):
                 try:
                     if col.width:
                         col_width = col.width
-                except:
+                except Exception:
                     pass
 
                 # Inline editable cell - using Container with Text instead of TextField for compatibility
@@ -731,7 +762,7 @@ class DataEntryScreen(ft.Container):
                 DataSheet.created_at >= week_ago).count()
 
             return {'total_sheets': total_sheets, 'total_rows': total_rows, 'this_week': this_week}
-        except:
+        except Exception:
             return {'total_sheets': 0, 'total_rows': 0, 'this_week': 0}
         finally:
             db.close()
@@ -740,7 +771,7 @@ class DataEntryScreen(ft.Container):
         db = get_db_session()
         try:
             return db.query(DataSheet).order_by(DataSheet.updated_at.desc()).limit(limit).all()
-        except:
+        except Exception:
             return []
         finally:
             db.close()
@@ -749,7 +780,7 @@ class DataEntryScreen(ft.Container):
         db = get_db_session()
         try:
             return db.query(DataSheet).order_by(DataSheet.created_at.desc()).all()
-        except:
+        except Exception:
             return []
         finally:
             db.close()
@@ -758,7 +789,7 @@ class DataEntryScreen(ft.Container):
         db = get_db_session()
         try:
             return db.query(DataSheetColumn).filter(DataSheetColumn.sheet_id == sheet_id).count()
-        except:
+        except Exception:
             return 0
         finally:
             db.close()
@@ -767,15 +798,21 @@ class DataEntryScreen(ft.Container):
         db = get_db_session()
         try:
             return db.query(DataSheetRow).filter(DataSheetRow.sheet_id == sheet_id).count()
-        except:
+        except Exception:
             return 0
         finally:
             db.close()
 
     # Actions
     def go_back(self, e):
-        from core.navigation import navigate_to_home
-        navigate_to_home(self._page, self.user)
+        try:
+            # Navigation - handled locally to avoid import errors
+            _safe_navigate_to_home(self._page, self.user)
+        except Exception as e:
+            print(f"Go back error: {e}")
+            from screens.login_screen import LoginScreen
+            self._page.clean()
+            self._page.add(LoginScreen(self._page))
 
     def _set_view_mode(self, mode):
         self.view_mode = mode
@@ -961,7 +998,7 @@ class DataEntryScreen(ft.Container):
             try:
                 if col.column_name:
                     col_name = col.column_name
-            except:
+            except Exception:
                 pass
             fields[col.id] = ft.TextField(label=col_name, width=250)
 
@@ -1171,14 +1208,14 @@ class DataEntryScreen(ft.Container):
             try:
                 if row.row_data:
                     row_data = row.row_data
-            except:
+            except Exception:
                 pass
             for col in columns:
                 col_name = "Column"
                 try:
                     if col.column_name:
                         col_name = col.column_name
-                except:
+                except Exception:
                     pass
                 row_dict[col_name] = row_data.get(str(col.id), "")
             data.append(row_dict)

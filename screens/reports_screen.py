@@ -14,7 +14,7 @@ from flet import (
 )
 from core.theme import theme
 from core.colors_compat import colors
-from database.connection import get_db_session
+from database.session_manager import get_session, get_db_session, check_db_connection
 from database.operations import get_dashboard_stats
 from database.models import Employee, Department, Attendance, LeaveRequest, Task, User, UserStatus
 from database.models import AttendanceStatus, LeaveStatus, TaskStatus

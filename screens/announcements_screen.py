@@ -5,7 +5,7 @@ PostgreSQL/SQLAlchemy based announcements management
 
 import flet as ft
 from datetime import datetime
-from database.connection import get_db_session
+from database.session_manager import get_session, get_db_session, check_db_connection
 from database.models import Announcement
 
 

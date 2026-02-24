@@ -5,7 +5,7 @@ Updated to use SQLAlchemy operations instead of direct SQLite
 
 import flet as ft
 from datetime import datetime, date
-from database.connection import get_db_session
+from database.session_manager import get_session, get_db_session, check_db_connection
 from database.models import Task, Employee, TaskStatus, TaskPriority
 from database.operations import (
     get_all_employees, create_task, get_task_by_id, update_task, delete_task,
@@ -48,16 +48,17 @@ class TasksScreen(ft.Container):
                     icon=ft.Icons.ARROW_BACK,
                     icon_color="WHITE",
                     on_click=self.on_back
-                ) if is_admin else ft.Container(),
+                ),
                 ft.Text("Task Management", size=18,
                         color="WHITE", weight=ft.FontWeight.BOLD),
                 ft.Container(expand=True),
+                # Create Task button - available for both admin and employees
                 ft.ElevatedButton(
                     "Create Task",
                     icon=ft.Icons.ADD,
                     on_click=self.on_add,
                     style=ft.ButtonStyle(bgcolor="#00796B", color="WHITE")
-                ) if is_admin else ft.Container(),
+                ),
             ])
         )
 
@@ -75,8 +76,28 @@ class TasksScreen(ft.Container):
         return content
 
     def on_back(self, e):
-        from core.navigation import navigate_to_home
-        navigate_to_home(self._page, self.user)
+        """Handle back navigation"""
+        # Use safe navigation pattern
+        try:
+            from core.navigation import navigate_to_home
+            navigate_to_home(self._page, self.user)
+        except Exception as nav_error:
+            # Fallback: go to admin or employee screen based on role
+            try:
+                from screens.admin_screen import AdminScreen
+                from screens.employee_screen import EmployeeScreen
+                role = self.user.get('role', 'employee').lower(
+                ) if isinstance(self.user, dict) else 'employee'
+                self._page.clean()
+                if role == 'admin':
+                    self._page.add(AdminScreen(self._page, self.user))
+                else:
+                    self._page.add(EmployeeScreen(self._page, self.user))
+            except Exception as e:
+                print(f"Navigation error: {e}")
+                from screens.login_screen import LoginScreen
+                self._page.clean()
+                self._page.add(LoginScreen(self._page))
 
     def on_add(self, e):
         self._show_add_dialog()
@@ -95,6 +116,7 @@ class TasksScreen(ft.Container):
     def _build_task_list(self):
         try:
             session = get_db_session()
+            # Use get_all_tasks which now has eager loading
             tasks = get_all_tasks(session, limit=100)
             session.close()
         except Exception as e:
@@ -130,19 +152,24 @@ class TasksScreen(ft.Container):
                 "feature": "#2196F3", "bug": "#F44336", "improvement": "#FF9800"
             }
 
-            # Safely get values from SQLAlchemy model
+            # Safely get values from SQLAlchemy model - use getattr for optional fields
             priority_val = str(t.priority.value) if hasattr(
                 t.priority, 'value') else str(t.priority) if t.priority else "medium"
             status_val = str(t.status.value) if hasattr(
                 t.status, 'value') else str(t.status) if t.status else "todo"
+
+            # These fields don't exist in Task model - use getattr with defaults
+            project_name = getattr(t, 'project_name', None) or "-"
+            category = getattr(t, 'category', None) or "-"
             task_type_val = getattr(t, 'task_type', None) or "feature"
+            est_hours = getattr(t, 'estimated_hours', 0) or 0
+            act_hours = getattr(t, 'actual_hours', 0) or 0
+            start_date_val = getattr(t, 'start_date', None)
 
             p_color = priority_colors.get(priority_val, "#4CAF50")
             s_color = status_colors.get(status_val, "#9E9E9E")
             type_color = type_colors.get(task_type_val, "#9E9E9E")
 
-            est_hours = getattr(t, 'estimated_hours', 0) or 0
-            act_hours = getattr(t, 'actual_hours', 0) or 0
             hours_text = f"{act_hours}/{est_hours}h" if est_hours else f"{act_hours}h"
 
             # Get assignee name
@@ -156,10 +183,8 @@ class TasksScreen(ft.Container):
                     cells=[
                         ft.DataCell(
                             ft.Text(t.title[:30] + "..." if len(t.title) > 30 else t.title)),
-                        ft.DataCell(
-                            ft.Text(getattr(t, 'project_name', None) or "-")),
-                        ft.DataCell(
-                            ft.Text(getattr(t, 'category', None) or "-")),
+                        ft.DataCell(ft.Text(project_name)),
+                        ft.DataCell(ft.Text(category)),
                         ft.DataCell(ft.Text(assignee_name)),
                         ft.DataCell(ft.Container(
                             ft.Text(priority_val, size=11, color="WHITE"),
@@ -176,7 +201,7 @@ class TasksScreen(ft.Container):
                         )),
                         ft.DataCell(ft.Text(hours_text)),
                         ft.DataCell(
-                            ft.Text(str(t.start_date) if t.start_date else "-")),
+                            ft.Text(str(start_date_val) if start_date_val else "-")),
                         ft.DataCell(
                             ft.Text(str(t.due_date) if t.due_date else "-")),
                         ft.DataCell(
@@ -470,9 +495,9 @@ class TasksScreen(ft.Container):
         status = ft.Dropdown(width=150, options=status_options, label="Status",
                              value=current_status)
 
-        # Dates
+        # Dates - use getattr since start_date doesn't exist in Task model
         start_date = ft.TextField(label="Start Date", width=180,
-                                  value=str(t.start_date) if t.start_date else "")
+                                  value=str(getattr(t, 'start_date', '') or ''))
         due_date = ft.TextField(label="Due Date", width=180,
                                 value=str(t.due_date) if t.due_date else "")
 

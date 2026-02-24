@@ -1,7 +1,7 @@
 
 # Vernika Application - Database Operations
 # Complete CRUD operations for HR Management System
-
+from utils.cache import get_global_cache, cache_screen_data, get_cached_screen_data
 from sqlalchemy.orm import Session
 from sqlalchemy import func, or_
 from datetime import datetime, date
@@ -14,6 +14,7 @@ from database.models import (
     UserStatus, LeaveStatus, AttendanceStatus, TaskPriority, TaskStatus, Gender,
     # Communication models
     ChatGroup, ChatGroupMember, ChatMessage, EmailMessage, EmailRecipient,
+    EmailGroup, EmailGroupMember,
     Meeting, MeetingParticipant, Document, UserPermission,
     EmailCategory, MeetingStatus, MessageType, CallLog, CallType, CallStatus
 )
@@ -230,8 +231,12 @@ def get_employee_by_id(db: Session, emp_id: int):
 
 
 def get_all_employees(db: Session, skip: int = 0, limit: int = 100):
-    """Get all employees with pagination"""
-    return db.query(Employee).offset(skip).limit(limit).all()
+    """Get all employees with pagination and eager-loaded relationships"""
+    from sqlalchemy.orm import joinedload
+    return db.query(Employee).options(
+        joinedload(Employee.department),
+        joinedload(Employee.position)
+    ).offset(skip).limit(limit).all()
 
 
 def create_employee_with_user(db: Session, username: str, email: str, password: str,
@@ -368,8 +373,9 @@ def mark_attendance(db: Session, employee_id: int, date: date = None,
 def get_attendance_records(db: Session, employee_id: int = None,
                            start_date: date = None, end_date: date = None,
                            skip: int = 0, limit: int = 100):
-    """Get attendance records with optional filters"""
-    query = db.query(Attendance)
+    """Get attendance records with optional filters and eager-loaded relationships"""
+    from sqlalchemy.orm import joinedload
+    query = db.query(Attendance).options(joinedload(Attendance.employee))
 
     if employee_id:
         query = query.filter(Attendance.employee_id == employee_id)
@@ -485,8 +491,12 @@ def cancel_leave_request(db: Session, request_id: int):
 
 def get_leave_requests(db: Session, employee_id: int = None,
                        status: LeaveStatus = None, skip: int = 0, limit: int = 100):
-    """Get leave requests with optional filters"""
-    query = db.query(LeaveRequest)
+    """Get leave requests with optional filters and eager-loaded relationships"""
+    from sqlalchemy.orm import joinedload
+    query = db.query(LeaveRequest).options(
+        joinedload(LeaveRequest.employee),
+        joinedload(LeaveRequest.leave_type)
+    )
 
     if employee_id:
         query = query.filter(LeaveRequest.employee_id == employee_id)
@@ -615,8 +625,12 @@ def get_tasks_created_by_user(db: Session, user_id: int):
 
 
 def get_all_tasks(db: Session, skip: int = 0, limit: int = 100):
-    """Get all tasks with pagination"""
-    return db.query(Task).order_by(Task.created_at.desc()).offset(skip).limit(limit).all()
+    """Get all tasks with pagination and eager-loaded relationships"""
+    from sqlalchemy.orm import joinedload
+    return db.query(Task).options(
+        joinedload(Task.assigned_to),
+        joinedload(Task.created_by)
+    ).order_by(Task.created_at.desc()).offset(skip).limit(limit).all()
 
 
 def get_tasks_by_status(db: Session, status: TaskStatus):
@@ -785,8 +799,18 @@ def get_all_time_off_requests(db: Session, skip: int = 0, limit: int = 100):
 
 # ==================== DASHBOARD STATISTICS ====================
 
+
 def get_dashboard_stats(db: Session):
-    """Get dashboard statistics"""
+    """Get dashboard statistics with caching for performance"""
+    # Try to get from cache first
+    cache = get_global_cache()
+    cached = cache.get("dashboard_stats")
+    if cached is not None:
+        return cached
+
+    # If not in cache, fetch from database
+    from datetime import date as date_type
+
     total_users = db.query(User).count()
     total_employees = db.query(Employee).count()
     total_departments = db.query(Department).count()
@@ -802,19 +826,48 @@ def get_dashboard_stats(db: Session):
     pending_leaves = db.query(LeaveRequest).filter(
         LeaveRequest.status == LeaveStatus.PENDING).count()
 
-    return {
+    # Get real-time attendance for today
+    today = date_type.today()
+    present_today = db.query(Attendance).filter(
+        Attendance.date == today,
+        Attendance.status == AttendanceStatus.PRESENT
+    ).count()
+
+    # Get employees on leave today
+    on_leave_today = db.query(LeaveRequest).filter(
+        LeaveRequest.status == LeaveStatus.APPROVED,
+        LeaveRequest.start_date <= today,
+        LeaveRequest.end_date >= today
+    ).count()
+
+    # Get active users count
+    try:
+        active_users = db.query(User).filter(
+            User.status == UserStatus.ACTIVE).count()
+    except:
+        active_users = db.query(User).filter(User.status == 'active').count()
+
+    result = {
         "total_users": total_users,
+        "active_users": active_users,
         "total_employees": total_employees,
         "total_departments": total_departments,
         "total_positions": total_positions,
         "pending_tasks": pending_tasks,
         "in_progress_tasks": in_progress_tasks,
         "completed_tasks": completed_tasks,
-        "pending_leaves": pending_leaves
+        "pending_leaves": pending_leaves,
+        "present_today": present_today,
+        "on_leave": on_leave_today,
     }
 
+    # Cache for 30 seconds
+    cache.set("dashboard_stats", result, 30)
+
+    return result
 
 # ==================== CHAT GROUP OPERATIONS ====================
+
 
 def create_chat_group(db: Session, name: str, description: str, created_by: int):
     """Create a new chat group"""
@@ -1069,6 +1122,101 @@ def get_unread_email_count(db: Session, user_id: int):
         EmailRecipient.recipient_id == user_id,
         EmailRecipient.is_read == False
     ).count()
+
+
+# ==================== EMAIL GROUP OPERATIONS ====================
+
+def create_email_group(db: Session, name: str, description: str, created_by: int):
+    """Create a new email distribution group"""
+    group = EmailGroup(
+        name=name,
+        description=description,
+        created_by=created_by
+    )
+    db.add(group)
+    db.commit()
+    db.refresh(group)
+
+    # Add creator as admin member
+    add_email_group_member(db, group.id, created_by, role="admin")
+    return group
+
+
+def add_email_group_member(db: Session, group_id: int, user_id: int, role: str = "member"):
+    """Add a member to an email group"""
+    # Check if already a member
+    existing = db.query(EmailGroupMember).filter(
+        EmailGroupMember.group_id == group_id,
+        EmailGroupMember.user_id == user_id
+    ).first()
+    if existing:
+        return existing
+
+    member = EmailGroupMember(
+        group_id=group_id,
+        user_id=user_id,
+        role=role
+    )
+    db.add(member)
+    db.commit()
+    db.refresh(member)
+    return member
+
+
+def remove_email_group_member(db: Session, group_id: int, user_id: int):
+    """Remove a member from an email group"""
+    member = db.query(EmailGroupMember).filter(
+        EmailGroupMember.group_id == group_id,
+        EmailGroupMember.user_id == user_id
+    ).first()
+    if member:
+        db.delete(member)
+        db.commit()
+        return True
+    return False
+
+
+def get_user_email_groups(db: Session, user_id: int):
+    """Get all email groups a user is a member of"""
+    return db.query(EmailGroup).join(EmailGroupMember).filter(
+        EmailGroupMember.user_id == user_id,
+        EmailGroup.is_active == True
+    ).all()
+
+
+def get_email_group_by_id(db: Session, group_id: int):
+    """Get email group by ID"""
+    return db.query(EmailGroup).filter(EmailGroup.id == group_id).first()
+
+
+def get_email_group_members(db: Session, group_id: int):
+    """Get all members of an email group"""
+    return db.query(EmailGroupMember).filter(
+        EmailGroupMember.group_id == group_id
+    ).all()
+
+
+def get_email_group_member_ids(db: Session, group_id: int):
+    """Get all member user IDs of an email group"""
+    members = db.query(EmailGroupMember).filter(
+        EmailGroupMember.group_id == group_id
+    ).all()
+    return [m.user_id for m in members]
+
+
+def delete_email_group(db: Session, group_id: int):
+    """Soft delete an email group"""
+    group = get_email_group_by_id(db, group_id)
+    if group:
+        group.is_active = False
+        db.commit()
+        return True
+    return False
+
+
+def get_all_email_groups(db: Session):
+    """Get all active email groups"""
+    return db.query(EmailGroup).filter(EmailGroup.is_active == True).all()
 
 
 # ==================== MEETING OPERATIONS ====================

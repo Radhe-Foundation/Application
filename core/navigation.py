@@ -50,6 +50,23 @@ def pop_screen(page: ft.Page):
     return True
 
 
+def go_back(page: ft.Page, user=None):
+    """Go back one step in navigation, or to appropriate home screen if stack is empty
+
+    Args:
+        page: Flet page object
+        user: Optional user object for determining home screen
+    """
+    global _nav_stack, _current_screen
+
+    if _nav_stack:
+        # We have history, go back
+        pop_screen(page)
+    else:
+        # No history, go to home screen based on role
+        navigate_to_home(page, user)
+
+
 def can_go_back() -> bool:
     """Check if there's a previous screen to go back to"""
     return len(_nav_stack) > 0
@@ -63,36 +80,62 @@ def clear_stack():
 
 
 def navigate_to_home(page: ft.Page, user=None):
-    """Navigate to admin screen - clears stack and shows admin
+    """Navigate to admin or employee screen based on user role
 
     Args:
         page: Flet page object
-        user: Optional user object. If provided, used directly. Otherwise fetched from session.
+        user: Optional user object. Can be either a dict (from login) or User model.
     """
     global _nav_stack, _current_screen
     _nav_stack = []
     _current_screen = None
 
-    # Import here to avoid circular imports
-    from screens.admin_screen import AdminScreen
-
-    # Try to get current user - first from parameter, then from session
+    # Get current user if not provided
     current_user = user
+
+    # Handle case where user is passed as a dict (from login) or User model
     if not current_user:
         try:
             from auth.session import get_current_user
-            current_user = get_current_user()
+            session_user = get_current_user()
+            if session_user:
+                # Convert User object to dict for consistent handling
+                if hasattr(session_user, 'id'):
+                    current_user = {
+                        'id': session_user.id,
+                        'username': session_user.username,
+                        'email': session_user.email,
+                        'role': session_user.role.name if session_user.role else 'employee'
+                    }
         except Exception as e:
             print(f"Could not get current user from session: {e}")
 
-    if current_user:
-        page.clean()
-        page.add(AdminScreen(page, current_user))
-    else:
-        # If no user found at all, import login and go there
+    if not current_user:
+        # No user found, go to login
         from screens.login_screen import LoginScreen
         page.clean()
         page.add(LoginScreen(page))
+        return
+
+    # Determine user role - handle both dict and object
+    user_role = None
+    if isinstance(current_user, dict):
+        user_role = current_user.get('role', '').lower()
+    else:
+        user_role = getattr(current_user, 'role', None)
+        if user_role:
+            user_role = user_role.lower()
+
+    # Navigate based on role
+    page.clean()
+
+    if user_role == 'admin':
+        from screens.admin_screen import AdminScreen
+        page.add(AdminScreen(page, current_user))
+    else:
+        # Default to employee screen for non-admin users
+        from screens.employee_screen import EmployeeScreen
+        page.add(EmployeeScreen(page, current_user))
 
 
 def get_stack_size() -> int:

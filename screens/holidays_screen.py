@@ -8,7 +8,7 @@ This module provides holiday management functionality.
 from typing import List, Dict
 import flet as ft
 from datetime import datetime, date
-from database.connection import get_db_session
+from database.session_manager import get_session, get_db_session, check_db_connection
 
 
 # Theme colors
@@ -190,7 +190,7 @@ class HolidaysScreen(ft.Container):
                 if month not in months:
                     months[month] = []
                 months[month].append(holiday)
-            except:
+            except Exception:
                 pass
 
         # Build month sections

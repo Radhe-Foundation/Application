@@ -15,7 +15,7 @@ from flet import (
 )
 from core.theme import theme
 from core.colors_compat import colors
-from database.connection import get_db_session
+from database.session_manager import get_session, get_db_session, check_db_connection
 from database.models import Employee, User, Task, TaskStatus, TaskPriority
 from datetime import datetime, date, timedelta
 
