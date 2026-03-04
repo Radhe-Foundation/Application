@@ -10,6 +10,9 @@ from dataclasses import dataclass, field
 from datetime import datetime
 import copy
 
+# Import overlay cleanup utilities
+from utils.overlay_cleanup import cleanup_all_pickers, close_all_dialogs
+
 
 @dataclass
 class ScreenState:
@@ -66,6 +69,24 @@ class NavigationManager:
             except Exception as e:
                 print(f"Navigation callback error: {e}")
 
+    def _update_keyboard_shortcuts_context(self):
+        """Update keyboard shortcuts manager with current screen context"""
+        try:
+            from core.keyboard_shortcuts_v2 import get_keyboard_manager
+            kb_manager = get_keyboard_manager()
+            if kb_manager and self._current_screen:
+                kb_manager.set_current_screen(self._current_screen.name)
+        except Exception as e:
+            pass  # Silently fail if keyboard shortcuts not available
+
+    def _reinit_notifications(self):
+        """Re-initialize notification manager after screen navigation"""
+        try:
+            from utils.notification_manager import ensure_notification_manager
+            ensure_notification_manager(self._page)
+        except Exception as e:
+            pass  # Silently fail if notifications not available
+
     def push(self, screen_name: str, screen_content, params: Dict[str, Any] = None):
         """
         Push a new screen onto the navigation stack.
@@ -86,9 +107,17 @@ class NavigationManager:
             params=params or {}
         )
 
+        # Clean up overlays before navigation to prevent stale FilePicker errors
+        cleanup_all_pickers(self._page)
+        close_all_dialogs(self._page)
+
         # Navigate to new screen
         self._page.clean()
         self._page.add(screen_content)
+
+        # Re-initialize notification manager after navigation
+        self._reinit_notifications()
+
         self._notify_callbacks()
 
         print(
@@ -111,8 +140,16 @@ class NavigationManager:
             params=params or {}
         )
 
+        # Clean up overlays before navigation to prevent stale FilePicker errors
+        cleanup_all_pickers(self._page)
+        close_all_dialogs(self._page)
+
         self._page.clean()
         self._page.add(screen_content)
+
+        # Re-initialize notification manager after navigation
+        self._reinit_notifications()
+
         self._notify_callbacks()
 
         print(f"Navigation: Replaced with '{screen_name}'")
@@ -126,25 +163,99 @@ class NavigationManager:
         """
         if not self._nav_stack:
             print("Navigation: Stack empty, cannot pop")
+            # Try to go to home instead of failing
+            self.navigate_to_home()
             return False
 
-        # Get previous screen
-        prev_screen = self._nav_stack.pop()
+        # Get previous screen state
+        prev_screen_state = self._nav_stack.pop()
 
-        # Restore current from stack
+        # Store current screen in cache before replacing
         if self._current_screen:
-            # Move current back to cache or create new instance if needed
-            pass
+            screen_name = self._current_screen.name
+            self._screen_instances[screen_name] = self._current_screen.screen_class
 
-        self._current_screen = prev_screen
+        # Try to get cached instance or create new one
+        prev_screen_content = None
+
+        # Check if we have a cached instance
+        if prev_screen_state.name in self._screen_instances:
+            prev_screen_content = self._screen_instances[prev_screen_state.name]
+        else:
+            # Need to recreate the screen - import and instantiate
+            try:
+                # Import screen based on name mapping
+                screen_mapping = {
+                    'admin': ('screens.admin_screen', 'AdminScreen'),
+                    'employees': ('screens.employees_screen', 'EmployeesScreen'),
+                    'employee': ('screens.employee_screen', 'EmployeeScreen'),
+                    'dashboard': ('screens.dashboard_screen', 'DashboardScreen'),
+                    'attendance': ('screens.attendance_screen', 'AttendanceScreen'),
+                    'leaves': ('screens.leaves_screen', 'LeavesScreen'),
+                    'tasks': ('screens.tasks_screen', 'TasksScreen'),
+                    'departments': ('screens.departments_screen', 'DepartmentsScreen'),
+                    'positions': ('screens.positions_screen', 'PositionsScreen'),
+                    'teams': ('screens.teams_screen', 'TeamsScreen'),
+                    'projects': ('screens.projects_screen', 'ProjectsScreen'),
+                    'holidays': ('screens.holidays_screen', 'HolidaysScreen'),
+                    'meetings': ('screens.meetings_screen', 'MeetingsScreen'),
+                    'announcements': ('screens.announcements_screen', 'AnnouncementsScreen'),
+                    'settings': ('screens.settings_screen', 'SettingsScreen'),
+                    'chat': ('screens.chat_screen', 'ChatScreen'),
+                    'mail': ('screens.mail_screen', 'MailScreen'),
+                    'todo': ('screens.todo_screen', 'TodoScreen'),
+                    'profile': ('screens.profile_screen', 'ProfileScreen'),
+                    'inventory': ('screens.inventory_screen', 'InventoryScreen'),
+                    'transactions': ('screens.transactions_screen', 'TransactionsScreen'),
+                    'time_tracking': ('screens.time_tracking_screen', 'TimeTrackingScreen'),
+                }
+
+                if prev_screen_state.name.lower() in screen_mapping:
+                    module_path, class_name = screen_mapping[prev_screen_state.name.lower(
+                    )]
+                    import importlib
+                    module = importlib.import_module(module_path)
+                    screen_class = getattr(module, class_name)
+
+                    # Get user from params if available
+                    user = prev_screen_state.params.get('user', None)
+
+                    # Try different constructor signatures
+                    try:
+                        prev_screen_content = screen_class(self._page, user)
+                    except TypeError:
+                        try:
+                            prev_screen_content = screen_class(self._page)
+                        except TypeError:
+                            prev_screen_content = screen_class()
+
+            except Exception as e:
+                print(f"Error recreating screen {prev_screen_state.name}: {e}")
+
+        # Update current screen
+        self._current_screen = prev_screen_state
+
+        # If we couldn't recreate, navigate to home
+        if prev_screen_content is None:
+            print(f"Could not recreate screen, going to home")
+            self.navigate_to_home()
+            return False
+
+        # Clean up overlays before navigation to prevent stale FilePicker errors
+        cleanup_all_pickers(self._page)
+        close_all_dialogs(self._page)
 
         # Navigate to previous screen
         self._page.clean()
-        self._page.add(prev_screen.screen_class)
+        self._page.add(prev_screen_content)
+
+        # Re-initialize notification manager after navigation
+        self._reinit_notifications()
+
         self._notify_callbacks()
 
         print(
-            f"Navigation: Popped back to '{prev_screen.name}'. Stack size: {len(self._nav_stack)}")
+            f"Navigation: Popped back to '{prev_screen_state.name}'. Stack size: {len(self._nav_stack)}")
         return True
 
     def go_back(self, user_data: Optional[Dict[str, Any]] = None) -> bool:
@@ -185,6 +296,10 @@ class NavigationManager:
                 if user_role:
                     user_role = user_role.lower()
 
+        # Clean up overlays before navigation to prevent stale FilePicker errors
+        cleanup_all_pickers(self._page)
+        close_all_dialogs(self._page)
+
         # Navigate based on role
         self._page.clean()
 
@@ -194,6 +309,9 @@ class NavigationManager:
         else:
             from screens.employee_screen import EmployeeScreen
             self._page.add(EmployeeScreen(self._page, user_data))
+
+        # Re-initialize notification manager after navigation
+        self._reinit_notifications()
 
         print(f"Navigation: Went to home (role: {user_role})")
         self._notify_callbacks()
@@ -255,6 +373,10 @@ def get_navigation_manager(page: ft.Page = None) -> Optional[NavigationManager]:
 
 def push_screen(page: ft.Page, screen_name: str, screen_content):
     """Legacy push screen function"""
+    # Clean up overlays before navigation
+    cleanup_all_pickers(page)
+    close_all_dialogs(page)
+
     manager = get_navigation_manager(page)
     if manager:
         manager.push(screen_name, screen_content)
@@ -262,18 +384,39 @@ def push_screen(page: ft.Page, screen_name: str, screen_content):
         # Fallback to old behavior
         page.clean()
         page.add(screen_content)
+        # Re-initialize notifications
+        try:
+            from utils.notification_manager import ensure_notification_manager
+            ensure_notification_manager(page)
+        except:
+            pass
 
 
 def pop_screen(page: ft.Page) -> bool:
     """Legacy pop screen function"""
+    # Clean up overlays before navigation
+    cleanup_all_pickers(page)
+    close_all_dialogs(page)
+
     manager = get_navigation_manager(page)
     if manager:
-        return manager.pop()
+        result = manager.pop()
+        # Re-initialize notifications after navigation
+        try:
+            from utils.notification_manager import ensure_notification_manager
+            ensure_notification_manager(page)
+        except:
+            pass
+        return result
     return False
 
 
 def go_back(page: ft.Page, user=None):
     """Legacy go back function"""
+    # Clean up overlays before navigation
+    cleanup_all_pickers(page)
+    close_all_dialogs(page)
+
     manager = get_navigation_manager(page)
     if manager:
         manager.go_back(user)
@@ -281,6 +424,13 @@ def go_back(page: ft.Page, user=None):
         # Fallback to old behavior
         from core.navigation import navigate_to_home
         navigate_to_home(page, user)
+
+    # Re-initialize notifications after navigation
+    try:
+        from utils.notification_manager import ensure_notification_manager
+        ensure_notification_manager(page)
+    except:
+        pass
 
 
 def can_go_back() -> bool:
@@ -298,6 +448,10 @@ def clear_stack():
 
 def navigate_to_home(page: ft.Page, user=None):
     """Navigate to home screen"""
+    # Clean up overlays before navigation
+    cleanup_all_pickers(page)
+    close_all_dialogs(page)
+
     manager = get_navigation_manager(page)
     if manager:
         manager.navigate_to_home(user)

@@ -1,12 +1,14 @@
 """
 Vernika - Supabase Storage Utility
 Handles file uploads to Supabase Storage for documents, images, and other files
+Updated to use REST API directly for more reliable uploads
 """
 
 from config import SUPABASE_URL, SUPABASE_KEY, SUPABASE_STORAGE_URL, SUPABASE_STORAGE_BUCKET
 import os
 import uuid
 import logging
+import requests
 from typing import Optional, Tuple
 from datetime import datetime
 
@@ -15,7 +17,6 @@ logger = logging.getLogger(__name__)
 # Try to import Supabase
 try:
     from supabase import create_client, Client
-    from supabase.lib.storage_client import StorageFileApi
     SUPABASE_AVAILABLE = True
 except ImportError:
     SUPABASE_AVAILABLE = False
@@ -23,11 +24,10 @@ except ImportError:
 
 
 class SupabaseStorage:
-    """Supabase Storage client for file uploads"""
+    """Supabase Storage client for file uploads using REST API"""
 
     _instance: Optional['SupabaseStorage'] = None
     _client: Optional[Client] = None
-    _bucket = None
 
     def __new__(cls):
         if cls._instance is None:
@@ -35,50 +35,47 @@ class SupabaseStorage:
         return cls._instance
 
     def __init__(self):
-        if not SUPABASE_AVAILABLE:
-            self.available = False
+        self.available = False
+        self.bucket_name = SUPABASE_STORAGE_BUCKET
+        self.supabase_url = SUPABASE_URL
+        self.supabase_key = SUPABASE_KEY
+
+        if not SUPABASE_URL or not SUPABASE_KEY:
+            print("[Storage] Supabase not configured")
             return
 
-        if self._client is None and SUPABASE_KEY:
-            try:
-                self._client = create_client(SUPABASE_URL, SUPABASE_KEY)
-                self._bucket = self._client.storage.from_(
-                    SUPABASE_STORAGE_BUCKET)
+        # Check if bucket exists by testing with a simple request
+        try:
+            # Use REST API to check if bucket is accessible
+            headers = {
+                'Authorization': f'Bearer {SUPABASE_KEY}',
+                'apikey': SUPABASE_KEY
+            }
+            # Try to access the bucket
+            test_url = f"{SUPABASE_URL}/storage/v1/bucket/{self.bucket_name}"
+            response = requests.get(test_url, headers=headers, timeout=5)
+
+            if response.status_code == 200:
                 self.available = True
-                print(
-                    f"[Storage] Connected to Supabase Storage bucket: {SUPABASE_STORAGE_BUCKET}")
-            except Exception as e:
-                print(f"[Storage] Failed to connect: {e}")
-                self.available = False
-        else:
+                print(f"[Storage] Connected to bucket: {self.bucket_name}")
+            else:
+                print(f"[Storage] Bucket check failed: {response.status_code}")
+                # Try anyway - uploads might still work
+                self.available = True
+                print(f"[Storage] Will attempt uploads anyway")
+
+        except Exception as e:
+            print(f"[Storage] Failed to connect: {e}")
             self.available = False
 
-    def _ensure_bucket_exists(self) -> bool:
-        """Ensure the storage bucket exists, create if not"""
-        if not self._client:
-            return False
-
-        try:
-            # Try to get bucket info - will fail if doesn't exist
-            self._bucket = self._client.storage.get_bucket(
-                SUPABASE_STORAGE_BUCKET)
-            return True
-        except Exception:
-            try:
-                # Create bucket if it doesn't exist
-                self._bucket = self._client.storage.create_bucket(
-                    SUPABASE_STORAGE_BUCKET,
-                    options={
-                        'public': True,
-                        'allowed_mime_types': ['*'],
-                        'file_size_limit': 52428800,  # 50MB
-                    }
-                )
-                print(f"[Storage] Created bucket: {SUPABASE_STORAGE_BUCKET}")
-                return True
-            except Exception as e:
-                print(f"[Storage] Failed to create bucket: {e}")
-                return False
+    def _get_headers(self) -> dict:
+        """Get headers for REST API calls"""
+        return {
+            'Authorization': f'Bearer {self.supabase_key}',
+            'apikey': self.supabase_key,
+            'Content-Type': 'application/octet-stream',
+            'x-upsert': 'false'
+        }
 
     def upload_file(
         self,
@@ -87,7 +84,7 @@ class SupabaseStorage:
         custom_filename: str = None
     ) -> Tuple[bool, str, Optional[str]]:
         """
-        Upload a file to Supabase Storage
+        Upload a file to Supabase Storage using REST API
 
         Args:
             file_path: Local file path to upload
@@ -103,10 +100,6 @@ class SupabaseStorage:
         if not os.path.exists(file_path):
             return False, f"File not found: {file_path}", None
 
-        # Ensure bucket exists
-        if not self._ensure_bucket_exists():
-            return False, "Failed to access storage bucket", None
-
         try:
             # Generate unique filename
             original_filename = custom_filename or os.path.basename(file_path)
@@ -120,21 +113,23 @@ class SupabaseStorage:
             with open(file_path, 'rb') as f:
                 file_content = f.read()
 
-            # Upload to Supabase
-            response = self._bucket.upload(
-                bucket_path,
-                file_content,
-                options={
-                    'content_type': self._get_mime_type(file_ext),
-                    'upsert': False
-                }
-            )
+            # Upload via REST API
+            upload_url = f"{self.supabase_url}/storage/v1/object/{self.bucket_name}/{bucket_path}"
+            headers = self._get_headers()
+            headers['Content-Type'] = self._get_mime_type(file_ext)
 
-            # Get public URL
-            file_url = self._bucket.get_public_url(bucket_path)
+            response = requests.post(
+                upload_url, headers=headers, data=file_content, timeout=30)
 
-            logger.info(f"[Storage] Uploaded: {bucket_path} -> {file_url}")
-            return True, file_url, bucket_path
+            if response.status_code in [200, 201]:
+                # Get public URL
+                file_url = f"{self.supabase_url}/storage/v1/object/public/{self.bucket_name}/{bucket_path}"
+                logger.info(f"[Storage] Uploaded: {bucket_path}")
+                return True, file_url, bucket_path
+            else:
+                error_msg = f"Upload failed: {response.status_code} - {response.text[:100]}"
+                logger.error(f"[Storage] {error_msg}")
+                return False, error_msg, None
 
         except Exception as e:
             error_msg = f"Upload failed: {str(e)}"
@@ -163,31 +158,27 @@ class SupabaseStorage:
         if not self.available:
             return False, "Supabase storage not available", None
 
-        # Ensure bucket exists
-        if not self._ensure_bucket_exists():
-            return False, "Failed to access storage bucket", None
-
         try:
             # Generate unique filename
             file_ext = os.path.splitext(filename)[1]
             unique_filename = f"{uuid.uuid4().hex}{file_ext}"
             bucket_path = f"{folder}/{unique_filename}"
 
-            # Upload to Supabase
-            response = self._bucket.upload(
-                bucket_path,
-                file_content,
-                options={
-                    'content_type': content_type,
-                    'upsert': False
-                }
-            )
+            # Upload via REST API
+            upload_url = f"{self.supabase_url}/storage/v1/object/{self.bucket_name}/{bucket_path}"
+            headers = self._get_headers()
+            headers['Content-Type'] = content_type
 
-            # Get public URL
-            file_url = self._bucket.get_public_url(bucket_path)
+            response = requests.post(
+                upload_url, headers=headers, data=file_content, timeout=30)
 
-            logger.info(f"[Storage] Uploaded from bytes: {bucket_path}")
-            return True, file_url, bucket_path
+            if response.status_code in [200, 201]:
+                file_url = f"{self.supabase_url}/storage/v1/object/public/{self.bucket_name}/{bucket_path}"
+                logger.info(f"[Storage] Uploaded from bytes: {bucket_path}")
+                return True, file_url, bucket_path
+            else:
+                error_msg = f"Upload failed: {response.status_code}"
+                return False, error_msg, None
 
         except Exception as e:
             error_msg = f"Upload failed: {str(e)}"
@@ -207,35 +198,19 @@ class SupabaseStorage:
         if not self.available:
             return False, "Supabase storage not available"
 
-        try:
-            self._bucket.remove([bucket_path])
-            logger.info(f"[Storage] Deleted: {bucket_path}")
-            return True, ""
-        except Exception as e:
-            error_msg = f"Delete failed: {str(e)}"
-            logger.error(f"[Storage] {error_msg}")
-            return False, error_msg
+        # Delete requires service key - not supported with anon key
+        return False, "Delete not supported with anon key"
 
     def get_file_url(self, bucket_path: str) -> str:
         """Get public URL for a file"""
         if not self.available:
             return ""
-        return self._bucket.get_public_url(bucket_path)
+        return f"{self.supabase_url}/storage/v1/object/public/{self.bucket_name}/{bucket_path}"
 
     def list_files(self, folder: str = "") -> list:
-        """List files in a folder"""
-        if not self.available:
-            return []
-
-        try:
-            if folder:
-                response = self._bucket.list(path=folder)
-            else:
-                response = self._bucket.list()
-            return response
-        except Exception as e:
-            logger.error(f"[Storage] List failed: {e}")
-            return []
+        """List files in a folder - requires service key"""
+        # Not available with anon key
+        return []
 
     def _get_mime_type(self, extension: str) -> str:
         """Get MIME type from file extension"""

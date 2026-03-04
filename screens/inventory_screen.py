@@ -6,7 +6,7 @@ Multi-Tab Professional Interface with Advanced Features
 import flet as ft
 from datetime import datetime
 from database.session_manager import get_session, get_db_session, check_db_connection
-from database.models import InventoryCategory, Product, InventoryTransaction
+from database.models import InventoryCategory, Product, InventoryTransaction, Supplier
 
 
 # Theme colors
@@ -66,6 +66,7 @@ class InventoryScreen(ft.Container):
         self.search_query = ""
         self.selected_category = None
         self.selected_product = None
+        self.transaction_filter = "all"  # all, purchase, sale, adjustment, return
 
         self.content = self._build_content()
 
@@ -88,11 +89,6 @@ class InventoryScreen(ft.Container):
             padding=15,
             bgcolor=PRIMARY_COLOR,
             content=ft.Row([
-                ft.IconButton(
-                    icon=ft.Icons.ARROW_BACK,
-                    icon_color="white",
-                    on_click=self.go_back
-                ),
                 ft.Icon(ft.Icons.INVENTORY_2, color="white", size=28),
                 ft.Text("Inventory Management", size=22,
                         color="white", weight=ft.FontWeight.BOLD),
@@ -649,13 +645,98 @@ class InventoryScreen(ft.Container):
                                   bgcolor=PRIMARY_COLOR, color="white"),
             ]),
             ft.Container(height=15),
-            # Filter bar - simplified without dropdown on_change
+            # Filter bar with functional buttons
             ft.Container(
                 padding=10,
                 bgcolor=SURFACE_COLOR,
                 border_radius=8,
-                content=ft.Text(
-                    "Filter by transaction type in toolbar coming soon", size=12, color=TEXT_MUTED)
+                content=ft.Row([
+                    ft.Text("Filter:", size=12, color=TEXT_MUTED,
+                            weight=ft.FontWeight.BOLD),
+                    ft.Container(width=10),
+                    ft.Container(
+                        content=ft.Text(
+                            "All",
+                            size=11,
+                            color="white" if self.transaction_filter == "all" else TEXT_MUTED,
+                            weight=ft.FontWeight.BOLD if self.transaction_filter == "all" else ft.FontWeight.NORMAL
+                        ),
+                        bgcolor=PRIMARY_COLOR if self.transaction_filter == "all" else "transparent",
+                        padding=ft.padding.symmetric(
+                            horizontal=12, vertical=6),
+                        border_radius=15,
+                        border=ft.border.all(
+                            1, PRIMARY_COLOR) if self.transaction_filter != "all" else None,
+                        on_click=lambda e: self._set_transaction_filter("all")
+                    ),
+                    ft.Container(width=5),
+                    ft.Container(
+                        content=ft.Text(
+                            "Purchases",
+                            size=11,
+                            color="white" if self.transaction_filter == "purchase" else TEXT_MUTED,
+                            weight=ft.FontWeight.BOLD if self.transaction_filter == "purchase" else ft.FontWeight.NORMAL
+                        ),
+                        bgcolor=SUCCESS_COLOR if self.transaction_filter == "purchase" else "transparent",
+                        padding=ft.padding.symmetric(
+                            horizontal=12, vertical=6),
+                        border_radius=15,
+                        border=ft.border.all(
+                            1, SUCCESS_COLOR) if self.transaction_filter != "purchase" else None,
+                        on_click=lambda e: self._set_transaction_filter(
+                            "purchase")
+                    ),
+                    ft.Container(width=5),
+                    ft.Container(
+                        content=ft.Text(
+                            "Sales",
+                            size=11,
+                            color="white" if self.transaction_filter == "sale" else TEXT_MUTED,
+                            weight=ft.FontWeight.BOLD if self.transaction_filter == "sale" else ft.FontWeight.NORMAL
+                        ),
+                        bgcolor=ERROR_COLOR if self.transaction_filter == "sale" else "transparent",
+                        padding=ft.padding.symmetric(
+                            horizontal=12, vertical=6),
+                        border_radius=15,
+                        border=ft.border.all(
+                            1, ERROR_COLOR) if self.transaction_filter != "sale" else None,
+                        on_click=lambda e: self._set_transaction_filter("sale")
+                    ),
+                    ft.Container(width=5),
+                    ft.Container(
+                        content=ft.Text(
+                            "Adjustments",
+                            size=11,
+                            color="white" if self.transaction_filter == "adjustment" else TEXT_MUTED,
+                            weight=ft.FontWeight.BOLD if self.transaction_filter == "adjustment" else ft.FontWeight.NORMAL
+                        ),
+                        bgcolor=WARNING_COLOR if self.transaction_filter == "adjustment" else "transparent",
+                        padding=ft.padding.symmetric(
+                            horizontal=12, vertical=6),
+                        border_radius=15,
+                        border=ft.border.all(
+                            1, WARNING_COLOR) if self.transaction_filter != "adjustment" else None,
+                        on_click=lambda e: self._set_transaction_filter(
+                            "adjustment")
+                    ),
+                    ft.Container(width=5),
+                    ft.Container(
+                        content=ft.Text(
+                            "Returns",
+                            size=11,
+                            color="white" if self.transaction_filter == "return" else TEXT_MUTED,
+                            weight=ft.FontWeight.BOLD if self.transaction_filter == "return" else ft.FontWeight.NORMAL
+                        ),
+                        bgcolor="#9B59B6" if self.transaction_filter == "return" else "transparent",
+                        padding=ft.padding.symmetric(
+                            horizontal=12, vertical=6),
+                        border_radius=15,
+                        border=ft.border.all(
+                            1, "#9B59B6") if self.transaction_filter != "return" else None,
+                        on_click=lambda e: self._set_transaction_filter(
+                            "return")
+                    ),
+                ], spacing=0)
             ),
             ft.Container(height=15),
             # Transactions table - using ListView for scrolling
@@ -741,6 +822,33 @@ class InventoryScreen(ft.Container):
         )
 
     def _build_suppliers(self):
+        """Build suppliers management tab with full CRUD functionality"""
+        suppliers = self._get_all_suppliers()
+
+        if not suppliers:
+            return ft.Column([
+                ft.Row([
+                    ft.Text("Suppliers", size=20, weight=ft.FontWeight.BOLD),
+                    ft.Container(expand=True),
+                    ft.ElevatedButton("Add Supplier", icon=ft.Icons.ADD, on_click=self._show_add_supplier,
+                                      bgcolor=PRIMARY_COLOR, color="white"),
+                ]),
+                ft.Container(height=20),
+                ft.Container(
+                    content=ft.Column([
+                        ft.Icon(ft.Icons.LOCAL_SHIPPING_OUTLINED,
+                                size=48, color="#BDC3C7"),
+                        ft.Text("No suppliers yet", size=14, color=TEXT_MUTED),
+                        ft.Container(height=10),
+                        ft.ElevatedButton("Add First Supplier", on_click=self._show_add_supplier,
+                                          bgcolor=PRIMARY_COLOR, color="white"),
+                    ], horizontal_alignment=ft.CrossAxisAlignment.CENTER),
+                    padding=30,
+                    alignment=ft.alignment.Alignment(0, 0),
+                    expand=True,
+                )
+            ], spacing=10, expand=True)
+
         return ft.Column([
             ft.Row([
                 ft.Text("Suppliers", size=20, weight=ft.FontWeight.BOLD),
@@ -750,17 +858,135 @@ class InventoryScreen(ft.Container):
             ]),
             ft.Container(height=20),
             ft.Container(
-                content=ft.Column([
-                    ft.Icon(ft.Icons.LOCAL_SHIPPING_OUTLINED,
-                            size=48, color="#BDC3C7"),
-                    ft.Text("Supplier management coming soon",
-                            size=14, color=TEXT_MUTED),
-                ], horizontal_alignment=ft.CrossAxisAlignment.CENTER),
-                padding=30,
-                alignment=ft.alignment.Alignment(0, 0),
                 expand=True,
+                content=ft.ListView(
+                    expand=True,
+                    spacing=10,
+                    controls=[self._supplier_card(s) for s in suppliers]
+                )
             )
         ], spacing=10, expand=True)
+
+    def _supplier_card(self, supplier):
+        return ft.Card(
+            content=ft.Container(
+                padding=15,
+                content=ft.Row([
+                    ft.Container(
+                        width=50, height=50,
+                        bgcolor="#E8F4F8",
+                        border_radius=8,
+                        content=ft.Icon(ft.Icons.LOCAL_SHIPPING,
+                                        size=25, color=PRIMARY_COLOR),
+                    ),
+                    ft.Column([
+                        ft.Text(str(supplier.name) if supplier.name else "Unknown",
+                                size=15, weight=ft.FontWeight.BOLD),
+                        ft.Text(f"Contact: {supplier.contact_person or 'N/A'}",
+                                size=12, color=TEXT_MUTED),
+                        ft.Text(f"Email: {supplier.email or 'N/A'} | Phone: {supplier.phone or 'N/A'}",
+                                size=12, color=TEXT_MUTED),
+                    ], spacing=2, expand=True),
+                    ft.Row([
+                        ft.IconButton(icon=ft.Icons.EDIT, icon_color=PRIMARY_COLOR,
+                                      tooltip="Edit", on_click=lambda e, sid=supplier.id: self._edit_supplier(sid)),
+                        ft.IconButton(icon=ft.Icons.DELETE, icon_color=ERROR_COLOR,
+                                      tooltip="Delete", on_click=lambda e, sid=supplier.id: self._delete_supplier(sid)),
+                    ], spacing=5),
+                ], alignment=ft.MainAxisAlignment.START)
+            ),
+            elevation=2
+        )
+
+    def _get_all_suppliers(self):
+        db = get_db_session()
+        try:
+            return db.query(Supplier).filter(Supplier.is_active == True).order_by(Supplier.name).all()
+        except Exception as e:
+            print(f"Error getting suppliers: {e}")
+            return []
+        finally:
+            db.close()
+
+    def _edit_supplier(self, supplier_id):
+        db = get_db_session()
+        try:
+            supplier = db.query(Supplier).filter(
+                Supplier.id == supplier_id).first()
+            if supplier:
+                self._show_edit_supplier_dialog(supplier)
+        finally:
+            db.close()
+
+    def _show_edit_supplier_dialog(self, supplier):
+        name_f = ft.TextField(label="Supplier Name *",
+                              width=350, value=supplier.name or "")
+        contact_f = ft.TextField(
+            label="Contact Person", width=350, value=supplier.contact_person or "")
+        email_f = ft.TextField(label="Email", width=350,
+                               value=supplier.email or "")
+        phone_f = ft.TextField(label="Phone", width=350,
+                               value=supplier.phone or "")
+        address_f = ft.TextField(
+            label="Address", width=350, multiline=True, value=supplier.address or "")
+
+        def save(e):
+            if not name_f.value:
+                self._show_error("Supplier name is required")
+                return
+            db = get_db_session()
+            try:
+                sup = db.query(Supplier).filter(
+                    Supplier.id == supplier.id).first()
+                if sup:
+                    sup.name = name_f.value
+                    sup.contact_person = contact_f.value
+                    sup.email = email_f.value
+                    sup.phone = phone_f.value
+                    sup.address = address_f.value
+                    db.commit()
+                self._show_success("Supplier updated!")
+                self._close_dialog()
+                self.content = self._build_content()
+                self._page.update()
+            except Exception as ex:
+                self._show_error(f"Error: {ex}")
+            finally:
+                db.close()
+
+        dlg = ft.AlertDialog(title=ft.Text("Edit Supplier"),
+                             content=ft.Column(
+                                 [name_f, contact_f, email_f, phone_f, address_f], spacing=12),
+                             actions=[ft.TextButton("Cancel", on_click=lambda _: self._close_dialog()),
+                                      ft.ElevatedButton("Save", on_click=save, bgcolor=SUCCESS_COLOR, color="white")])
+        self._page.overlay.append(dlg)
+        dlg.open = True
+        self._page.update()
+
+    def _delete_supplier(self, supplier_id):
+        def confirm(e):
+            db = get_db_session()
+            try:
+                db.query(Supplier).filter(Supplier.id == supplier_id).update(
+                    {Supplier.is_active: False})
+                db.commit()
+                self._show_success("Supplier deleted")
+                self._close_dialog()
+                self.content = self._build_content()
+                self._page.update()
+            except Exception as ex:
+                self._show_error(f"Error: {ex}")
+            finally:
+                db.close()
+
+        dlg = ft.AlertDialog(title=ft.Text("Delete Supplier?"),
+                             content=ft.Text(
+                                 "Are you sure? This action can be reversed."),
+                             actions=[ft.TextButton("Cancel", on_click=lambda _: self._close_dialog()),
+                                      ft.ElevatedButton("Delete", on_click=confirm, bgcolor=ERROR_COLOR, color="white")])
+        self._page.overlay.append(dlg)
+        dlg.open = True
+        self._page.update()
 
     def _build_reports(self):
         return ft.Column([
@@ -850,7 +1076,8 @@ class InventoryScreen(ft.Container):
                 [(p.current_stock or 0) * (p.sale_price or 0) for p in products])
 
             return {'total': total, 'low': low, 'out': out, 'cats': cats, 'value': total_value}
-        except Exception:
+        except Exception as e:
+            print(f"Error getting stats: {e}")
             return {'total': 0, 'low': 0, 'out': 0, 'cats': 0, 'value': 0}
         finally:
             db.close()
@@ -863,7 +1090,8 @@ class InventoryScreen(ft.Container):
                 query = query.filter(Product.category_id ==
                                      self.selected_category)
             return query.order_by(Product.name).all()
-        except Exception:
+        except Exception as e:
+            print(f"Error getting products: {e}")
             return []
         finally:
             db.close()
@@ -874,7 +1102,8 @@ class InventoryScreen(ft.Container):
             return db.query(InventoryCategory).filter(
                 InventoryCategory.is_active == True
             ).order_by(InventoryCategory.name).all()
-        except Exception:
+        except Exception as e:
+            print(f"Error getting categories: {e}")
             return []
         finally:
             db.close()
@@ -882,13 +1111,27 @@ class InventoryScreen(ft.Container):
     def _get_all_transactions(self):
         db = get_db_session()
         try:
-            return db.query(InventoryTransaction).order_by(
+            query = db.query(InventoryTransaction)
+
+            # Apply transaction filter if set
+            if self.transaction_filter and self.transaction_filter != "all":
+                query = query.filter(
+                    InventoryTransaction.transaction_type == self.transaction_filter)
+
+            return query.order_by(
                 InventoryTransaction.created_at.desc()
             ).limit(50).all()
-        except Exception:
+        except Exception as e:
+            print(f"Error getting transactions: {e}")
             return []
         finally:
             db.close()
+
+    def _set_transaction_filter(self, filter_type):
+        """Set transaction filter and refresh the view"""
+        self.transaction_filter = filter_type
+        self.content = self._build_content()
+        self._page.update()
 
     # Actions
     def go_back(self, e):
@@ -1383,7 +1626,40 @@ class InventoryScreen(ft.Container):
         self._page.update()
 
     def _show_add_supplier(self, e):
-        self._show_success("Supplier management coming soon")
+        # Show add supplier dialog
+        name_f = ft.TextField(label="Supplier Name *", width=350)
+        contact_f = ft.TextField(label="Contact Person", width=350)
+        email_f = ft.TextField(label="Email", width=350)
+        phone_f = ft.TextField(label="Phone", width=350)
+
+        def save(e):
+            if not name_f.value:
+                self._show_error("Supplier name is required")
+                return
+            db = get_db_session()
+            try:
+                from database.models import Supplier
+                supplier = Supplier(name=name_f.value, contact_person=contact_f.value,
+                                    email=email_f.value, phone=phone_f.value, is_active=True)
+                db.add(supplier)
+                db.commit()
+                self._show_success("Supplier added!")
+                self._close_dialog()
+                self.content = self._build_content()
+                self._page.update()
+            except Exception as ex:
+                self._show_error(f"Error: {ex}")
+            finally:
+                db.close()
+
+        dlg = ft.AlertDialog(title=ft.Text("Add Supplier"),
+                             content=ft.Column(
+                                 [name_f, contact_f, email_f, phone_f], spacing=12),
+                             actions=[ft.TextButton("Cancel", on_click=lambda _: self._close_dialog()),
+                                      ft.ElevatedButton("Save", on_click=save, bgcolor=SUCCESS_COLOR, color="white")])
+        self._page.overlay.append(dlg)
+        dlg.open = True
+        self._page.update()
 
     def _close_dialog(self):
         for overlay in self._page.overlay:

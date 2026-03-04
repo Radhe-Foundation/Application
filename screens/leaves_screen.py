@@ -80,6 +80,21 @@ class LeavesScreen(ft.Container):
 
         self.content = self._build_content()
 
+        # Set current screen for keyboard shortcuts
+        try:
+            from core.keyboard_shortcuts_v2 import set_current_screen
+            set_current_screen("leaves")
+        except Exception as e:
+            print(f"[Leaves] Error setting keyboard screen: {e}")
+
+        # Initialize notifications (no test notification on load)
+        try:
+            from utils.notification_manager import get_notification_manager
+            self._notification_manager = get_notification_manager()
+        except Exception as e:
+            print(f"[Leaves] Error initializing notifications: {e}")
+            self._notification_manager = None
+
     def _build_content(self):
         # Header title based on view mode
         title = "Leave Management" if self.view_mode == "admin" else "My Time Off"
@@ -88,11 +103,6 @@ class LeavesScreen(ft.Container):
             padding=15,
             bgcolor="#9C27B0" if self.view_mode == "admin" else "#009688",
             content=ft.Row([
-                ft.IconButton(
-                    icon=ft.Icons.ARROW_BACK,
-                    icon_color="WHITE",
-                    on_click=self.on_back
-                ),
                 ft.Text(title, size=18,
                         color="WHITE", weight=ft.FontWeight.BOLD),
                 ft.Container(expand=True),

@@ -65,25 +65,20 @@ class PositionsScreen(ft.Container):
 
     def _build_content(self):
         """Build the UI"""
-        # Create toggle button for navigation
-        def toggle_nav_rail(e):
-            self._nav_rail_visible = not self._nav_rail_visible
-            self.content.content.controls[0].visible = self._nav_rail_visible
-            self.content.content.controls[1].visible = self._nav_rail_visible
-            self._page.update()
-
+        # Note: Navigation toggle is disabled for stability
+        # The toggle functionality was causing UI issues
         self.nav_toggle_btn = ft.IconButton(
-            icon=ft.Icons.MENU_OPEN if self._nav_rail_visible else ft.Icons.MENU,
-            tooltip="Toggle Navigation",
-            on_click=toggle_nav_rail,
+            icon=ft.Icons.MENU,
+            tooltip="Menu",
             icon_color="WHITE"
         )
 
+        # Add header with Add Position button
+        header = self._create_header()
         positions_list = self._build_positions_list()
 
         content = ft.Column([
-            # Header with navigation, company name, welcome text, and logout
-            self._create_header(),
+            header,
             ft.Container(
                 padding=20,
                 content=positions_list,
@@ -94,11 +89,9 @@ class PositionsScreen(ft.Container):
         return content
 
     def _create_header(self):
-        """Create header with navigation, company name, welcome text, and logout"""
+        """Create header with company name and logout"""
         return ft.Container(
             content=ft.Row([
-                # Navigation toggle button
-                self.nav_toggle_btn,
                 ft.Container(width=10),
                 ft.Icon(ft.Icons.WORK, color="WHITE", size=28),
                 ft.Text("Vernika HRA - Positions Management", size=18,

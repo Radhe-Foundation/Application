@@ -5,7 +5,7 @@ PostgreSQL/SQLAlchemy based announcements management
 
 import flet as ft
 from datetime import datetime
-from database.session_manager import get_session, get_db_session, check_db_connection
+from database.session_manager import get_db_session
 from database.models import Announcement
 
 
@@ -32,19 +32,21 @@ class AnnouncementsScreen(ft.Container):
         self._load_announcements()
 
     def _build_content(self):
-        """Build the UI"""
+        """Build the UI - No back button since this is accessed from admin panel tabs"""
         header = ft.Container(
             padding=15,
             bgcolor=PRIMARY,
             content=ft.Row([
-                ft.IconButton(
-                    icon=ft.Icons.ARROW_BACK,
-                    icon_color="WHITE",
-                    on_click=self._on_back
-                ),
                 ft.Text("Company Announcements", size=18,
                         color="WHITE", weight=ft.FontWeight.BOLD),
                 ft.Container(expand=True),
+                ft.ElevatedButton(
+                    "Export to Excel",
+                    icon=ft.Icons.DOWNLOAD,
+                    on_click=self._export_announcements,
+                    style=ft.ButtonStyle(bgcolor=SUCCESS, color="WHITE")
+                ),
+                ft.Container(width=10),
                 ft.ElevatedButton(
                     "New Announcement",
                     icon=ft.Icons.ADD,
@@ -61,13 +63,7 @@ class AnnouncementsScreen(ft.Container):
                 content=self._build_announcements_list(),
                 expand=True
             ),
-        ], expand=True)
-
-    def _on_back(self, e):
-        """Go back to dashboard - just reload the admin screen"""
-        from screens.admin_screen import AdminScreen
-        self._page.clean()
-        self._page.add(AdminScreen(self._page, self.user))
+        ], expand=True, scroll=ft.ScrollMode.AUTO)
 
     def _get_announcements(self):
         """Get all announcements from PostgreSQL"""
@@ -85,6 +81,29 @@ class AnnouncementsScreen(ft.Container):
     def _load_announcements(self):
         """Load announcements from database"""
         self.announcements = self._get_announcements()
+
+    def _export_announcements(self, e):
+        """Export announcements to Excel/CSV"""
+        if not self.announcements:
+            self._show_error("No announcements to export!")
+            return
+
+        csv_lines = [
+            "ID,Title,Type,Priority,Author,Views,Target Audience,Created Date"]
+        for ann in self.announcements:
+            created_date = ann.created_at.strftime(
+                '%Y-%m-%d') if ann.created_at else ''
+            target = ann.target_audience or 'all'
+            line = f"{ann.id},\"{ann.title or ''}\",{ann.type or 'general'},{ann.priority or 'normal'},{ann.author or 'Admin'},{ann.views or 0},{target},{created_date}"
+            csv_lines.append(line)
+
+        csv_content = "\n".join(csv_lines)
+
+        self._show_success(
+            f"Export ready! {len(self.announcements)} announcements exported.")
+
+        print("Announcements CSV Export:")
+        print(csv_content)
 
     def _build_announcements_list(self):
         """Build announcements list"""
@@ -104,11 +123,9 @@ class AnnouncementsScreen(ft.Container):
                 expand=True
             )
 
-        # Build cards for each announcement
         cards = []
         for ann in self.announcements:
             priority_color = self._get_priority_color(ann.priority or 'normal')
-
             created_date = ann.created_at.strftime(
                 '%Y-%m-%d') if ann.created_at else ''
 
@@ -172,7 +189,10 @@ class AnnouncementsScreen(ft.Container):
             )
             cards.append(card)
 
-        return ft.Column(cards, spacing=15, scroll=ft.ScrollMode.AUTO)
+        return ft.Container(
+            content=ft.Column(cards, spacing=15, scroll=ft.ScrollMode.AUTO),
+            expand=True
+        )
 
     def _get_priority_color(self, priority: str) -> str:
         """Get color for announcement priority"""
@@ -187,7 +207,6 @@ class AnnouncementsScreen(ft.Container):
     def _show_create_dialog(self, e=None):
         """Show create announcement dialog"""
         title_field = ft.TextField(label="Title", width=450)
-
         type_dropdown = ft.Dropdown(
             width=200,
             options=[
@@ -199,7 +218,6 @@ class AnnouncementsScreen(ft.Container):
             value="general",
             label="Type"
         )
-
         priority_dropdown = ft.Dropdown(
             width=200,
             options=[
@@ -211,11 +229,9 @@ class AnnouncementsScreen(ft.Container):
             value="normal",
             label="Priority"
         )
-
         content_field = ft.TextField(
             label="Content", width=450, multiline=True, min_lines=4
         )
-
         error = ft.Text("", color=ERROR, size=12, visible=False)
 
         def save(e):
@@ -233,7 +249,8 @@ class AnnouncementsScreen(ft.Container):
                     type=type_dropdown.value,
                     priority=priority_dropdown.value,
                     author="Admin",
-                    views=0
+                    views=0,
+                    target_audience="all"
                 )
                 db.add(new_announcement)
                 db.commit()
@@ -260,7 +277,7 @@ class AnnouncementsScreen(ft.Container):
         dialog = ft.AlertDialog(
             modal=True,
             title=ft.Text("New Announcement"),
-            content=ft.Container(content=form, width=500, height=300),
+            content=ft.Container(content=form, width=500, height=350),
             actions=[
                 ft.TextButton(
                     "Cancel", on_click=lambda e: self._close_dialog()),
@@ -275,15 +292,14 @@ class AnnouncementsScreen(ft.Container):
 
     def _edit_announcement(self, announcement):
         """Edit announcement"""
-        self._show_announcement_form(announcement)
+        self._show_edit_dialog(announcement)
 
-    def _show_announcement_form(self, announcement=None):
-        """Show announcement form dialog"""
+    def _show_edit_dialog(self, announcement):
+        """Show edit announcement dialog"""
         title_field = ft.TextField(
             label="Title", width=450,
             value=announcement.title if announcement else ""
         )
-
         type_dropdown = ft.Dropdown(
             width=200,
             options=[
@@ -295,7 +311,6 @@ class AnnouncementsScreen(ft.Container):
             value=announcement.type if announcement else "general",
             label="Type"
         )
-
         priority_dropdown = ft.Dropdown(
             width=200,
             options=[
@@ -307,7 +322,6 @@ class AnnouncementsScreen(ft.Container):
             value=announcement.priority if announcement else "normal",
             label="Priority"
         )
-
         content_field = ft.TextField(
             label="Content", width=450, multiline=True, min_lines=4,
             value=announcement.content if announcement else ""

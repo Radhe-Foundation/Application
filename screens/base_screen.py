@@ -1,471 +1,424 @@
 """
-Vernika - Base Screen Class
-Provides common functionality for all screens including:
-- Proper session management
-- Automatic data refresh
-- Loading states
-- Error handling
+Vernika HRA - Base Screen Classes
+Provides base functionality for all screens including loading states and common operations
 """
 
-from utils.cache import get_cache, SessionCache
-from database.session_manager import get_session, get_db_session, check_db_connection
 import flet as ft
-from typing import Optional, Dict, Any, Callable
-from datetime import datetime
-import logging
-
-logger = logging.getLogger(__name__)
+from typing import Optional, Any, Callable
 
 
 class BaseScreen(ft.Container):
     """
-    Base class for all screens in the application.
-    Provides common functionality for database operations,
-    caching, and UI management.
+    Base screen class with common functionality
+    All screens should inherit from this class
     """
 
-    def __init__(self, page: ft.Page, user_data: Dict[str, Any] = None, **kwargs):
+    def __init__(self, page: ft.Page, user: Any = None, **kwargs):
         super().__init__(**kwargs)
         self._page = page
-        self._user_data = user_data or {}
-        self._is_loading = False
-        self._error_message = None
-        self._last_refresh = None
-
-        # Initialize
+        self.user = user
         self.expand = True
         self.bgcolor = "#F5F5F5"
 
+        # Loading state
+        self._is_loading = False
+        self._loadingOverlay = None
+
+        # Error state
+        self._error_message = None
+
     @property
     def page(self) -> ft.Page:
+        """Get page reference"""
         return self._page
 
     @property
-    def user_data(self) -> Dict[str, Any]:
-        return self._user_data
+    def is_loading(self) -> bool:
+        """Check if screen is loading"""
+        return self._is_loading
 
-    @property
-    def user_id(self) -> int:
-        return self._user_data.get('id') or self._user_data.get('user_id')
+    def show_loading(self, message: str = "Loading..."):
+        """Show loading overlay"""
+        if self._loadingOverlay:
+            self._loadingOverlay.visible = True
+            self._is_loading = True
+            self._page.update()
 
-    @property
-    def user_role(self) -> str:
-        role = self._user_data.get('role', 'employee')
-        if hasattr(role, 'name'):
-            return role.name
-        return str(role).lower()
+    def hide_loading(self):
+        """Hide loading overlay"""
+        if self._loadingOverlay:
+            self._loadingOverlay.visible = False
+            self._is_loading = False
+            self._page.update()
 
-    @property
-    def is_admin(self) -> bool:
-        return self.user_role == 'admin'
+    def create_loading_overlay(self):
+        """Create loading overlay - call in _build_content"""
+        self._loadingOverlay = ft.Container(
+            visible=False,
+            expand=True,
+            bgcolor=ft.Colors.with_opacity(0.5, ft.Colors.WHITE),
+            content=ft.Column([
+                ft.ProgressRing(width=50, height=50),
+                ft.Text("Loading...", size=16),
+            ], horizontal_alignment=ft.CrossAxisAlignment.CENTER, spacing=20),
+            alignment=ft.alignment.Alignment(0, 0)
+        )
+        return self._loadingOverlay
 
-    # ==================== Database Operations ====================
-
-    def with_session(self, operation: Callable, *args, **kwargs):
-        """
-        Execute a database operation with proper session management.
-
-        Usage:
-            result = self.with_session(session.query, User)
-
-        Args:
-            operation: Function that takes session as first argument
-            *args, **kwargs: Additional arguments for the operation
-
-        Returns:
-            Result of the operation
-        """
-        with get_session() as session:
-            return operation(session, *args, **kwargs)
-
-    def query(self, model, *filters):
-        """
-        Simple query wrapper with session management.
-
-        Usage:
-            users = self.query(User, User.is_active == True)
-        """
-        with get_session() as session:
-            return session.query(model).filter(*filters).all()
-
-    def get_or_none(self, model, id: int):
-        """Get a single record by ID"""
-        with get_session() as session:
-            return session.query(model).get(id)
-
-    def save(self, obj):
-        """Save an object to database"""
-        with get_session() as session:
-            session.add(obj)
-            session.commit()
-            session.refresh(obj)
-            return obj
-
-    def delete(self, obj):
-        """Delete an object from database"""
-        with get_session() as session:
-            session.delete(obj)
-            session.commit()
-
-    # ==================== Cache Operations ====================
-
-    def get_cached(self, key: str, default=None):
-        """Get value from cache"""
-        cache = get_cache()
-        value = cache.get(key)
-        return value if value is not None else default
-
-    def set_cached(self, key: str, value: Any, ttl: int = 300):
-        """Set value in cache"""
-        cache = get_cache()
-        cache.set(key, value, ttl)
-
-    def invalidate_cache(self, pattern: str = None, key: str = None):
-        """Invalidate cache"""
-        cache = get_cache()
-        if key:
-            cache.delete(key)
-        if pattern:
-            cache.invalidate_pattern(pattern)
-
-    # ==================== UI State Management ====================
-
-    def show_loading(self, show: bool = True):
-        """Show or hide loading indicator"""
-        self._is_loading = show
-        if hasattr(self, '_loading_indicator'):
-            self._loading_indicator.visible = show
-        if hasattr(self, 'content') and self.content:
-            # Rebuild content or update
-            pass
+    def show_success(self, message: str):
+        """Show success snackbar"""
+        snack = ft.SnackBar(content=ft.Text(message), bgcolor="#4CAF50")
+        self._page.overlay.append(snack)
+        snack.open = True
         self._page.update()
 
     def show_error(self, message: str):
-        """Show error message"""
-        self._error_message = message
-        if hasattr(self, '_error_text'):
-            self._error_text.value = message
-            self._error_text.visible = True
+        """Show error snackbar"""
+        snack = ft.SnackBar(content=ft.Text(message), bgcolor="#F44336")
+        self._page.overlay.append(snack)
+        snack.open = True
         self._page.update()
 
-    def hide_error(self):
-        """Hide error message"""
-        self._error_message = None
-        if hasattr(self, '_error_text'):
-            self._error_text.visible = False
+    def show_info(self, message: str):
+        """Show info snackbar"""
+        snack = ft.SnackBar(content=ft.Text(message), bgcolor="#2196F3")
+        self._page.overlay.append(snack)
+        snack.open = True
         self._page.update()
 
-    def show_snackbar(self, message: str, is_error: bool = False):
-        """Show a snackbar message"""
-        try:
-            bgcolor = "#DC3545" if is_error else "#323232"
-            snack = ft.SnackBar(content=ft.Text(message), bgcolor=bgcolor)
-            self._page.overlay.append(snack)
-            snack.open = True
-            self._page.update()
-        except Exception as e:
-            logger.error(f"Snackbar error: {e}")
+    def show_warning(self, message: str):
+        """Show warning snackbar"""
+        snack = ft.SnackBar(content=ft.Text(message), bgcolor="#FF9800")
+        self._page.overlay.append(snack)
+        snack.open = True
+        self._page.update()
 
-    # ==================== Refresh Functionality ====================
+    def close_all_dialogs(self):
+        """Close all open dialogs"""
+        for overlay in self._page.overlay:
+            if isinstance(overlay, ft.AlertDialog) and overlay.open:
+                overlay.open = False
+        self._page.update()
+
+    def navigate_to_home(self):
+        """Navigate to home screen based on user role"""
+        from utils.navigation_helpers import safe_navigate_to_home
+        safe_navigate_to_home(self._page, self.user)
 
     def refresh(self):
-        """
-        Refresh the screen data.
-        Override this in subclasses to implement custom refresh logic.
-        """
-        self._last_refresh = datetime.now()
-        logger.info(
-            f"{self.__class__.__name__} refreshed at {self._last_refresh}")
-
-        # Update UI if needed
-        if hasattr(self, '_page'):
-            self._page.update()
-
-    def should_refresh(self, max_age_seconds: int = 30) -> bool:
-        """
-        Check if screen should be refreshed.
-
-        Args:
-            max_age_seconds: Maximum age before refresh needed
-
-        Returns:
-            True if refresh is needed
-        """
-        if self._last_refresh is None:
-            return True
-
-        age = (datetime.now() - self._last_refresh).total_seconds()
-        return age > max_age_seconds
-
-    # ==================== Database Health ====================
-
-    def check_database_connection(self) -> bool:
-        """Check if database connection is healthy"""
-        return check_db_connection()
-
-    def ensure_database_connection(self) -> bool:
-        """
-        Ensure database connection is available.
-        Shows error dialog if not connected.
-        """
-        if not self.check_database_connection():
-            self._show_connection_error()
-            return False
-        return True
-
-    def _show_connection_error(self):
-        """Show connection error dialog"""
-        def close_and_restart(e):
-            self._page.dialog = None
-            self._page.update()
-
-        dlg = ft.AlertDialog(
-            title=ft.Text("Database Connection Error"),
-            content=ft.Column([
-                ft.Icon(ft.Icons.WARNING, size=48, color="#DC3545"),
-                ft.Container(height=10),
-                ft.Text("Unable to connect to the database."),
-                ft.Text("Please check your internet connection and try again."),
-            ]),
-            actions=[
-                ft.TextButton("Close", on_click=close_and_restart),
-                ft.ElevatedButton(
-                    "Retry",
-                    on_click=lambda e: (
-                        setattr(self._page.dialog, 'open', False),
-                        self.refresh() if self.ensure_database_connection() else None,
-                        self._page.update()
-                    )
-                )
-            ]
-        )
-        self._page.dialog = dlg
-        dlg.open = True
+        """Override in subclass to implement refresh"""
         self._page.update()
 
-    # ==================== Navigation ====================
 
-    def navigate_to(self, screen_name: str, screen_class, **params):
-        """Navigate to another screen"""
-        try:
-            from core.navigation_v2 import get_navigation_manager
-
-            nav_manager = get_navigation_manager(self._page)
-            if nav_manager:
-                nav_manager.push(screen_name, screen_class(
-                    **params) if params else screen_class(self._page, self._user_data))
-            else:
-                # Fallback
-                self._page.clean()
-                self._page.add(screen_class(self._page, self._user_data))
-        except Exception as e:
-            logger.error(f"Navigation error: {e}")
-            self.show_snackbar(f"Navigation error: {str(e)}", is_error=True)
-
-    def go_back(self):
-        """Go back to previous screen"""
-        try:
-            from core.navigation_v2 import get_navigation_manager
-
-            nav_manager = get_navigation_manager(self._page)
-            if nav_manager:
-                nav_manager.go_back(self._user_data)
-            else:
-                from core.navigation import go_back
-                go_back(self._page, self._user_data)
-        except Exception as e:
-            logger.error(f"Go back error: {e}")
-            # Fallback to login
-            from screens.login_screen import LoginScreen
-            self._page.clean()
-            self._page.add(LoginScreen(self._page))
-
-    # ==================== Logout ====================
-
-    def logout(self, e=None):
-        """Handle logout"""
-        # Clear session cache
-        SessionCache.clear()
-
-        # Clear user data
-        self._user_data = {}
-
-        # Navigate to login
-        from screens.login_screen import LoginScreen
-        self._page.clean()
-        self._page.add(LoginScreen(self._page))
-
-
-class LoadingContainer(ft.Container):
+class AdminBaseScreen(BaseScreen):
     """
-    Container that shows loading indicator while data is being loaded.
+    Base class for admin screens
+    Provides admin-specific functionality
     """
 
-    def __init__(self, content: ft.Control = None, loading_message: str = "Loading...", **kwargs):
+    def __init__(self, page: ft.Page, user: Any = None, **kwargs):
+        # Set default bgcolor for admin screens
+        kwargs.setdefault('bgcolor', "#F5F5F5")
+        super().__init__(page, user, **kwargs)
+
+        # Navigation rail state
+        self._nav_rail_visible = True
+
+    def toggle_nav_rail(self):
+        """Toggle navigation rail visibility"""
+        self._nav_rail_visible = not self._nav_rail_visible
+        if hasattr(self, 'content') and self.content:
+            try:
+                # Update visibility in content
+                self.content.content.controls[0].visible = self._nav_rail_visible
+                self.content.content.controls[1].visible = self._nav_rail_visible
+                self._page.update()
+            except Exception as e:
+                print(f"Error toggling nav rail: {e}")
+
+    def is_admin(self) -> bool:
+        """Check if current user is admin"""
+        if isinstance(self.user, dict):
+            return self.user.get('role', '').lower() == 'admin'
+        return False
+
+
+class EmployeeBaseScreen(BaseScreen):
+    """
+    Base class for employee screens
+    Provides employee-specific functionality
+    """
+
+    def __init__(self, page: ft.Page, user: Any = None, **kwargs):
+        kwargs.setdefault('bgcolor', "#F5F5F5")
+        super().__init__(page, user, **kwargs)
+
+        # Get employee ID if available
+        self.employee_id = None
+        if self.user:
+            user_id = self.user.get('id') if isinstance(
+                self.user, dict) else None
+            if user_id:
+                try:
+                    from database.operations import get_employee_by_user_id
+                    from database.session_manager import get_db_session
+                    db = get_db_session()
+                    emp = get_employee_by_user_id(db, user_id)
+                    if emp:
+                        self.employee_id = int(emp.id)
+                    db.close()
+                except Exception as e:
+                    print(f"Error getting employee ID: {e}")
+
+    def is_admin(self) -> bool:
+        """Check if current user is admin"""
+        if isinstance(self.user, dict):
+            return self.user.get('role', '').lower() == 'admin'
+        return False
+
+
+# Loading button with state
+class LoadingButton(ft.Container):
+    """Button with loading state"""
+
+    def __init__(
+        self,
+        text: str,
+        on_click: Callable,
+        bgcolor: str = "#2E86AB",
+        color: str = "WHITE",
+        icon: Any = None,
+        loading: bool = False,
+        **kwargs
+    ):
         super().__init__(**kwargs)
-        self._content = content
-        self._loading_message = loading_message
-        self._is_loading = False
 
-        self.content = self._build_content()
+        self._text = text
+        self._on_click = on_click
+        self._bgcolor = bgcolor
+        self._color = color
+        self._icon = icon
+        self._loading = loading
+
+        self.bgcolor = bgcolor
+        self.border_radius = 8
+        self.padding = 10
+        self.on_click = self._handle_click
+
+        self._build_content()
 
     def _build_content(self):
-        """Build the content based on loading state"""
-        if self._is_loading:
-            return ft.Container(
-                content=ft.Column([
-                    ft.ProgressRing(width=40, height=40),
-                    ft.Text(self._loading_message, size=14, color="#6C757D")
-                ], horizontal_alignment=ft.CrossAxisAlignment.CENTER),
-                alignment=ft.alignment.Alignment(0, 0),
-                expand=True
-            )
-        elif self._content:
-            return self._content
+        if self._loading:
+            content = ft.Row([
+                ft.ProgressRing(width=16, height=16, color=self._color),
+                ft.Text("Loading...", color=self._color)
+            ], alignment=ft.MainAxisAlignment.CENTER, spacing=8)
         else:
-            return ft.Container()
+            controls = []
+            if self._icon:
+                controls.append(self._icon)
+            controls.append(ft.Text(self._text, color=self._color))
+            content = ft.Row(
+                controls, alignment=ft.MainAxisAlignment.CENTER, spacing=8)
 
-    def set_loading(self, is_loading: bool):
+        self.content = content
+
+    def _handle_click(self, e):
+        if not self._loading and self._on_click:
+            self._on_click(e)
+
+    def set_loading(self, loading: bool):
         """Set loading state"""
-        self._is_loading = is_loading
-        self.content = self._build_content()
-
-    def set_content(self, content: ft.Control):
-        """Set the content to display when not loading"""
-        self._content = content
-        if not self._is_loading:
-            self.content = content
+        self._loading = loading
+        self._build_content()
+        self.update()
 
 
-class ErrorContainer(ft.Container):
+# Data table with pagination
+class PaginatedDataTable(ft.Container):
     """
-    Container that shows error message with retry option.
+    Data table with built-in pagination
     """
 
-    def __init__(self, error_message: str = None, on_retry: Callable = None, **kwargs):
+    def __init__(
+        self,
+        columns: list,
+        rows: list,
+        rows_per_page: int = 20,
+        on_page_change: Callable = None,
+        **kwargs
+    ):
         super().__init__(**kwargs)
-        self._error_message = error_message or "An error occurred"
-        self._on_retry = on_retry
 
-        self.content = self._build_content()
+        self._columns = columns
+        self._all_rows = rows
+        self._rows_per_page = rows_per_page
+        self._current_page = 1
+        self._on_page_change = on_page_change
 
-    def _build_content(self):
-        """Build error display"""
-        return ft.Container(
-            content=ft.Column([
-                ft.Icon(ft.Icons.ERROR_OUTLINE, size=48, color="#DC3545"),
-                ft.Container(height=10),
-                ft.Text(self._error_message, size=14, color="#DC3545",
-                        text_align=ft.TextAlign.CENTER),
-                ft.Container(height=15),
-                ft.ElevatedButton(
-                    "Retry",
-                    icon=ft.Icons.REFRESH,
-                    on_click=self._handle_retry,
-                    style=ft.ButtonStyle(bgcolor="#2E86AB", color="white")
-                ) if self._on_retry else ft.Container()
-            ], horizontal_alignment=ft.CrossAxisAlignment.CENTER),
-            alignment=ft.alignment.Alignment(0, 0),
-            padding=30
+        self._total_pages = (len(rows) + rows_per_page - 1) // rows_per_page
+
+        self.content = self._build()
+
+    def _build(self):
+        # Get rows for current page
+        start_idx = (self._current_page - 1) * self._rows_per_page
+        end_idx = start_idx + self._rows_per_page
+        page_rows = self._all_rows[start_idx:end_idx]
+
+        table = ft.DataTable(
+            columns=self._columns,
+            rows=page_rows
         )
 
-    def _handle_retry(self, e):
-        """Handle retry button click"""
-        if self._on_retry:
-            self._on_retry(e)
-
-    def set_error(self, message: str):
-        """Set error message"""
-        self._error_message = message
-        self.content = self._build_content()
-
-
-class RefreshContainer(ft.Container):
-    """
-    Container with pull-to-refresh and manual refresh button.
-    """
-
-    def __init__(self, content: ft.Control, on_refresh: Callable = None, **kwargs):
-        super().__init__(**kwargs)
-        self._content = content
-        self._on_refresh = on_refresh
-
-        self.content = self._build_content()
-
-    def _build_content(self):
-        """Build content with refresh button"""
-        return ft.Column([
-            # Refresh button row
-            ft.Container(
-                content=ft.Row([
-                    ft.Container(expand=True),
-                    ft.IconButton(
-                        icon=ft.Icons.REFRESH,
-                        tooltip="Refresh",
-                        on_click=self._handle_refresh
-                    )
-                ]),
-                alignment=ft.alignment.Alignment(1, 0)
+        # Pagination controls
+        pagination = ft.Row([
+            ft.IconButton(
+                icon=ft.Icons.CHEVRON_LEFT,
+                on_click=self._prev_page if self._current_page > 1 else None,
+                disabled=self._current_page <= 1
             ),
-            # Main content
-            self._content
-        ])
+            ft.Text(f"Page {self._current_page} of {self._total_pages}"),
+            ft.IconButton(
+                icon=ft.Icons.CHEVRON_RIGHT,
+                on_click=self._next_page if self._current_page < self._total_pages else None,
+                disabled=self._current_page >= self._total_pages
+            ),
+        ], alignment=ft.MainAxisAlignment.CENTER)
 
-    def _handle_refresh(self, e):
-        """Handle refresh"""
-        if self._on_refresh:
-            self._on_refresh(e)
+        return ft.Column([table, pagination], spacing=10)
 
+    def _prev_page(self, e):
+        if self._current_page > 1:
+            self._current_page -= 1
+            self.content = self._build()
+            if self._on_page_change:
+                self._on_page_change(self._current_page)
 
-# Utility functions
+    def _next_page(self, e):
+        if self._current_page < self._total_pages:
+            self._current_page += 1
+            self.content = self._build()
+            if self._on_page_change:
+                self._on_page_change(self._current_page)
 
-def create_loading_view(message: str = "Loading...") -> ft.Container:
-    """Create a simple loading view"""
-    return ft.Container(
-        content=ft.Column([
-            ft.ProgressRing(width=50, height=50),
-            ft.Container(height=15),
-            ft.Text(message, size=14, color="#6C757D")
-        ], horizontal_alignment=ft.CrossAxisAlignment.CENTER),
-        alignment=ft.alignment.Alignment(0, 0),
-        expand=True,
-        padding=50
-    )
-
-
-def create_error_view(message: str, on_retry: Callable = None) -> ft.Container:
-    """Create a simple error view"""
-    return ft.Container(
-        content=ft.Column([
-            ft.Icon(ft.Icons.ERROR_OUTLINE, size=48, color="#DC3545"),
-            ft.Container(height=10),
-            ft.Text(message, size=14, color="#DC3545",
-                    text_align=ft.TextAlign.CENTER),
-            ft.Container(height=15),
-            ft.ElevatedButton(
-                "Retry",
-                icon=ft.Icons.REFRESH,
-                on_click=on_retry,
-                style=ft.ButtonStyle(bgcolor="#2E86AB", color="white")
-            ) if on_retry else ft.Container()
-        ], horizontal_alignment=ft.CrossAxisAlignment.CENTER),
-        alignment=ft.alignment.Alignment(0, 0),
-        expand=True,
-        padding=50
-    )
+    def update_data(self, rows: list):
+        """Update table data"""
+        self._all_rows = rows
+        self._total_pages = max(
+            1, (len(rows) + self._rows_per_page - 1) // self._rows_per_page)
+        self._current_page = 1
+        self.content = self._build()
 
 
-def create_empty_view(message: str, icon=ft.Icons.INBOX, action_button=None) -> ft.Container:
-    """Create a simple empty state view"""
-    return ft.Container(
-        content=ft.Column([
+# Search bar component
+class SearchBar(ft.Container):
+    """
+    Reusable search bar component
+    """
+
+    def __init__(
+        self,
+        hint_text: str = "Search...",
+        on_search: Callable = None,
+        width: int = 300,
+        **kwargs
+    ):
+        super().__init__(**kwargs)
+
+        self._on_search = on_search
+        self._search_field = ft.TextField(
+            hint_text=hint_text,
+            prefix_icon=ft.Icons.SEARCH,
+            width=width,
+            on_submit=self._handle_search
+        )
+
+        self.content = ft.Row([self._search_field])
+
+    def _handle_search(self, e):
+        if self._on_search:
+            self._on_search(self._search_field.value)
+
+    def get_value(self) -> str:
+        """Get search value"""
+        return self._search_field.value or ""
+
+    def clear(self):
+        """Clear search field"""
+        self._search_field.value = ""
+        self.update()
+
+
+# Empty state component
+class EmptyState(ft.Container):
+    """
+    Empty state placeholder for lists
+    """
+
+    def __init__(
+        self,
+        icon: Any = ft.Icons.INBOX,
+        title: str = "No Data",
+        message: str = "Nothing to display",
+        action_text: str = None,
+        on_action: Callable = None,
+        **kwargs
+    ):
+        super().__init__(**kwargs)
+
+        self.alignment = ft.alignment.Alignment(0, 0)
+
+        content = ft.Column([
             ft.Icon(icon, size=64, color="#BDBDBD"),
-            ft.Container(height=15),
+            ft.Text(title, size=18, weight=ft.FontWeight.BOLD),
             ft.Text(message, size=14, color="#757575"),
-            ft.Container(height=15),
-            action_button or ft.Container()
-        ], horizontal_alignment=ft.CrossAxisAlignment.CENTER),
-        alignment=ft.alignment.Alignment(0, 0),
-        expand=True,
-        padding=50
+        ], horizontal_alignment=ft.CrossAxisAlignment.CENTER, spacing=10)
+
+        if action_text and on_action:
+            content.controls.append(
+                ft.ElevatedButton(action_text, on_click=on_action)
+            )
+
+        self.content = content
+
+
+# Confirmation dialog helper
+def show_confirmation_dialog(
+    page: ft.Page,
+    title: str,
+    message: str,
+    on_confirm: Callable,
+    confirm_text: str = "Confirm",
+    cancel_text: str = "Cancel",
+    confirm_color: str = "#F44336"
+):
+    """Show a confirmation dialog"""
+
+    def close_dlg(e):
+        for overlay in page.overlay:
+            if isinstance(overlay, ft.AlertDialog):
+                overlay.open = False
+        page.update()
+
+    def handle_confirm(e):
+        on_confirm()
+        close_dlg(None)
+
+    dialog = ft.AlertDialog(
+        title=ft.Text(title),
+        content=ft.Text(message),
+        actions=[
+            ft.TextButton(cancel_text, on_click=close_dlg),
+            ft.ElevatedButton(
+                confirm_text,
+                on_click=handle_confirm,
+                style=ft.ButtonStyle(bgcolor=confirm_color, color="WHITE")
+            )
+        ],
+        actions_alignment=ft.MainAxisAlignment.END
     )
+
+    page.overlay.append(dialog)
+    dialog.open = True
+    page.update()

@@ -44,11 +44,6 @@ class TasksScreen(ft.Container):
             padding=15,
             bgcolor="#009688",
             content=ft.Row([
-                ft.IconButton(
-                    icon=ft.Icons.ARROW_BACK,
-                    icon_color="WHITE",
-                    on_click=self.on_back
-                ),
                 ft.Text("Task Management", size=18,
                         color="WHITE", weight=ft.FontWeight.BOLD),
                 ft.Container(expand=True),

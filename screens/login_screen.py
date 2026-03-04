@@ -641,6 +641,13 @@ class LoginScreen(ft.Container):
                 from screens.employee_screen import EmployeeScreen
                 self._page.add(EmployeeScreen(self._page, user_data))
 
+            # Re-initialize notifications after navigation
+            try:
+                from utils.notification_manager import ensure_notification_manager
+                ensure_notification_manager(self._page)
+            except Exception as e:
+                print(f"Notification init error: {e}")
+
         except Exception as ex:
             print(f"Navigation error: {str(ex)}")
             import traceback

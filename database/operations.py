@@ -1,12 +1,6 @@
 
 # Vernika Application - Database Operations
 # Complete CRUD operations for HR Management System
-from utils.cache import get_global_cache, cache_screen_data, get_cached_screen_data
-from sqlalchemy.orm import Session
-from sqlalchemy import func, or_
-from datetime import datetime, date
-import bcrypt
-import secrets
 from database.models import (
     User, Role, Employee, Department, Position,
     Attendance, LeaveRequest, LeaveBalance, LeaveTypeConfig,
@@ -18,6 +12,16 @@ from database.models import (
     Meeting, MeetingParticipant, Document, UserPermission,
     EmailCategory, MeetingStatus, MessageType, CallLog, CallType, CallStatus
 )
+from utils.cache import get_global_cache, cache_screen_data, get_cached_screen_data
+from sqlalchemy.orm import Session
+from sqlalchemy import func, or_
+from datetime import datetime, date
+import bcrypt
+import secrets
+import logging
+
+# Configure logging
+logger = logging.getLogger(__name__)
 
 
 # ==================== USER OPERATIONS ====================
@@ -342,11 +346,33 @@ def mark_attendance(db: Session, employee_id: int, date: date = None,
         Attendance.date == date
     ).first()
 
+    # Auto-detect late arrival if check_in time is provided and status is PRESENT
+    if check_in and status == AttendanceStatus.PRESENT:
+        # Get configured work start time (default 9:00 AM)
+        from config import DEFAULT_WORKING_HOURS_START
+        try:
+            from datetime import time
+            work_start = datetime.strptime(
+                DEFAULT_WORKING_HOURS_START, "%H:%M").time()
+            check_in_time = check_in.time() if hasattr(check_in, 'time') else check_in
+            if check_in_time > work_start:
+                status = AttendanceStatus.LATE
+        except:
+            pass  # If parsing fails, keep original status
+
     if existing:
         # Update existing record
-        existing.check_in = check_in or existing.check_in
-        existing.check_out = check_out or existing.check_out
+        if check_in:
+            existing.check_in = check_in
+        if check_out:
+            existing.check_out = check_out
         existing.status = status
+
+        # Recalculate working hours if both check-in and check-out are provided
+        if existing.check_in and existing.check_out:
+            existing.working_hours = (
+                existing.check_out - existing.check_in).total_seconds() / 3600
+
         db.commit()
         db.refresh(existing)
         return existing
@@ -457,12 +483,55 @@ def create_leave_request(db: Session, employee_id: int, leave_type_id: int,
 
 
 def approve_leave_request(db: Session, request_id: int, approved_by: int = None):
-    """Approve a leave request"""
+    """Approve a leave request and update leave balance"""
     leave_request = db.query(LeaveRequest).filter(
         LeaveRequest.id == request_id).first()
     if leave_request:
         leave_request.status = LeaveStatus.APPROVED
         db.commit()
+
+        # Update leave balance - deduct days from employee's balance
+        try:
+            from datetime import datetime
+            year = datetime.now().year
+
+            # Get or create leave balance for this employee and year
+            leave_balance = db.query(LeaveBalance).filter(
+                LeaveBalance.employee_id == leave_request.employee_id,
+                LeaveBalance.leave_type_id == leave_request.leave_type_id,
+                LeaveBalance.year == year
+            ).first()
+
+            if leave_balance:
+                # Deduct the days from used days
+                leave_balance.used_days = (
+                    leave_balance.used_days or 0) + leave_request.days_requested
+                db.commit()
+                print(
+                    f"Leave balance updated: Employee {leave_request.employee_id}, Type {leave_request.leave_type_id}, Days {leave_request.days_requested}")
+            else:
+                # Create new balance record if doesn't exist
+                leave_type = db.query(LeaveTypeConfig).filter(
+                    LeaveTypeConfig.id == leave_request.leave_type_id
+                ).first()
+
+                if leave_type:
+                    new_balance = LeaveBalance(
+                        employee_id=leave_request.employee_id,
+                        leave_type_id=leave_request.leave_type_id,
+                        year=year,
+                        total_days=leave_type.max_days_per_year or 0,
+                        used_days=leave_request.days_requested
+                    )
+                    db.add(new_balance)
+                    db.commit()
+                    print(
+                        f"Leave balance created: Employee {leave_request.employee_id}, Type {leave_request.leave_type_id}")
+
+        except Exception as e:
+            print(f"Error updating leave balance: {e}")
+            # Don't fail the approval if balance update fails
+
         db.refresh(leave_request)
     return leave_request
 
@@ -844,8 +913,15 @@ def get_dashboard_stats(db: Session):
     try:
         active_users = db.query(User).filter(
             User.status == UserStatus.ACTIVE).count()
-    except:
-        active_users = db.query(User).filter(User.status == 'active').count()
+    except Exception as e:
+        logger.warning(f"Error getting active users with enum: {e}")
+        # Fallback to string comparison
+        try:
+            active_users = db.query(User).filter(
+                User.status == 'active').count()
+        except Exception as e2:
+            logger.error(f"Error getting active users with string: {e2}")
+            active_users = 0
 
     result = {
         "total_users": total_users,
@@ -1017,7 +1093,8 @@ def mark_chat_messages_as_read(db: Session, user_id: int, sender_id: int = None,
 
 def send_email(db: Session, sender_id: int, subject: str, body: str,
                recipient_ids: list, category: EmailCategory = EmailCategory.GENERAL,
-               cc_ids: list = None, bcc_ids: list = None, is_draft: bool = False):
+               cc_ids: list = None, bcc_ids: list = None, is_draft: bool = False,
+               has_attachment: bool = False, attachment_path: str = None, attachment_name: str = None):
     """Send an internal email"""
     # Create email message
     email = EmailMessage(
@@ -1025,7 +1102,10 @@ def send_email(db: Session, sender_id: int, subject: str, body: str,
         subject=subject,
         body=body,
         category=category,
-        is_draft=is_draft
+        is_draft=is_draft,
+        has_attachment=has_attachment,
+        attachment_path=attachment_path,
+        attachment_name=attachment_name
     )
     db.add(email)
     db.flush()
@@ -1114,6 +1194,111 @@ def delete_email(db: Session, email_id: int):
         db.commit()
         return True
     return False
+
+
+def save_draft(db: Session, sender_id: int, subject: str, body: str,
+               recipient_ids: list, category: EmailCategory = EmailCategory.GENERAL,
+               cc_ids: list = None, bcc_ids: list = None, draft_id: int = None):
+    """Save or update a draft email"""
+    if draft_id:
+        # Update existing draft
+        email = get_email_by_id(db, draft_id)
+        if email and email.is_draft:
+            email.subject = subject
+            email.body = body
+            email.category = category
+            db.flush()
+
+            # Update recipients - remove old ones and add new
+            db.query(EmailRecipient).filter(
+                EmailRecipient.email_id == email.id
+            ).delete()
+
+            # Add new recipients
+            for recipient_id in recipient_ids:
+                recipient = EmailRecipient(
+                    email_id=email.id,
+                    recipient_id=recipient_id,
+                    recipient_type="to"
+                )
+                db.add(recipient)
+
+            if cc_ids:
+                for cc_id in cc_ids:
+                    recipient = EmailRecipient(
+                        email_id=email.id,
+                        recipient_id=cc_id,
+                        recipient_type="cc"
+                    )
+                    db.add(recipient)
+
+            if bcc_ids:
+                for bcc_id in bcc_ids:
+                    recipient = EmailRecipient(
+                        email_id=email.id,
+                        recipient_id=bcc_id,
+                        recipient_type="bcc"
+                    )
+                    db.add(recipient)
+
+            db.commit()
+            db.refresh(email)
+            return email
+    else:
+        # Create new draft
+        email = EmailMessage(
+            sender_id=sender_id,
+            subject=subject,
+            body=body,
+            category=category,
+            is_draft=True
+        )
+        db.add(email)
+        db.flush()
+
+        # Add recipients
+        for recipient_id in recipient_ids:
+            recipient = EmailRecipient(
+                email_id=email.id,
+                recipient_id=recipient_id,
+                recipient_type="to"
+            )
+            db.add(recipient)
+
+        if cc_ids:
+            for cc_id in cc_ids:
+                recipient = EmailRecipient(
+                    email_id=email.id,
+                    recipient_id=cc_id,
+                    recipient_type="cc"
+                )
+                db.add(recipient)
+
+        if bcc_ids:
+            for bcc_id in bcc_ids:
+                recipient = EmailRecipient(
+                    email_id=email.id,
+                    recipient_id=bcc_id,
+                    recipient_type="bcc"
+                )
+                db.add(recipient)
+
+        db.commit()
+        db.refresh(email)
+        return email
+
+    return None
+
+
+def get_draft_by_id(db: Session, draft_id: int):
+    """Get a draft by ID with recipients"""
+    from sqlalchemy.orm import joinedload
+    return db.query(EmailMessage).options(
+        joinedload(EmailMessage.recipients)
+    ).filter(
+        EmailMessage.id == draft_id,
+        EmailMessage.is_draft == True
+    ).first()
 
 
 def get_unread_email_count(db: Session, user_id: int):
@@ -1796,3 +1981,353 @@ def get_all_users_with_employees(db: Session):
         employee = get_employee_by_user_id(db, user.id)
         result.append((user, employee))
     return result
+
+
+# ==================== NOTIFICATION OPERATIONS ====================
+
+def create_notification(
+    db: Session,
+    user_id: int,
+    title: str,
+    message: str,
+    notification_type: str,
+    sender_id: int = None,
+    priority: str = "medium",
+    related_entity_type: str = None,
+    related_entity_id: int = None
+):
+    """Create a new notification"""
+    from database.models import AppNotification, NotificationType, NotificationPriority
+
+    # Convert string to enum
+    try:
+        notif_type = NotificationType(notification_type)
+    except ValueError:
+        notif_type = NotificationType.SYSTEM
+
+    try:
+        notif_priority = NotificationPriority(priority)
+    except ValueError:
+        notif_priority = NotificationPriority.MEDIUM
+
+    notification = AppNotification(
+        user_id=user_id,
+        sender_id=sender_id,
+        title=title,
+        message=message,
+        notification_type=notif_type,
+        priority=notif_priority,
+        related_entity_type=related_entity_type,
+        related_entity_id=related_entity_id
+    )
+    db.add(notification)
+    db.commit()
+    db.refresh(notification)
+    return notification
+
+
+def get_user_notifications(db: Session, user_id: int, unread_only: bool = False, limit: int = 50):
+    """Get notifications for a user"""
+    from database.models import AppNotification
+
+    query = db.query(AppNotification).filter(
+        AppNotification.user_id == user_id)
+
+    if unread_only:
+        query = query.filter(AppNotification.is_read == False)
+
+    return query.order_by(AppNotification.created_at.desc()).limit(limit).all()
+
+
+def get_unread_notification_count(db: Session, user_id: int) -> int:
+    """Get count of unread notifications"""
+    from database.models import AppNotification
+
+    return db.query(AppNotification).filter(
+        AppNotification.user_id == user_id,
+        AppNotification.is_read == False
+    ).count()
+
+
+def mark_notification_as_read(db: Session, notification_id: int, user_id: int):
+    """Mark a notification as read"""
+    from database.models import AppNotification
+
+    notification = db.query(AppNotification).filter(
+        AppNotification.id == notification_id,
+        AppNotification.user_id == user_id
+    ).first()
+
+    if notification:
+        notification.is_read = True
+        notification.read_at = datetime.utcnow()
+        db.commit()
+        db.refresh(notification)
+    return notification
+
+
+def mark_all_notifications_as_read(db: Session, user_id: int):
+    """Mark all notifications as read for a user"""
+    from database.models import AppNotification
+
+    db.query(AppNotification).filter(
+        AppNotification.user_id == user_id,
+        AppNotification.is_read == False
+    ).update({
+        "is_read": True,
+        "read_at": datetime.utcnow()
+    })
+    db.commit()
+
+
+def delete_notification(db: Session, notification_id: int, user_id: int):
+    """Delete a notification"""
+    from database.models import AppNotification
+
+    notification = db.query(AppNotification).filter(
+        AppNotification.id == notification_id,
+        AppNotification.user_id == user_id
+    ).first()
+
+    if notification:
+        db.delete(notification)
+        db.commit()
+        return True
+    return False
+
+
+def notify_leave_request(db: Session, leave_request_id: int):
+    """Send notifications for leave request events"""
+    from database.models import LeaveRequest, User, Employee
+
+    leave_request = db.query(LeaveRequest).filter(
+        LeaveRequest.id == leave_request_id).first()
+    if not leave_request:
+        return
+
+    # Get employee and their user account
+    employee = db.query(Employee).filter(
+        Employee.id == leave_request.employee_id).first()
+    if not employee or not employee.user_id:
+        return
+
+    employee_user = db.query(User).filter(User.id == employee.user_id).first()
+    if not employee_user:
+        return
+
+    # Get all admin users
+    admins = db.query(User).join(User.role).filter(
+        User.status == UserStatus.ACTIVE
+    ).all()
+
+    # Get leave type name
+    leave_type = db.query(LeaveRequest).filter(
+        LeaveRequest.id == leave_request_id).first()
+    leave_type_name = "Leave"
+    if leave_request.leave_type_id:
+        from database.models import LeaveTypeConfig
+        lt = db.query(LeaveTypeConfig).filter(
+            LeaveTypeConfig.id == leave_request.leave_type_id).first()
+        if lt:
+            leave_type_name = lt.display_name
+
+    # Notify admins about new leave request
+    for admin in admins:
+        if admin.role and admin.role.name == "admin" and admin.id != employee_user.id:
+            create_notification(
+                db,
+                user_id=admin.id,
+                title=f"New Leave Request",
+                message=f"{employee_user.username} has requested {leave_type_name} leave for {leave_request.days_requested} day(s)",
+                notification_type="leave_request",
+                sender_id=employee_user.id,
+                priority="high",
+                related_entity_type="leave_request",
+                related_entity_id=leave_request_id
+            )
+
+
+def notify_leave_status_change(db: Session, leave_request_id: int, status: str):
+    """Send notification when leave status changes"""
+    from database.models import LeaveRequest, User, Employee
+
+    leave_request = db.query(LeaveRequest).filter(
+        LeaveRequest.id == leave_request_id).first()
+    if not leave_request:
+        return
+
+    # Get employee and their user account
+    employee = db.query(Employee).filter(
+        Employee.id == leave_request.employee_id).first()
+    if not employee or not employee.user_id:
+        return
+
+    # Get leave type name
+    leave_type_name = "Leave"
+    if leave_request.leave_type_id:
+        from database.models import LeaveTypeConfig
+        lt = db.query(LeaveTypeConfig).filter(
+            LeaveTypeConfig.id == leave_request.leave_type_id).first()
+        if lt:
+            leave_type_name = lt.display_name
+
+    # Status message
+    status_messages = {
+        "approved": f"Your {leave_type_name} leave has been approved",
+        "rejected": f"Your {leave_type_name} leave request has been rejected",
+        "cancelled": f"Your {leave_type_name} leave request has been cancelled"
+    }
+
+    message = status_messages.get(
+        status, f"Your leave request status has been updated to {status}")
+
+    # Notify employee
+    create_notification(
+        db,
+        user_id=employee.user_id,
+        title=f"Leave Request {status.title()}",
+        message=message,
+        notification_type=f"leave_{status}",
+        priority="high",
+        related_entity_type="leave_request",
+        related_entity_id=leave_request_id
+    )
+
+
+def notify_task_assignment(db: Session, task_id: int):
+    """Send notification when a task is assigned"""
+    from database.models import Task, User, Employee
+
+    task = db.query(Task).filter(Task.id == task_id).first()
+    if not task:
+        return
+
+    # Get assigned employee
+    assigned_employee = db.query(Employee).filter(
+        Employee.id == task.assigned_to_id).first()
+    if not assigned_employee or not assigned_employee.user_id:
+        return
+
+    # Get creator
+    creator = db.query(Employee).filter(
+        Employee.id == task.created_by_id).first()
+    creator_name = "Someone"
+    if creator:
+        creator_user = db.query(User).filter(
+            User.id == creator.user_id).first()
+        if creator_user:
+            creator_name = creator_user.username
+
+    # Notify assigned employee
+    create_notification(
+        db,
+        user_id=assigned_employee.user_id,
+        title=f"New Task Assigned",
+        message=f"'{task.title}' has been assigned to you by {creator_name}",
+        notification_type="task_assigned",
+        priority="medium",
+        related_entity_type="task",
+        related_entity_id=task_id
+    )
+
+
+def notify_chat_message(db: Session, message_id: int):
+    """Send notification for new chat message"""
+    from database.models import ChatMessage, User
+
+    message = db.query(ChatMessage).filter(
+        ChatMessage.id == message_id).first()
+    if not message:
+        return
+
+    # Determine recipient
+    if message.group_id:
+        # For group messages, notify all group members except sender
+        from database.models import ChatGroupMember
+        members = db.query(ChatGroupMember).filter(
+            ChatGroupMember.group_id == message.group_id,
+            ChatGroupMember.user_id != message.sender_id
+        ).all()
+
+        for member in members:
+            sender = db.query(User).filter(
+                User.id == message.sender_id).first()
+            sender_name = sender.username if sender else "Someone"
+
+            create_notification(
+                db,
+                user_id=member.user_id,
+                title=f"New Message in Group",
+                message=f"{sender_name}: {message.content[:50]}...",
+                notification_type="chat_message",
+                sender_id=message.sender_id,
+                priority="medium",
+                related_entity_type="chat",
+                related_entity_id=message_id
+            )
+    else:
+        # For direct messages
+        if message.receiver_id:
+            sender = db.query(User).filter(
+                User.id == message.sender_id).first()
+            sender_name = sender.username if sender else "Someone"
+
+            create_notification(
+                db,
+                user_id=message.receiver_id,
+                title=f"New Message from {sender_name}",
+                message=message.content[:100],
+                notification_type="chat_message",
+                sender_id=message.sender_id,
+                priority="high",
+                related_entity_type="chat",
+                related_entity_id=message_id
+            )
+
+
+def notify_email_received(db: Session, email_id: int, recipient_id: int):
+    """Send notification for new email"""
+    from database.models import EmailMessage, User
+
+    email = db.query(EmailMessage).filter(EmailMessage.id == email_id).first()
+    if not email:
+        return
+
+    sender = db.query(User).filter(User.id == email.sender_id).first()
+    sender_name = sender.username if sender else "Unknown"
+
+    create_notification(
+        db,
+        user_id=recipient_id,
+        title=f"New Email from {sender_name}",
+        message=email.subject,
+        notification_type="email_received",
+        sender_id=email.sender_id,
+        priority="medium",
+        related_entity_type="email",
+        related_entity_id=email_id
+    )
+
+
+def notify_meeting_invite(db: Session, meeting_id: int, participant_id: int):
+    """Send notification for meeting invitation"""
+    from database.models import Meeting, User
+
+    meeting = db.query(Meeting).filter(Meeting.id == meeting_id).first()
+    if not meeting:
+        return
+
+    organizer = db.query(User).filter(User.id == meeting.organizer_id).first()
+    organizer_name = organizer.username if organizer else "Unknown"
+
+    create_notification(
+        db,
+        user_id=participant_id,
+        title=f"Meeting Invitation",
+        message=f"{organizer_name} invited you to: {meeting.title}",
+        notification_type="meeting_invite",
+        sender_id=meeting.organizer_id,
+        priority="high",
+        related_entity_type="meeting",
+        related_entity_id=meeting_id
+    )

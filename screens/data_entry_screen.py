@@ -254,12 +254,6 @@ class DataEntryScreen(ft.Container):
             bgcolor=HEADER_BG,
             content=ft.Column([
                 ft.Row([
-                    ft.IconButton(
-                        icon=ft.Icons.ARROW_BACK,
-                        tooltip="Back to sheets",
-                        on_click=self._close_sheet,
-                    ),
-                    ft.Container(width=10),
                     ft.Column([
                         ft.Text(self.current_sheet.name if self.current_sheet else "Sheet",
                                 size=18, weight=ft.FontWeight.BOLD, color=TEXT_COLOR),

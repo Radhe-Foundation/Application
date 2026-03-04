@@ -108,20 +108,6 @@ class TodoScreen(ft.Container):
         self.content = self.build_ui()
 
     def build_ui(self):
-        # Header
-        header = ft.Container(
-            padding=15,
-            bgcolor=ft.Colors.CYAN_600,
-            content=ft.Row([
-                ft.IconButton(ft.Icons.ARROW_BACK, icon_color=ft.Colors.WHITE,
-                              on_click=self.go_back),
-                ft.Text("My Tasks", size=18, color=ft.Colors.WHITE,
-                        weight=ft.FontWeight.BOLD),
-                ft.Container(expand=True),
-                self.build_stats(),
-            ], alignment=ft.MainAxisAlignment.SPACE_BETWEEN)
-        )
-
         # Input area
         self.new_task = ft.TextField(
             hint_text="Add a new task...",
@@ -171,7 +157,6 @@ class TodoScreen(ft.Container):
         ])
 
         return ft.Column([
-            header,
             content,
         ], spacing=0)
 

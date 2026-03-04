@@ -11,12 +11,14 @@ from sqlalchemy.orm import joinedload
 
 
 class ProfileScreen(ft.Container):
-    def __init__(self, page: ft.Page, user_data: dict = None):
+    def __init__(self, page: ft.Page, user_data: dict = None, show_own_header: bool = True):
         super().__init__()
         self._page = page
         self.user_data = user_data or {}
         self.expand = True
         self.employee_data = None
+        self._is_edit_dialog_open = False  # Guard to prevent multiple dialog opens
+        self._show_own_header = show_own_header  # Whether to show profile's own header
         self._get_employee_data()
         self.content = self.build_ui()
 
@@ -324,12 +326,6 @@ class ProfileScreen(ft.Container):
         self._page.add(AttendanceScreen(
             self._page, self.user_data, view_mode="employee"))
 
-    def _view_documents(self, e):
-        """View documents"""
-        from screens.documents_screen import DocumentsScreen
-        self._page.clean()
-        self._page.add(DocumentsScreen(self._page, self.user_data))
-
     def _view_chat(self, e):
         """View chat"""
         from screens.chat_screen import ChatScreen
@@ -338,7 +334,7 @@ class ProfileScreen(ft.Container):
 
     def build_ui(self):
         username = self.user_data.get("username", "User")
-        emp = self.employee_data
+        emp = self.employee_data  # This is a dict from _get_employee_data()
 
         # Get real stats
         leave_count = self._get_leave_count()
@@ -370,17 +366,21 @@ class ProfileScreen(ft.Container):
                 date_of_joining = str(doj)
             profile_photo = emp.get('profile_photo')
 
-        header = ft.Container(
-            padding=15,
-            bgcolor="#2E86AB",
-            content=ft.Row([
-                ft.Text("My Profile", size=18, color="WHITE",
-                        weight=ft.FontWeight.BOLD),
-                ft.Container(expand=True),
-                ft.IconButton(ft.Icons.LOGOUT, icon_color="WHITE",
-                              on_click=self.logout),
-            ], alignment=ft.MainAxisAlignment.SPACE_BETWEEN)
-        )
+        # Header - only show if not wrapped by employee portal header
+        if self._show_own_header:
+            header = ft.Container(
+                padding=15,
+                bgcolor="#2E86AB",
+                content=ft.Row([
+                    ft.Text("My Profile", size=18, color="WHITE",
+                            weight=ft.FontWeight.BOLD),
+                    ft.Container(expand=True),
+                    ft.IconButton(ft.Icons.LOGOUT, icon_color="WHITE",
+                                  on_click=self.logout),
+                ], alignment=ft.MainAxisAlignment.SPACE_BETWEEN)
+            )
+        else:
+            header = None
 
         # Profile card with real data and profile photo
         # Create avatar - show profile photo if available and valid, otherwise show initials
@@ -460,7 +460,7 @@ class ProfileScreen(ft.Container):
                         "Edit Profile",
                         icon=ft.Icons.EDIT,
                         width=200,
-                        on_click=self.edit_profile,
+                        on_click=lambda e: self.edit_profile(e),
                         bgcolor="#2E86AB",
                         color="WHITE",
                     ),
@@ -551,13 +551,6 @@ class ProfileScreen(ft.Container):
                         enabled=self._can_access("attendance")
                     ),
                     self._create_action_card(
-                        "Documents",
-                        "View your documents",
-                        ft.Icons.DESCRIPTION,
-                        self._view_documents,
-                        enabled=self._can_access("documents")
-                    ),
-                    self._create_action_card(
                         "Chat",
                         "Chat with colleagues",
                         ft.Icons.CHAT,
@@ -573,18 +566,32 @@ class ProfileScreen(ft.Container):
             stats,
         ], spacing=20, alignment=ft.MainAxisAlignment.CENTER)
 
-        return ft.Column([
-            header,
-            ft.Container(
+        # Build final content - conditionally include header
+        if header:
+            return ft.Column([
+                header,
+                ft.Container(
+                    padding=20,
+                    content=ft.Column([
+                        content,
+                        ft.Container(height=20),
+                        action_cards,
+                    ], expand=True),
+                    expand=True
+                ),
+            ], spacing=0, scroll=ft.ScrollMode.AUTO)
+        else:
+            # No header - just content (when wrapped by employee portal)
+            # Add scroll capability
+            return ft.Container(
                 padding=20,
                 content=ft.Column([
                     content,
                     ft.Container(height=20),
                     action_cards,
-                ], expand=True),
+                ], scroll=ft.ScrollMode.AUTO, expand=True),
                 expand=True
-            ),
-        ], spacing=0, scroll=ft.ScrollMode.AUTO)
+            )
 
     def logout(self, e):
         from screens.login_screen import LoginScreen
@@ -593,6 +600,9 @@ class ProfileScreen(ft.Container):
 
     def edit_profile(self, e):
         """Edit user profile"""
+        # Allow dialog to open (reset guard first in case it was stuck)
+        self._is_edit_dialog_open = False
+
         # First validate user_id - use the safe method
         user_id = self._get_user_id_safe()
         if not user_id:
@@ -602,6 +612,7 @@ class ProfileScreen(ft.Container):
         if not user_id:
             self._show_snackbar(
                 "User ID not found. Please login again.", bgcolor="#DC3545")
+            self._is_edit_dialog_open = False
             return
 
         # Get current user data
@@ -612,18 +623,18 @@ class ProfileScreen(ft.Container):
             # Get user and employee
             user = db.query(User).filter(User.id == user_id).first()
             if not user:
-                self._close_dialog()
                 self._show_snackbar(
                     "User not found. Please login again.", bgcolor="#DC3545")
+                self._is_edit_dialog_open = False
                 return
 
             employee = db.query(Employee).filter(
                 Employee.user_id == user_id).first()
 
             if not employee:
-                self._close_dialog()
                 self._show_snackbar(
                     "Employee record not found", bgcolor="#DC3545")
+                self._is_edit_dialog_open = False
                 return
 
             # Get departments and positions for dropdowns
@@ -749,13 +760,16 @@ class ProfileScreen(ft.Container):
                 ],
             )
 
-            self._page.dialog = dialog
             dialog.open = True
+            self._page.dialog = dialog
             self._page.update()
 
         except Exception as ex:
+            import traceback
             print(f"Error loading profile: {ex}")
+            print(f"Full traceback: {traceback.format_exc()}")
             self._show_snackbar(f"Error: {str(ex)}", bgcolor="#DC3545")
+            self._is_edit_dialog_open = False
             if db:
                 db.close()
         # Note: Database session remains open while dialog is shown
@@ -765,7 +779,10 @@ class ProfileScreen(ft.Container):
         """Close dialog"""
         if self._page.dialog:
             self._page.dialog.open = False
+        self._is_edit_dialog_open = False  # Reset the guard flag
         self._page.update()
+        # Also rebuild the UI to refresh
+        self._refresh()
 
     def _refresh(self):
         """Refresh the UI"""

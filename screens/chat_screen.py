@@ -39,6 +39,9 @@ except ImportError:
     SUPABASE_AVAILABLE = False
     print("Supabase not installed - using polling fallback")
 
+# Import Supabase storage for file attachments
+from utils.supabase_storage import upload_to_supabase, get_storage
+
 
 # WhatsApp-Style Theme Colors
 PRIMARY = "#075E54"  # WhatsApp dark green
@@ -197,6 +200,8 @@ class ChatScreen(ft.Container):
         # Start presence polling
         self._start_presence_polling()
 
+        # Note: Chat notifications are handled in _on_new_message and polling
+
     def _update_presence_online(self):
         """Update user presence to online"""
         try:
@@ -287,6 +292,18 @@ class ChatScreen(ft.Container):
                 sender_id = new_record.get('sender_id')
                 group_id = new_record.get('group_id')
 
+                # Get sender name for notification
+                sender_name = "Unknown"
+                try:
+                    db = get_db_session()
+                    sender = db.query(User).filter(
+                        User.id == sender_id).first()
+                    if sender and sender.username:
+                        sender_name = str(sender.username)
+                    db.close()
+                except:
+                    pass
+
                 # Check if message is relevant to current chat
                 is_relevant = False
                 if group_id and self.is_group_chat and self.selected_group:
@@ -295,6 +312,17 @@ class ChatScreen(ft.Container):
                     if self.selected_contact:
                         is_relevant = (receiver_id == self.selected_contact.id or
                                        sender_id == self.selected_contact.id)
+
+                # Show notification for new messages not from current user
+                if sender_id != self.current_user_id:
+                    try:
+                        from utils.notification_manager import get_notification_manager
+                        nm = get_notification_manager()
+                        if nm:
+                            nm.show_chat_message(
+                                sender_name, new_record.get('content', '')[:50])
+                    except Exception as e:
+                        print(f"[Chat] Notification error: {e}")
 
                 if is_relevant:
                     self._load_messages_for_selected()
@@ -309,11 +337,33 @@ class ChatScreen(ft.Container):
     def _start_polling(self):
         """Start polling fallback for real-time updates"""
         def poll_messages():
+            last_message_count = 0
             while not self._stop_threads:
                 try:
                     time.sleep(5)
                     if self.selected_contact and not self._stop_threads:
+                        # Load messages and check for new ones
+                        old_count = len(self.messages)
                         self._load_messages_for_selected()
+                        new_count = len(self.messages)
+
+                        # Show notification for new messages
+                        if new_count > old_count:
+                            # Get the latest message
+                            latest_msg = self.messages[-1] if self.messages else None
+                            if latest_msg and not latest_msg.is_own:
+                                try:
+                                    from utils.notification_manager import get_notification_manager
+                                    nm = get_notification_manager()
+                                    if nm:
+                                        nm.show_chat_message(
+                                            latest_msg.sender_name,
+                                            latest_msg.content[:50]
+                                        )
+                                except Exception as e:
+                                    print(
+                                        f"[Chat] Polling notification error: {e}")
+
                         if self._messages_list:
                             self._refresh_messages_ui()
                             try:
@@ -1947,34 +1997,99 @@ class ChatScreen(ft.Container):
                         weight=ft.FontWeight.W_600, color=PRIMARY_LIGHT)
             )
 
-        # Show image attachment if it's an image message
-        if msg.is_image and msg.attachment_name:
+        # Check if this is a file attachment
+        has_attachment = bool(msg.attachment_name and msg.attachment_path)
+        # Check if attachment_path is a valid URL (http)
+        is_url = msg.attachment_path and msg.attachment_path.startswith('http')
+        # Check if it's an image file (only if URL exists)
+        is_image_file = is_url and msg.is_image
+
+        # Show image preview if it's an image and we have a valid URL
+        if is_image_file:
             try:
                 content_parts.append(
                     ft.Container(
                         margin=ft.margin.only(bottom=4),
                         content=ft.Image(
-                            src=msg.attachment_path if msg.attachment_path else msg.attachment_name,
+                            src=msg.attachment_path,
                             width=200,
                             height=150,
                             fit="contain",
                             border_radius=8,
-                            error_template=ft.Container(
-                                width=200, height=150,
-                                bgcolor="#F0F0F0",
-                                border_radius=8,
-                                content=ft.Column([
-                                    ft.Icon(ft.Icons.BROKEN_IMAGE,
-                                            size=32, color="#999"),
-                                    ft.Text("Image not found",
-                                            size=10, color="#999")
-                                ], alignment=ft.MainAxisAlignment.CENTER, horizontal_alignment=ft.CrossAxisAlignment.CENTER)
-                            )
                         )
                     )
                 )
             except Exception as e:
                 print(f"[Chat] Error loading image: {e}")
+                # Will fall through to show as file attachment below
+
+        # Show file attachment as downloadable link (for all attachments including images)
+        if has_attachment:
+            # Determine file icon based on extension
+            file_ext = msg.attachment_name.lower().split(
+                '.')[-1] if msg.attachment_name else ''
+            file_icon = ft.Icons.INSERT_DRIVE_FILE
+            if file_ext in ['pdf']:
+                file_icon = ft.Icons.PICTURE_AS_PDF
+            elif file_ext in ['doc', 'docx']:
+                file_icon = ft.Icons.DESCRIPTION
+            elif file_ext in ['xls', 'xlsx']:
+                file_icon = ft.Icons.TABLE_CHART
+            elif file_ext in ['jpg', 'jpeg', 'png', 'gif', 'webp']:
+                file_icon = ft.Icons.IMAGE
+            elif file_ext in ['zip', 'rar', '7z']:
+                file_icon = ft.Icons.FOLDER_ZIP
+
+            # Create clickable file attachment container
+            def download_file(e):
+                """Open the file URL in browser for download"""
+                import webbrowser
+                if msg.attachment_path and msg.attachment_path.startswith('http'):
+                    webbrowser.open(msg.attachment_path)
+                else:
+                    print(f"[Chat] Invalid file URL: {msg.attachment_path}")
+
+            file_attachment = ft.Container(
+                margin=ft.margin.only(bottom=4),
+                padding=ft.padding.all(8),
+                bgcolor="#F0F0F0",
+                border_radius=8,
+                on_click=download_file,
+                content=ft.Row(
+                    spacing=8,
+                    controls=[
+                        ft.Container(
+                            width=40,
+                            height=40,
+                            bgcolor=PRIMARY_LIGHT,
+                            border_radius=8,
+                            content=ft.Icon(file_icon, color="white", size=20),
+                            alignment=ft.alignment.Alignment(0, 0)
+                        ),
+                        ft.Column(
+                            spacing=2,
+                            controls=[
+                                ft.Text(
+                                    msg.attachment_name or "File",
+                                    size=13,
+                                    weight=ft.FontWeight.W_500,
+                                    color=PRIMARY,
+                                    selectable=True
+                                ),
+                                ft.Text(
+                                    "Tap to download",
+                                    size=10,
+                                    color=TEXT_SECONDARY
+                                )
+                            ],
+                            expand=True
+                        ),
+                        ft.Icon(ft.Icons.DOWNLOAD,
+                                color=PRIMARY_LIGHT, size=20)
+                    ]
+                )
+            )
+            content_parts.append(file_attachment)
 
         # Message content
         content_parts.append(
@@ -2210,7 +2325,7 @@ class ChatScreen(ft.Container):
         self._show_snackbar(message)
 
     def _on_attach_file(self, e=None):
-        """Handle file attachment - using Flet's native FilePicker (async in 0.80+)"""
+        """Handle file attachment - uploads to Supabase Storage for cloud sharing"""
         if not self.selected_contact and not self.is_group_chat:
             self._show_snackbar(
                 "Select a contact or group first to share files")
@@ -2223,12 +2338,14 @@ class ChatScreen(ft.Container):
 
         # Use async pick_files with run_task (Flet 0.80+)
         def handle_picked_files(files):
-            """Process picked files after async selection"""
+            """Process picked files after async selection - with Supabase upload"""
             try:
                 if not files:
                     return
 
-                file_path = files[0].path
+                file_info = files[0]
+                file_path = file_info.path if hasattr(
+                    file_info, 'path') else str(file_info)
                 if not file_path:
                     return
 
@@ -2236,6 +2353,60 @@ class ChatScreen(ft.Container):
                 file_name = file_path.split(
                     '/')[-1] if '/' in file_path else file_path
 
+                # Show uploading message
+                snack = ft.SnackBar(
+                    content=ft.Text(f"Uploading {file_name} to cloud..."),
+                    bgcolor=PRIMARY_LIGHT
+                )
+                self._page.overlay.append(snack)
+                snack.open = True
+                self._page.update()
+
+                # Try to upload to Supabase Storage
+                file_url = None
+                upload_success = False
+                upload_error = None
+
+                try:
+                    storage = get_storage()
+                    if storage.available:
+                        # Upload to Supabase Storage
+                        success, url_or_error, bucket_path = upload_to_supabase(
+                            file_path,
+                            folder="chat_attachments",
+                            custom_filename=f"{self.current_user_id}_{int(datetime.now().timestamp())}_{file_name}"
+                        )
+
+                        if success and url_or_error:
+                            file_url = url_or_error
+                            upload_success = True
+                            print(
+                                f"[Chat] File uploaded to Supabase: {file_url}")
+                        else:
+                            upload_error = url_or_error
+                            print(
+                                f"[Chat] Supabase upload failed: {url_or_error}")
+                    else:
+                        upload_error = "Cloud storage not configured"
+                        print("[Chat] Supabase storage not available")
+                except Exception as upload_err:
+                    upload_error = str(upload_err)
+                    print(f"[Chat] Upload error: {upload_err}")
+
+                # If upload failed, show error
+                if not upload_success:
+                    error_msg = upload_error or "Upload failed"
+                    snack = ft.SnackBar(
+                        content=ft.Text(
+                            f"Cloud upload failed: {error_msg}. File not attached."),
+                        bgcolor=ERROR
+                    )
+                    self._page.overlay.append(snack)
+                    snack.open = True
+                    self._page.update()
+                    return
+
+                # Store the Supabase URL (cloud accessible) instead of local path
                 db = get_db_session()
                 try:
                     if self.is_group_chat and self.selected_group:
@@ -2245,7 +2416,7 @@ class ChatScreen(ft.Container):
                             content=f"📎 Shared file: {file_name}",
                             group_id=self.selected_group.id,
                             has_attachment=True,
-                            attachment_path=file_path
+                            attachment_path=file_url  # Store Supabase URL, not local path
                         )
                     elif self.selected_contact:
                         send_chat_message(
@@ -2254,7 +2425,7 @@ class ChatScreen(ft.Container):
                             content=f"📎 Shared file: {file_name}",
                             receiver_id=self.selected_contact.id,
                             has_attachment=True,
-                            attachment_path=file_path
+                            attachment_path=file_url  # Store Supabase URL, not local path
                         )
                 finally:
                     db.close()

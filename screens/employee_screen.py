@@ -4,6 +4,7 @@ Employee personal dashboard with NavigationRail navigation
 """
 
 import flet as ft
+import os
 from datetime import datetime
 
 from database.session_manager import get_session, get_db_session, check_db_connection
@@ -11,6 +12,31 @@ from database.operations import (
     get_user_by_id,
     get_employee_by_user_id,
 )
+
+# Logo path resolution - similar to login_screen
+
+
+def get_logo_path():
+    """Get the absolute path to the Vernikalogo"""
+    # Try multiple paths to find the logo
+    possible_paths = [
+        os.path.join(os.path.dirname(os.path.abspath(__file__)),
+                     "..", "assets", "logo", "Vernikalogo.png"),
+        os.path.join(os.path.dirname(os.path.abspath(__file__)),
+                     "assets", "logo", "Vernikalogo.png"),
+        "assets/logo/Vernikalogo.png",
+    ]
+
+    for logo_path in possible_paths:
+        if os.path.exists(logo_path):
+            # Use forward slashes for Flet with leading slash
+            flet_path = logo_path.replace("\\", "/")
+            if not flet_path.startswith("/"):
+                flet_path = "/" + flet_path
+            return flet_path
+
+    # Fallback to relative path
+    return "/assets/logo/Vernikalogo.png"
 
 
 # Color constants - Match Admin Screen
@@ -48,6 +74,11 @@ class EmployeeScreen(ft.Container):
         self._nav_rail_visible = True
         self._selected_index = 0
 
+        # Loading state
+        self._is_loading = False
+        self._loading_progress = ft.ProgressRing(
+            width=20, height=20, visible=False)
+
         # Get user ID
         self.user_id = None
         if isinstance(current_user, dict):
@@ -61,6 +92,8 @@ class EmployeeScreen(ft.Container):
         # Create toggle button for navigation rail
         def toggle_nav_rail(e):
             self._nav_rail_visible = not self._nav_rail_visible
+            # Update the icon to toggle between MENU_OPEN and MENU
+            self.nav_toggle_btn.icon = ft.Icons.MENU_OPEN if self._nav_rail_visible else ft.Icons.MENU
             self.content.content.controls[0].visible = self._nav_rail_visible
             self.content.content.controls[1].visible = self._nav_rail_visible
             self._page.update()
@@ -84,8 +117,6 @@ class EmployeeScreen(ft.Container):
             pass
 
         # Define navigation items with icon and label - Employee specific
-        # FIXED: Added missing screens (Holiday, Meetings, Projects, Teams)
-        # UPDATED: Added business screens (Data Entry, Inventory, Transactions, CRM, Invoicing, Assets, Time Track)
         nav_data = [
             (0, "Dashboard", ft.Icons.DASHBOARD, ft.Icons.DASHBOARD_OUTLINED),
             (1, "My Profile", ft.Icons.PERSON, ft.Icons.PERSON_OUTLINED),
@@ -100,21 +131,14 @@ class EmployeeScreen(ft.Container):
             (9, "Holidays", ft.Icons.CALENDAR_TODAY,
              ft.Icons.CALENDAR_TODAY_OUTLINED),
             (10, "Meetings", ft.Icons.VIDEO_CALL, ft.Icons.VIDEO_CALL_OUTLINED),
-            (11, "Documents", ft.Icons.FOLDER, ft.Icons.FOLDER_OUTLINED),
-            (12, "Announcements", ft.Icons.CAMPAIGN, ft.Icons.CAMPAIGN_OUTLINED),
-            (13, "Performance", ft.Icons.TRENDING_UP, ft.Icons.TRENDING_UP_OUTLINED),
-            (14, "My Reports", ft.Icons.ASSESSMENT, ft.Icons.ASSESSMENT_OUTLINED),
+            (11, "Announcements", ft.Icons.CAMPAIGN, ft.Icons.CAMPAIGN_OUTLINED),
             # Business Screens
-            (15, "Data Entry", ft.Icons.TABLE_ROWS, ft.Icons.TABLE_ROWS_OUTLINED),
-            (16, "Inventory", ft.Icons.INVENTORY, ft.Icons.INVENTORY_OUTLINED),
-            (17, "Transactions", ft.Icons.PAYMENT, ft.Icons.PAYMENT_OUTLINED),
-            (18, "CRM", ft.Icons.PEOPLE, ft.Icons.PEOPLE_OUTLINED),
-            (19, "Invoicing", ft.Icons.RECEIPT_LONG,
-             ft.Icons.RECEIPT_LONG_OUTLINED),
-            (20, "Assets", ft.Icons.INVENTORY_2, ft.Icons.INVENTORY_2_OUTLINED),
-            (21, "Time Track", ft.Icons.TIMER, ft.Icons.TIMER_OUTLINED),
+            (12, "Data Entry", ft.Icons.TABLE_ROWS, ft.Icons.TABLE_ROWS_OUTLINED),
+            (13, "Inventory", ft.Icons.INVENTORY, ft.Icons.INVENTORY_OUTLINED),
+            (14, "Transactions", ft.Icons.PAYMENT, ft.Icons.PAYMENT_OUTLINED),
+            (15, "Time Track", ft.Icons.TIMER, ft.Icons.TIMER_OUTLINED),
             # Org Tree
-            (22, "Org Tree", ft.Icons.ACCOUNT_TREE, ft.Icons.ACCOUNT_TREE_OUTLINED),
+            (16, "Org Tree", ft.Icons.ACCOUNT_TREE, ft.Icons.ACCOUNT_TREE_OUTLINED),
         ]
 
         # Track selected index
@@ -165,7 +189,7 @@ class EmployeeScreen(ft.Container):
                 # Logo at top center
                 ft.Container(
                     content=ft.Image(
-                        src="assets/logo/Vernikalogo.png",
+                        src=get_logo_path(),
                         width=100,
                         height=60,
                     ),
@@ -191,22 +215,15 @@ class EmployeeScreen(ft.Container):
             expand=True,
         )
 
-        # Main layout with custom sidebar
+        # Main layout with custom sidebar - NO duplicate header here
+        # Each screen (including dashboard) will have its own header via wrapper
         return ft.Container(
             content=ft.Row([
                 # Custom Sidebar
                 sidebar,
                 ft.VerticalDivider(width=1, visible=self._nav_rail_visible),
-                # Main content area
-                ft.Container(
-                    content=ft.Column([
-                        # Header
-                        self._create_header(),
-                        content_area,
-                        # Content
-                    ], expand=True),
-                    expand=True,
-                ),
+                # Main content area (each tab has its own header via wrapper)
+                content_area,
             ], expand=True),
             expand=True,
         )
@@ -236,29 +253,17 @@ class EmployeeScreen(ft.Container):
         elif index == 10:
             return self._create_meetings_tab()
         elif index == 11:
-            return self._create_documents_tab()
-        elif index == 12:
             return self._create_announcements_tab()
-        elif index == 13:
-            return self._create_performance_tab()
-        elif index == 14:
-            return self._create_reports_tab()
-        # Business Screens (indices 15-21)
-        elif index == 15:
+        # Business Screens (indices 12-15)
+        elif index == 12:
             return self._create_data_entry_tab()
-        elif index == 16:
+        elif index == 13:
             return self._create_inventory_tab()
-        elif index == 17:
+        elif index == 14:
             return self._create_transactions_tab()
-        elif index == 18:
-            return self._create_crm_tab()
-        elif index == 19:
-            return self._create_invoicing_tab()
-        elif index == 20:
-            return self._create_assets_tab()
-        elif index == 21:
+        elif index == 15:
             return self._create_time_tracking_tab()
-        elif index == 22:
+        elif index == 16:
             return self._create_org_tree_tab()
         return self._create_dashboard_tab()
 
@@ -269,16 +274,9 @@ class EmployeeScreen(ft.Container):
         self._page.add(LoginScreen(self._page))
 
     def _create_header(self):
-        """Create header with user info"""
+        """Create header with user info, toggle button and logout"""
         return ft.Container(
             content=ft.Row([
-                # Back button
-                ft.IconButton(
-                    icon=ft.Icons.ARROW_BACK,
-                    tooltip="Back to Login",
-                    on_click=self._handle_back,
-                    icon_color=PRIMARY
-                ),
                 # Navigation toggle button
                 self.nav_toggle_btn,
                 ft.Container(width=10),
@@ -289,6 +287,17 @@ class EmployeeScreen(ft.Container):
                     color=PRIMARY
                 ),
                 ft.Container(expand=True),
+                # Loading indicator
+                self._loading_progress,
+                ft.Container(width=10),
+                # Refresh button
+                ft.IconButton(
+                    icon=ft.Icons.REFRESH,
+                    tooltip="Refresh",
+                    on_click=lambda e: self._refresh(),
+                    icon_color=PRIMARY
+                ),
+                ft.Container(width=5),
                 ft.Text(
                     f"Welcome, {self.current_user.get('username', 'Employee')}",
                     size=14,
@@ -307,6 +316,8 @@ class EmployeeScreen(ft.Container):
 
     def _create_dashboard_tab(self):
         """Create dashboard tab"""
+        from screens.profile_screen import ProfileScreen
+
         # Get employee info
         first_name = "Employee"
         try:
@@ -387,13 +398,13 @@ class EmployeeScreen(ft.Container):
             )
         )
 
-        # Documents card
+        # Documents card - navigate to Meetings (index 10)
         action_cards.append(
             self._create_action_card(
                 "Documents",
                 "Access shared documents",
                 ft.Icons.FOLDER,
-                lambda _: self._navigate_to(11),
+                lambda _: self._navigate_to(10),
                 INDIGO_500
             )
         )
@@ -404,7 +415,7 @@ class EmployeeScreen(ft.Container):
                 "Announcements",
                 "Company news and updates",
                 ft.Icons.CAMPAIGN,
-                lambda _: self._navigate_to(12),
+                lambda _: self._navigate_to(11),
                 RED_500
             )
         )
@@ -442,7 +453,7 @@ class EmployeeScreen(ft.Container):
             )
         )
 
-        # Meetings card
+        # Meetings card - navigate to meetings (index 10)
         action_cards.append(
             self._create_action_card(
                 "Meetings",
@@ -453,100 +464,52 @@ class EmployeeScreen(ft.Container):
             )
         )
 
-        # Performance card
-        action_cards.append(
-            self._create_action_card(
-                "Performance",
-                "View performance reviews",
-                ft.Icons.TRENDING_UP,
-                lambda _: self._navigate_to(13),
-                GREEN_500
-            )
-        )
-
-        # Reports card
-        action_cards.append(
-            self._create_action_card(
-                "My Reports",
-                "View personal reports",
-                ft.Icons.ASSESSMENT,
-                lambda _: self._navigate_to(14),
-                PURPLE_500
-            )
-        )
-
-        # Business Screen Cards
+        # Business Screen Cards - Data Entry (index 12)
         action_cards.append(
             self._create_action_card(
                 "Data Entry",
                 "Spreadsheet & data management",
                 ft.Icons.TABLE_ROWS,
-                lambda _: self._navigate_to(15),
+                lambda _: self._navigate_to(12),
                 CYAN_600
             )
         )
 
+        # Inventory (index 13)
         action_cards.append(
             self._create_action_card(
                 "Inventory",
                 "Stock & inventory management",
                 ft.Icons.INVENTORY,
-                lambda _: self._navigate_to(16),
+                lambda _: self._navigate_to(13),
                 ORANGE_500
             )
         )
 
+        # Transactions (index 14)
         action_cards.append(
             self._create_action_card(
                 "Transactions",
                 "Financial transactions",
                 ft.Icons.PAYMENT,
-                lambda _: self._navigate_to(17),
+                lambda _: self._navigate_to(14),
                 TEAL_500
             )
         )
 
-        action_cards.append(
-            self._create_action_card(
-                "CRM",
-                "Customer relationships",
-                ft.Icons.PEOPLE,
-                lambda _: self._navigate_to(18),
-                INDIGO_500
-            )
-        )
-
-        action_cards.append(
-            self._create_action_card(
-                "Invoicing",
-                "Billing & invoices",
-                ft.Icons.RECEIPT_LONG,
-                lambda _: self._navigate_to(19),
-                PINK_500
-            )
-        )
-
-        action_cards.append(
-            self._create_action_card(
-                "Assets",
-                "Company asset management",
-                ft.Icons.INVENTORY_2,
-                lambda _: self._navigate_to(20),
-                AMBER_500
-            )
-        )
-
+        # Time Track (index 15)
         action_cards.append(
             self._create_action_card(
                 "Time Track",
                 "Employee time tracking",
                 ft.Icons.TIMER,
-                lambda _: self._navigate_to(21),
+                lambda _: self._navigate_to(15),
                 RED_500
             )
         )
 
-        return ft.Container(
+        # Dashboard content
+        dashboard_content = ft.Container(
             content=ft.Column([
                 ft.Text(f"Welcome, {first_name}!", size=24,
                         weight=ft.FontWeight.BOLD, color=PRIMARY),
@@ -563,8 +526,6 @@ class EmployeeScreen(ft.Container):
                 ft.Row(action_cards[8:12], spacing=20),
                 ft.Container(height=15),
                 ft.Row(action_cards[12:16], spacing=20),
-                ft.Container(height=15),
-                ft.Row(action_cards[16:20], spacing=20),
 
                 ft.Container(height=30),
 
@@ -596,6 +557,9 @@ class EmployeeScreen(ft.Container):
             padding=20,
         )
 
+        # Wrap with header - show back button False for dashboard
+        return self._wrap_with_employee_header("Dashboard", dashboard_content, show_back_button=False)
+
     def _create_action_card(self, title, subtitle, icon, on_click, color):
         """Create an action card with modern design"""
         return ft.Card(
@@ -625,114 +589,180 @@ class EmployeeScreen(ft.Container):
     def _create_profile_tab(self):
         """Create profile tab"""
         from screens.profile_screen import ProfileScreen
-        return ft.Container(content=ProfileScreen(self._page, self.current_user), expand=True)
+        profile_content = ProfileScreen(
+            self._page, self.current_user, show_own_header=False)
+        return self._wrap_with_employee_header("My Profile", profile_content)
 
     def _create_chat_tab(self):
         """Create chat tab"""
         from screens.chat_screen import ChatScreen
-        return ft.Container(content=ChatScreen(self._page, self.current_user), expand=True)
+        chat_content = ChatScreen(self._page, self.current_user)
+        return self._wrap_with_employee_header("Team Chat", chat_content)
 
     def _create_mail_tab(self):
         """Create mail tab"""
         from screens.mail_screen import MailScreen
-        return ft.Container(content=MailScreen(self._page, self.current_user), expand=True)
+        mail_content = MailScreen(self._page, self.current_user)
+        return self._wrap_with_employee_header("Internal Mail", mail_content)
 
     def _create_tasks_tab(self):
         """Create tasks tab"""
         from screens.tasks_screen import TasksScreen
-        return ft.Container(content=TasksScreen(self._page, self.current_user), expand=True)
+        tasks_content = TasksScreen(self._page, self.current_user)
+        return self._wrap_with_employee_header("My Tasks", tasks_content)
 
     def _create_leaves_tab(self):
         """Create leaves tab"""
         from screens.leaves_screen import LeavesScreen
-        return ft.Container(content=LeavesScreen(self._page, self.current_user, view_mode="employee"), expand=True)
+        leaves_content = LeavesScreen(
+            self._page, self.current_user, view_mode="employee")
+        return self._wrap_with_employee_header("Time Off", leaves_content)
 
     def _create_attendance_tab(self):
         """Create attendance tab"""
         from screens.attendance_screen import AttendanceScreen
-        return ft.Container(content=AttendanceScreen(self._page, self.current_user, view_mode="employee"), expand=True)
-
-    def _create_documents_tab(self):
-        """Create documents tab"""
-        from screens.documents_screen import DocumentsScreen
-        return ft.Container(content=DocumentsScreen(self._page), expand=True)
+        attendance_content = AttendanceScreen(
+            self._page, self.current_user, view_mode="employee")
+        return self._wrap_with_employee_header("My Attendance", attendance_content)
 
     def _create_announcements_tab(self):
         """Create announcements tab"""
         from screens.announcements_screen import AnnouncementsScreen
-        return ft.Container(content=AnnouncementsScreen(self._page), expand=True)
+        announcements_content = AnnouncementsScreen(self._page)
+        return self._wrap_with_employee_header("Announcements", announcements_content)
 
     def _create_teams_tab(self):
         """Create teams tab"""
         from screens.teams_screen import TeamsScreen
-        return ft.Container(content=TeamsScreen(self._page, self.current_user), expand=True)
+        teams_content = TeamsScreen(self._page, self.current_user)
+        return self._wrap_with_employee_header("My Teams", teams_content)
 
     def _create_projects_tab(self):
         """Create projects tab"""
         from screens.projects_screen import ProjectsScreen
-        return ft.Container(content=ProjectsScreen(self._page, self.current_user), expand=True)
+        projects_content = ProjectsScreen(self._page, self.current_user)
+        return self._wrap_with_employee_header("Projects", projects_content)
 
     def _create_holidays_tab(self):
         """Create holidays tab"""
         from screens.holidays_screen import HolidaysScreen
-        return ft.Container(content=HolidaysScreen(self._page, self.current_user), expand=True)
+        holidays_content = HolidaysScreen(self._page, self.current_user)
+        return self._wrap_with_employee_header("Holidays", holidays_content)
 
     def _create_meetings_tab(self):
         """Create meetings tab"""
         from screens.meetings_screen import MeetingsScreen
-        return ft.Container(content=MeetingsScreen(self._page, self.current_user), expand=True)
-
-    def _create_performance_tab(self):
-        """Create performance tab"""
-        from screens.performance_screen import PerformanceScreen
-        return ft.Container(content=PerformanceScreen(self._page), expand=True)
-
-    def _create_reports_tab(self):
-        """Create reports tab"""
-        from screens.reports_screen import ReportsScreen
-        return ft.Container(content=ReportsScreen(self._page), expand=True)
+        meetings_content = MeetingsScreen(self._page, self.current_user)
+        return self._wrap_with_employee_header("Meetings", meetings_content)
 
     # ==================== Business Screen Tabs ====================
 
     def _create_data_entry_tab(self):
         """Create Data Entry tab - spreadsheet and data management"""
         from screens.data_entry_screen import DataEntryScreen
-        return ft.Container(content=DataEntryScreen(self._page, self.current_user), expand=True)
+        data_entry_content = DataEntryScreen(self._page, self.current_user)
+        return self._wrap_with_employee_header("Data Entry", data_entry_content)
 
     def _create_inventory_tab(self):
         """Create Inventory tab - stock management"""
         from screens.inventory_screen import InventoryScreen
-        return ft.Container(content=InventoryScreen(self._page, self.current_user), expand=True)
+        inventory_content = InventoryScreen(self._page, self.current_user)
+        return self._wrap_with_employee_header("Inventory", inventory_content)
 
     def _create_transactions_tab(self):
         """Create Transactions tab - financial transactions"""
         from screens.transactions_screen import TransactionsScreen
-        return ft.Container(content=TransactionsScreen(self._page, self.current_user), expand=True)
-
-    def _create_crm_tab(self):
-        """Create CRM tab - customer relationship management"""
-        from screens.crm_screen import CRMScreen
-        return ft.Container(content=CRMScreen(self._page, self.current_user), expand=True)
-
-    def _create_invoicing_tab(self):
-        """Create Invoicing tab - billing and invoices"""
-        from screens.invoicing_screen import InvoicingScreen
-        return ft.Container(content=InvoicingScreen(self._page, self.current_user), expand=True)
-
-    def _create_assets_tab(self):
-        """Create Assets tab - company asset management"""
-        from screens.asset_management_screen import AssetManagementScreen
-        return ft.Container(content=AssetManagementScreen(self._page, self.current_user), expand=True)
+        transactions_content = TransactionsScreen(
+            self._page, self.current_user)
+        return self._wrap_with_employee_header("Transactions", transactions_content)
 
     def _create_time_tracking_tab(self):
         """Create Time Tracking tab - employee time logs"""
         from screens.time_tracking_screen import TimeTrackingScreen
-        return ft.Container(content=TimeTrackingScreen(self._page, self.current_user), expand=True)
+        time_tracking_content = TimeTrackingScreen(
+            self._page, self.current_user)
+        return self._wrap_with_employee_header("Time Track", time_tracking_content)
 
     def _create_org_tree_tab(self):
         """Create Organization Tree tab"""
         from screens.organization_tree_screen import OrganizationTreeScreen
-        return ft.Container(content=OrganizationTreeScreen(self._page, self.current_user), expand=True)
+        org_tree_content = OrganizationTreeScreen(
+            self._page, self.current_user)
+        return self._wrap_with_employee_header("Org Tree", org_tree_content)
+
+    def _wrap_with_employee_header(self, screen_title: str, content, show_back_button: bool = True):
+        """Wrap any screen content with the consistent employee portal header"""
+
+        def handle_back(e):
+            """Handle back navigation to return to dashboard"""
+            self._selected_index = 0
+            if hasattr(self, '_selected_nav_index'):
+                self._selected_nav_index = 0
+            # Update nav items visual state
+            try:
+                sidebar = self.content.content.controls[0]
+                if hasattr(sidebar, 'content') and hasattr(sidebar.content, 'controls'):
+                    nav_items = sidebar.content.controls
+                    for item in nav_items:
+                        item.bgcolor = "transparent"
+                    if nav_items:
+                        nav_items[0].bgcolor = PRIMARY + "15"
+            except Exception as e:
+                print(f"Error updating nav: {e}")
+            # Navigate to dashboard
+            main_container = self.content.content.controls[2]
+            main_container.content = self._get_tab_content(0)
+            self._page.update()
+
+        return ft.Container(
+            content=ft.Column([
+                # Consistent Header for all employee screens - matching admin screen style
+                ft.Container(
+                    content=ft.Row([
+                        # Back button (navigation button)
+                        ft.IconButton(
+                            icon=ft.Icons.ARROW_BACK,
+                            tooltip="Back to Dashboard",
+                            on_click=handle_back,
+                            icon_color=PRIMARY
+                        ) if show_back_button else ft.Container(width=0),
+                        # Navigation toggle - menu button
+                        self.nav_toggle_btn,
+                        ft.Container(width=10),
+                        # Screen title
+                        ft.Text(
+                            f"Vernika HRA - {screen_title}",
+                            size=18,
+                            weight=ft.FontWeight.BOLD,
+                            color=PRIMARY
+                        ),
+                        ft.Container(expand=True),
+                        # Welcome message
+                        ft.Text(
+                            f"Welcome, {self.current_user.get('username', 'Employee') if isinstance(self.current_user, dict) else 'Employee'}",
+                            size=14,
+                            color=TEXT_SECONDARY
+                        ),
+                        ft.Container(width=10),
+                        # Logout button
+                        ft.IconButton(
+                            icon=ft.Icons.LOGOUT,
+                            tooltip="Logout",
+                            on_click=self._handle_logout,
+                            icon_color=ERROR
+                        )
+                    ], alignment=ft.MainAxisAlignment.SPACE_BETWEEN),
+                    padding=ft.padding.symmetric(horizontal=20, vertical=15),
+                    bgcolor=SURFACE,
+                ),
+                # Content area
+                ft.Container(
+                    content=content,
+                    expand=True,
+                ),
+            ], expand=True),
+            expand=True,
+        )
 
     def _navigate_to(self, index):
         """Navigate to a specific tab"""
@@ -740,11 +770,17 @@ class EmployeeScreen(ft.Container):
         # Update navigation item visual state
         if hasattr(self, '_selected_nav_index'):
             self._selected_nav_index = index
-        # Navigate to the tab content - content_area is at controls[2].content.controls[1]
-        main_container = self.content.content.controls[2]
-        main_container.content.controls[1].content = self._get_tab_content(
-            index)
-        self._page.update()
+        # Navigate to the tab content - content_area is at controls[2]
+        # content_area.content contains the actual tab content
+        try:
+            main_container = self.content.content.controls[2]
+            main_container.content = self._get_tab_content(index)
+            self._page.update()
+        except Exception as e:
+            print(f"Error in navigation: {e}")
+            # Fallback: rebuild the entire content
+            self.content = self._build_content()
+            self._page.update()
 
     def _get_employee_info_card(self):
         """Get employee information from database"""
@@ -866,6 +902,12 @@ class EmployeeScreen(ft.Container):
         """Show a snackbar message"""
         snack = ft.SnackBar(content=ft.Text(message), open=True)
         self._page.overlay.append(snack)
+        self._page.update()
+
+    def _refresh(self):
+        """Refresh the employee screen"""
+        # Rebuild content to refresh data
+        self.content = self._build_content()
         self._page.update()
 
 

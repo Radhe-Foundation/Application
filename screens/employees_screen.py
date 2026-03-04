@@ -2,17 +2,42 @@
 Vernika HRA - Enhanced Employees Screen with ID/PASS Creation, Full Details, and Document Generation
 """
 
+from utils.supabase_storage import upload_to_supabase
+from components.forms import DatePickerField
+from database.operations import get_all_employees, get_employee_by_id
+from database.models import Employee, User, Department, Position, Role
+from database.session_manager import get_session, get_db_session, check_db_connection
+import os
+import string
+import random
+from sqlalchemy import func
+from datetime import datetime, date
+import bcrypt
 import flet as ft
 from flet import padding
-import bcrypt
-from datetime import datetime, date
-from sqlalchemy import func
-import random
-import string
-from database.session_manager import get_session, get_db_session, check_db_connection
-from database.models import Employee, User, Department, Position, Role
-from database.operations import get_all_employees, get_employee_by_id
-from components.forms import DatePickerField
+
+# Theme colors
+PRIMARY = "#2E86AB"
+SUCCESS = "#4CAF50"
+ERROR = "#F44336"
+WARNING = "#FF9800"
+INFO = "#2196F3"
+BACKGROUND = "#F5F5F5"
+SURFACE = "#FFFFFF"
+TEXT_PRIMARY = "#1A1C1E"
+TEXT_SECONDARY = "#6C757D"
+
+
+# Theme colors
+PRIMARY = "#2E86AB"
+SUCCESS = "#4CAF50"
+ERROR = "#F44336"
+WARNING = "#FF9800"
+INFO = "#17A2B8"
+BACKGROUND = "#F8F9FA"
+SURFACE = "#FFFFFF"
+TEXT_PRIMARY = "#1A1C1E"
+TEXT_SECONDARY = "#6C757D"
 
 
 def _safe_navigate_to_home(page, user=None):
@@ -61,55 +86,25 @@ class EmployeesScreen(ft.Container):
         return get_db_session()
 
     def _init_file_picker(self):
-        """Initialize file picker for profile photos"""
+        """Initialize file picker for profile photos - using page.services (Flet 0.80+)"""
         if not self._file_picker:
             self._file_picker = ft.FilePicker()
-            self._page.services.append(self._file_picker)
+            # Use page.services for Service objects (Flet 0.80+)
+            # FilePicker is a Service, not a Control
+            try:
+                if self._file_picker not in self._page.services:
+                    self._page.services.append(self._file_picker)
+            except AttributeError:
+                # Fallback for older Flet versions or if services doesn't exist
+                if self._file_picker not in self._page.overlay:
+                    self._page.overlay.append(self._file_picker)
 
     def _build_content(self):
-        # Create toggle button for navigation
-        def toggle_nav_rail(e):
-            self._nav_rail_visible = not self._nav_rail_visible
-            self.content.content.controls[0].visible = self._nav_rail_visible
-            self.content.content.controls[1].visible = self._nav_rail_visible
-            self._page.update()
+        """Build the full content with header"""
+        # Build header with Add Employee button
+        header = self._create_header()
 
-        self.nav_toggle_btn = ft.IconButton(
-            icon=ft.Icons.MENU_OPEN if self._nav_rail_visible else ft.Icons.MENU,
-            tooltip="Toggle Navigation",
-            on_click=toggle_nav_rail,
-            icon_color="WHITE"
-        )
-
-        header = ft.Container(
-            padding=15,
-            bgcolor="#2E86AB",
-            content=ft.Row([
-                ft.IconButton(
-                    icon=ft.Icons.ARROW_BACK,
-                    icon_color="WHITE",
-                    on_click=self.on_back
-                ),
-                self.nav_toggle_btn,
-                ft.Text(
-                    "Employee Management",
-                    size=18,
-                    color="WHITE",
-                    weight=ft.FontWeight.BOLD
-                ),
-                ft.Container(expand=True),
-                ft.ElevatedButton(
-                    "Add Employee",
-                    icon=ft.Icons.ADD,
-                    on_click=self.on_add_employee,
-                    style=ft.ButtonStyle(
-                        color="WHITE",
-                        bgcolor="#1976D2",
-                    )
-                ),
-            ])
-        )
-
+        # Build employee list
         employee_list = self._build_employee_list()
 
         content = ft.Column([
@@ -123,6 +118,48 @@ class EmployeesScreen(ft.Container):
 
         return content
 
+    def _create_header(self):
+        """Create header with Add Employee button"""
+        return ft.Container(
+            content=ft.Row([
+                ft.Container(width=10),
+                ft.Icon(ft.Icons.BADGE, color="WHITE", size=28),
+                ft.Text("Vernika HRA - Employees Management", size=18,
+                        color="WHITE", weight=ft.FontWeight.BOLD),
+                ft.Container(expand=True),
+                # Add Employee button in header
+                ft.ElevatedButton(
+                    "Add Employee",
+                    icon=ft.Icons.PERSON_ADD,
+                    on_click=self.on_add_employee,
+                    style=ft.ButtonStyle(
+                        bgcolor="WHITE",
+                        color=PRIMARY,
+                    ),
+                ),
+                ft.Container(width=10),
+                ft.Text(
+                    f"Welcome, {self.user.get('username', 'User') if isinstance(self.user, dict) else 'User'}",
+                    size=14,
+                    color="WHITE"
+                ),
+                ft.IconButton(
+                    icon=ft.Icons.LOGOUT,
+                    tooltip="Logout",
+                    on_click=self._handle_logout,
+                    icon_color="WHITE"
+                )
+            ], alignment=ft.MainAxisAlignment.SPACE_BETWEEN),
+            padding=ft.padding.symmetric(horizontal=20, vertical=15),
+            bgcolor=PRIMARY,
+        )
+
+    def _handle_logout(self, e):
+        """Handle logout"""
+        from screens.login_screen import LoginScreen
+        self._page.clean()
+        self._page.add(LoginScreen(self._page))
+
     def on_back(self, e):
         """Handle back navigation"""
         _safe_navigate_to_home(self._page, self.user)
@@ -132,7 +169,6 @@ class EmployeesScreen(ft.Container):
 
     def _build_employee_list(self):
         """Build employee list with PostgreSQL"""
-        from utils.screen_access import get_user_screen_access
         from sqlalchemy.orm import joinedload
 
         db = None
@@ -179,18 +215,6 @@ class EmployeesScreen(ft.Container):
             dept_name = emp.department.name if emp.department else "General"
             pos_title = emp.position.title if emp.position else "-"
 
-            # Get user_id for access control
-            user_id = emp.user_id if emp.user_id else None
-
-            # Get screen access count
-            access_count = 0
-            if user_id:
-                try:
-                    access = get_user_screen_access(user_id)
-                    access_count = sum(1 for v in access.values() if v)
-                except Exception:
-                    pass
-
             rows.append(
                 ft.DataRow(
                     cells=[
@@ -208,29 +232,6 @@ class EmployeesScreen(ft.Container):
                                 bgcolor=status_color,
                                 padding=padding.all(5),
                                 border_radius=4
-                            )
-                        ),
-                        ft.DataCell(
-                            # Access indicator with count
-                            ft.Container(
-                                content=ft.Row([
-                                    ft.Container(
-                                        bgcolor="#4CAF50" if access_count > 3 else "#FF9800" if access_count > 0 else "#9E9E9E",
-                                        padding=padding.symmetric(
-                                            horizontal=6, vertical=2),
-                                        border_radius=10,
-                                        content=ft.Text(
-                                            f"{access_count}", size=10, color="WHITE"),
-                                    ),
-                                    ft.IconButton(
-                                        icon=ft.Icons.SECURITY,
-                                        icon_color="#009688",
-                                        on_click=lambda e, emp_id=emp_id, user_id=user_id: self._manage_access_dialog(
-                                            emp_id, user_id) if user_id else self._show_error("No user account linked"),
-                                        tooltip="Manage Screen Access",
-                                        scale=0.8,
-                                    ),
-                                ], spacing=2),
                             )
                         ),
                         ft.DataCell(
@@ -278,7 +279,6 @@ class EmployeesScreen(ft.Container):
                 ft.DataColumn(label=ft.Text("Department")),
                 ft.DataColumn(label=ft.Text("Position")),
                 ft.DataColumn(label=ft.Text("Status")),
-                ft.DataColumn(label=ft.Text("Access")),
                 ft.DataColumn(label=ft.Text("Actions")),
             ],
             rows=rows,
@@ -328,7 +328,7 @@ class EmployeesScreen(ft.Container):
         profile_photo_path = [None]  # Use list to store reference
 
         def pick_profile_photo(e):
-            """Pick profile photo using file picker"""
+            """Pick profile photo using file picker and upload to Supabase"""
             self._init_file_picker()
 
             async def pick_and_set():
@@ -340,10 +340,35 @@ class EmployeesScreen(ft.Container):
                     if files and files[0]:
                         path = files[0].path
                         profile_photo_path[0] = path
-                        profile_photo.value = path
+
+                        # Upload to Supabase Storage for multi-device access
+                        try:
+                            success, file_url, bucket_path = upload_to_supabase(
+                                file_path=path,
+                                folder="profiles",
+                                custom_filename=os.path.basename(path)
+                            )
+                            if success and file_url:
+                                # Save the Supabase URL instead of local path
+                                profile_photo.value = file_url
+                                print(f"Profile photo uploaded: {file_url}")
+                            else:
+                                # Fallback to local path if upload fails
+                                profile_photo.value = path
+                                print(
+                                    f"Profile photo upload failed, using local path: {path}")
+                        except Exception as upload_err:
+                            print(
+                                f"Error uploading profile photo: {upload_err}")
+                            # Fallback to local path
+                            profile_photo.value = path
+                            self._show_error(
+                                f"Upload failed: {str(upload_err)}")
+
                         self._page.update()
                 except Exception as ex:
                     print(f"Error picking file: {ex}")
+                    self._show_error(f"Error selecting file: {str(ex)}")
 
             self._page.run_task(pick_and_set)
 
@@ -771,7 +796,7 @@ class EmployeesScreen(ft.Container):
             emp.profile_photo] if emp.profile_photo else [None]
 
         def pick_profile_photo_edit(e):
-            """Pick profile photo using file picker"""
+            """Pick profile photo using file picker and upload to Supabase"""
             self._init_file_picker()
 
             async def pick_and_set():
@@ -783,10 +808,35 @@ class EmployeesScreen(ft.Container):
                     if files and files[0]:
                         path = files[0].path
                         profile_photo_path[0] = path
-                        profile_photo.value = path
+
+                        # Upload to Supabase Storage for multi-device access
+                        try:
+                            success, file_url, bucket_path = upload_to_supabase(
+                                file_path=path,
+                                folder="profiles",
+                                custom_filename=os.path.basename(path)
+                            )
+                            if success and file_url:
+                                # Save the Supabase URL instead of local path
+                                profile_photo.value = file_url
+                                print(f"Profile photo uploaded: {file_url}")
+                            else:
+                                # Fallback to local path if upload fails
+                                profile_photo.value = path
+                                print(
+                                    f"Profile photo upload failed, using local path: {path}")
+                        except Exception as upload_err:
+                            print(
+                                f"Error uploading profile photo: {upload_err}")
+                            # Fallback to local path
+                            profile_photo.value = path
+                            self._show_error(
+                                f"Upload failed: {str(upload_err)}")
+
                         self._page.update()
                 except Exception as ex:
                     print(f"Error picking file: {ex}")
+                    self._show_error(f"Error selecting file: {str(ex)}")
 
             self._page.run_task(pick_and_set)
 
@@ -1178,8 +1228,25 @@ class EmployeesScreen(ft.Container):
         dept_name = emp.department.name if emp.department else "General"
         pos_title = emp.position.title if emp.position else "Employee"
 
-        # Get profile photo if available
+        # Get profile photo if available - check multiple locations
         profile_photo_url = emp.profile_photo if emp.profile_photo else None
+
+        # Try to resolve profile photo path similar to profile_screen.py
+        if profile_photo_url and not profile_photo_url.startswith('http'):
+            import os
+            from pathlib import Path
+
+            # Check if path exists as-is
+            if not os.path.exists(profile_photo_url):
+                # Try relative to assets/profile_photos directory
+                base_dir = Path(__file__).parent.parent
+                basename = os.path.basename(profile_photo_url)
+                assets_path = base_dir / "assets" / "profile_photos" / basename
+                if assets_path.exists():
+                    profile_photo_url = str(assets_path)
+                else:
+                    # Profile photo file doesn't exist - set to None
+                    profile_photo_url = None
 
         # Create photo container - show profile photo if available
         if profile_photo_url:
@@ -1187,7 +1254,7 @@ class EmployeesScreen(ft.Container):
                 src=profile_photo_url,
                 width=70,
                 height=90,
-                fit=ft.BoxFit.CONTAIN,
+                fit=ft.BoxFit.COVER,
             )
         else:
             photo_content = ft.Column([
@@ -1196,70 +1263,96 @@ class EmployeesScreen(ft.Container):
                 ft.Text("PHOTO", size=9, color="#757575"),
             ], alignment=ft.MainAxisAlignment.CENTER, horizontal_alignment=ft.CrossAxisAlignment.CENTER)
 
+        # Employee full name
+        emp_name = f"{emp.first_name or ''} {emp.last_name or ''}".strip()
+
         id_card = ft.Container(
-            width=380,
-            height=280,
+            width=400,
+            height=250,
             bgcolor="white",
             border=ft.border.all(3, "#2E86AB"),
             border_radius=12,
             content=ft.Column([
+                # Header
                 ft.Container(
                     bgcolor="#2E86AB",
-                    padding=padding.all(12),
+                    padding=padding.all(10),
                     content=ft.Row([
-                        ft.Icon(ft.Icons.BADGE, color="WHITE", size=28),
+                        ft.Container(
+                            width=30,
+                            height=30,
+                            bgcolor="white",
+                            border_radius=4,
+                            content=ft.Icon(
+                                ft.Icons.BADGE, color="#2E86AB", size=24)
+                        ),
                         ft.Column([
                             ft.Text("VERNIKA TECHNOLOGIES", size=14,
                                     color="WHITE", weight=ft.FontWeight.BOLD),
                             ft.Text("Employee Identity Card",
-                                    size=10, color="WHITE"),
-                        ]),
+                                    size=9, color="WHITE"),
+                        ], expand=True, spacing=0),
                     ], spacing=10)
                 ),
+                # Body
                 ft.Container(
                     padding=15,
                     content=ft.Row([
+                        # Photo
                         ft.Container(
-                            width=85,
-                            height=100,
+                            width=80,
+                            height=95,
                             bgcolor="#E3F2FD",
                             border_radius=8,
+                            border=ft.border.all(1, "#2E86AB"),
                             content=photo_content
                         ),
+                        # Details
                         ft.Column([
-                            ft.Text(f"{emp.first_name or ''} {emp.last_name or ''}",
-                                    size=16, weight=ft.FontWeight.BOLD, color="#1A1C1E"),
+                            ft.Text(emp_name or "Employee",
+                                    size=15, weight=ft.FontWeight.BOLD, color="#1A1C1E"),
                             ft.Container(
                                 content=ft.Text(
-                                    f"{pos_title}", size=12, color="#FFFFFF", weight=ft.FontWeight.W_600),
+                                    pos_title or "Employee", size=10, color="WHITE", weight=ft.FontWeight.W_600),
                                 bgcolor="#2E86AB",
                                 padding=ft.padding.symmetric(
-                                    horizontal=8, vertical=3),
-                                border_radius=4,
+                                    horizontal=8, vertical=2),
+                                border_radius=3,
                             ),
-                            ft.Container(
-                                content=ft.Text(
-                                    f"Dept: {dept_name}", size=11, color="#333333", weight=ft.FontWeight.W_500),
-                                margin=ft.margin.only(top=6),
-                            ),
-                            ft.Text(f"ID: {emp.employee_code or 'N/A'}",
-                                    size=12, weight=ft.FontWeight.BOLD, color="#2E86AB"),
+                            ft.Container(height=5),
                             ft.Text(
-                                f"DOB: {emp.date_of_birth or '-'}", size=10, color="#444444"),
-                        ], spacing=3),
-                    ], spacing=15)
+                                f"Dept: {dept_name}", size=11, color="#333333", weight=ft.FontWeight.W_500),
+                            ft.Text(f"ID: {emp.employee_code or 'N/A'}",
+                                    size=11, weight=ft.FontWeight.BOLD, color="#2E86AB"),
+                        ], spacing=3, expand=True)
+                    ], spacing=15, alignment=ft.MainAxisAlignment.START)
                 ),
+                # Footer
                 ft.Container(
-                    bgcolor="#E8E8E8",
-                    padding=padding.all(10),
+                    bgcolor="#F5F5F5",
+                    padding=padding.all(8),
                     content=ft.Row([
-                        ft.Icon(ft.Icons.EMAIL, size=14, color="#1A1C1E"),
-                        ft.Text(emp.email or '-', size=10,
-                                color="#1A1C1E", weight=ft.FontWeight.W_500),
+                        ft.Column([
+                            ft.Row([
+                                ft.Icon(ft.Icons.EMAIL, size=12,
+                                        color="#1A1C1E"),
+                                ft.Text(emp.email or '-', size=9,
+                                        color="#1A1C1E", weight=ft.FontWeight.W_500),
+                            ], spacing=3),
+                            ft.Row([
+                                ft.Icon(ft.Icons.PHONE, size=12,
+                                        color="#1A1C1E"),
+                                ft.Text(emp.phone or '-', size=9,
+                                        color="#1A1C1E", weight=ft.FontWeight.W_500),
+                            ], spacing=3),
+                        ], spacing=2),
                         ft.Container(expand=True),
-                        ft.Icon(ft.Icons.PHONE, size=14, color="#1A1C1E"),
-                        ft.Text(emp.phone or '-', size=10,
-                                color="#1A1C1E", weight=ft.FontWeight.W_500),
+                        ft.Column([
+                            ft.Text(f"Valid Till: Dec {datetime.now().year + 1}",
+                                    size=9, color="#D32F2F", weight=ft.FontWeight.W_500),
+                            ft.Text("Authorized Signature",
+                                    size=8, color="#666666"),
+                        ], horizontal_alignment=ft.CrossAxisAlignment.END, spacing=0),
                     ], spacing=5)
                 )
             ], spacing=0)
@@ -1275,12 +1368,16 @@ class EmployeesScreen(ft.Container):
                 from reportlab.pdfgen import canvas
                 from reportlab.lib.units import inch, mm
                 from reportlab.lib.utils import ImageReader
+                try:
+                    from PIL import Image
+                except ImportError:
+                    Image = None
 
                 # CR80 Card Size: 3.375" x 2.125" (standard ID card)
                 CARD_WIDTH = 3.375 * inch
                 CARD_HEIGHT = 2.125 * inch
 
-                # Create PDF with card size
+                # Create PDF with card size (landscape for better fit)
                 buffer = io.BytesIO()
                 c = canvas.Canvas(buffer, pagesize=(CARD_WIDTH, CARD_HEIGHT))
                 width = CARD_WIDTH
@@ -1290,23 +1387,26 @@ class EmployeesScreen(ft.Container):
                 c.setFillColor(colors.white)
                 c.rect(0, 0, width, height, fill=True)
 
-                # Card Border
+                # Card Border - rounded corners simulation
                 c.setStrokeColor(colors.HexColor("#2E86AB"))
                 c.setLineWidth(3)
                 c.rect(2, 2, width - 4, height - 4)
 
-                # Header - Blue background
-                header_height = 40
+                # Header - Blue background with rounded corners
+                header_height = 38
                 c.setFillColor(colors.HexColor("#2E86AB"))
-                c.rect(0, height - header_height,
-                       width, header_height, fill=True)
+                c.roundRect(2, height - header_height, width - 4,
+                            header_height, 6, fill=True, stroke=False)
 
-                # Company Logo (try to load from assets)
-                logo_path = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(__file__))),
-                                         "assets", "logo", "Vernikalogo.png")
+                # Company Logo - fixed path to go up 2 directories from screens/
+                import os
+                project_root = os.path.dirname(
+                    os.path.dirname(os.path.abspath(__file__)))
+                logo_path = os.path.join(
+                    project_root, "assets", "logo", "Vernikalogo.png")
                 logo_x = 8
-                logo_y = height - header_height + 8
-                logo_size = 24
+                logo_y = height - header_height + 6
+                logo_size = 22
 
                 if os.path.exists(logo_path):
                     try:
@@ -1317,151 +1417,162 @@ class EmployeesScreen(ft.Container):
 
                 # Company Name in Header
                 c.setFillColor(colors.white)
-                c.setFont("Helvetica-Bold", 12)
-                c.drawString(logo_x + logo_size + 8, height -
-                             18, "VERNIKA TECHNOLOGIES")
-                c.setFont("Helvetica", 7)
-                c.drawString(logo_x + logo_size + 8, height -
-                             26, "Employee Identity Card")
+                c.setFont("Helvetica-Bold", 11)
+                c.drawString(logo_x + logo_size + 6, height -
+                             16, "VERNIKA TECHNOLOGIES")
+                c.setFont("Helvetica", 6)
+                c.drawString(logo_x + logo_size + 6, height -
+                             23, "Employee Identity Card")
 
-                # Employee Photo Section
-                photo_x = 8
-                photo_y = height - header_height - 55
-                photo_width = 45
-                photo_height = 50
+                # Employee Photo Section - improved positioning
+                photo_x = 10
+                photo_y = height - header_height - 60
+                photo_width = 50
+                photo_height = 55
 
-                # Photo background
+                # Photo background with border
                 c.setFillColor(colors.HexColor("#E3F2FD"))
                 c.setStrokeColor(colors.HexColor("#2E86AB"))
                 c.setLineWidth(1)
-                c.rect(photo_x, photo_y, photo_width,
-                       photo_height, fill=True, stroke=True)
 
-                # Try to load employee photo
-                profile_photo_url = emp.profile_photo if emp.profile_photo else None
                 photo_loaded = False
-
                 if profile_photo_url:
-                    try:
-                        # Handle URL or local file path
-                        if profile_photo_url.startswith('http'):
-                            # For URLs, try to load with reportlab
-                            c.drawImage(profile_photo_url, photo_x + 2, photo_y + 2,
+                    if Image:
+                        try:
+                            import urllib.request
+                            from io import BytesIO
+                            headers = {'User-Agent': 'Mozilla/5.0'}
+                            req = urllib.request.Request(
+                                profile_photo_url, headers=headers)
+                            with urllib.request.urlopen(req, timeout=10) as response:
+                                img_data = response.read()
+                            img = Image.open(BytesIO(img_data))
+                            img = img.convert('RGB')
+                            # Save to temp buffer
+                            temp_buf = BytesIO()
+                            img.save(temp_buf, format='JPEG')
+                            temp_buf.seek(0)
+                            c.drawImage(ImageReader(temp_buf), photo_x + 2, photo_y + 2,
                                         width=photo_width - 4, height=photo_height - 4, mask='auto')
                             photo_loaded = True
-                        elif os.path.exists(profile_photo_url):
-                            c.drawImage(profile_photo_url, photo_x + 2, photo_y + 2,
+                        except Exception as img_err:
+                            # Skip logging for macOS Photos temporary files - they expire and are not accessible
+                            temp_path_indicators = [
+                                'TemporaryItems', 'NSItemProvider', 'Photos']
+                            is_temp_photo = any(indicator in str(
+                                profile_photo_url) for indicator in temp_path_indicators)
+                            if not is_temp_photo:
+                                print(f"URL image load error: {img_err}")
+                            # Fallback: try as local file path
+                            try:
+                                local_path = profile_photo_url
+                                # Check if it's a local path (starts with / or contains path separators)
+                                if local_path and (local_path.startswith('/') or '\\' in local_path):
+                                    if os.path.exists(local_path):
+                                        c.drawImage(local_path, photo_x + 2, photo_y + 2,
+                                                    width=photo_width - 4, height=photo_height - 4, mask='auto')
+                                        photo_loaded = True
+                                    else:
+                                        # Try relative path from project root
+                                        full_path = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(__file__))),
+                                                                 local_path.lstrip('/'))
+                                        if os.path.exists(full_path):
+                                            c.drawImage(full_path, photo_x + 2, photo_y + 2,
+                                                        width=photo_width - 4, height=photo_height - 4, mask='auto')
+                                            photo_loaded = True
+                            except Exception as draw_err:
+                                # Only print local file errors for non-temp paths
+                                if not is_temp_photo:
+                                    print(f"Local file draw error: {draw_err}")
+                    elif os.path.exists(profile_photo_url):
+                        c.drawImage(profile_photo_url, photo_x + 2, photo_y + 2,
+                                    width=photo_width - 4, height=photo_height - 4, mask='auto')
+                        photo_loaded = True
+                    else:
+                        # Try as relative path from project root
+                        full_path = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(__file__))),
+                                                 profile_photo_url.lstrip('/'))
+                        if os.path.exists(full_path):
+                            c.drawImage(full_path, photo_x + 2, photo_y + 2,
                                         width=photo_width - 4, height=photo_height - 4, mask='auto')
                             photo_loaded = True
-                        else:
-                            # Try as relative path from project root
-                            full_path = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(__file__))),
-                                                     profile_photo_url.lstrip('/'))
-                            if os.path.exists(full_path):
-                                c.drawImage(full_path, photo_x + 2, photo_y + 2,
-                                            width=photo_width - 4, height=photo_height - 4, mask='auto')
-                                photo_loaded = True
-                    except Exception as e:
-                        print(f"Photo load error: {e}")
 
                 if not photo_loaded:
                     # Draw placeholder icon
                     c.setFillColor(colors.HexColor("#2E86AB"))
-                    c.setFont("Helvetica", 20)
+                    c.setFont("Helvetica", 18)
                     c.drawCentredString(
-                        photo_x + photo_width/2, photo_y + photo_height/2 + 5, "?")
+                        photo_x + photo_width/2, photo_y + photo_height/2, "?")
 
-                # Employee Details Section (right of photo)
+                # Employee Details Section - improved positioning
                 details_x = photo_x + photo_width + 8
-                details_start_y = height - header_height - 10
+                details_start_y = height - header_height - 8
 
-                # Name
+                # Name - truncated if needed
                 c.setFillColor(colors.black)
-                c.setFont("Helvetica-Bold", 11)
-                name = f"{emp.first_name or ''} {emp.last_name or ''}".strip()
-                if len(name) > 20:
-                    name = name[:20]
+                c.setFont("Helvetica-Bold", 10)
+                name = emp_name if emp_name else "Employee"
+                if len(name) > 22:
+                    name = name[:22]
                 c.drawString(details_x, details_start_y, name)
 
                 # Position - with background
-                pos_text = (pos_title or "Employee")[:22]
+                pos_text = (pos_title or "Employee")[:20]
                 c.setFillColor(colors.HexColor("#2E86AB"))
-                c.rect(details_x, details_start_y - 14, 70, 12, fill=True)
+                c.rect(details_x, details_start_y - 12, 65, 11, fill=True)
                 c.setFillColor(colors.white)
-                c.setFont("Helvetica", 7)
-                c.drawString(details_x + 3, details_start_y - 6, pos_text)
+                c.setFont("Helvetica", 6)
+                c.drawString(details_x + 2, details_start_y - 5, pos_text)
 
                 # Employee Code
                 c.setFillColor(colors.HexColor("#2E86AB"))
-                c.setFont("Helvetica-Bold", 9)
+                c.setFont("Helvetica-Bold", 8)
                 emp_code = emp.employee_code or f"EMP{emp_id}"
                 c.drawString(details_x, details_start_y -
-                             28, f"ID: {emp_code}")
+                             22, f"ID: {emp_code}")
 
                 # Department
                 c.setFillColor(colors.black)
-                c.setFont("Helvetica", 7)
+                c.setFont("Helvetica", 6)
                 dept_text = (dept_name or "General")[:25]
                 c.drawString(details_x, details_start_y -
-                             38, f"Dept: {dept_text}")
+                             30, f"Dept: {dept_text}")
 
-                # Date of Birth
-                dob_text = str(
-                    emp.date_of_birth) if emp.date_of_birth else "N/A"
-                c.drawString(details_x, details_start_y -
-                             48, f"DOB: {dob_text}")
-
-                # Blood Group (if available in model)
-                blood_group = getattr(emp, 'blood_group', None) if hasattr(
-                    emp, 'blood_group') else None
-                if blood_group:
-                    c.drawString(details_x, details_start_y -
-                                 58, f"Blood: {blood_group}")
-
-                # Footer Section
-                footer_y = 25
-                footer_height = 25
+                # Footer Section - improved
+                footer_y = 18
+                footer_height = 22
 
                 c.setFillColor(colors.HexColor("#F5F5F5"))
-                c.rect(0, footer_y - 5, width, footer_height + 5, fill=True)
+                c.rect(0, footer_y - 2, width, footer_height, fill=True)
 
-                # Email icon and text
+                # Email
                 c.setFillColor(colors.HexColor("#1A1C1E"))
-                c.setFont("Helvetica", 6)
-                c.drawString(8, footer_y + 8, "Email:")
-                c.setFont("Helvetica-Bold", 6)
-                email_text = (emp.email or "-")[:28]
-                c.drawString(25, footer_y + 8, email_text)
-
-                # Phone icon and text
-                c.setFont("Helvetica", 6)
-                c.drawString(8, footer_y - 2, "Phone:")
-                c.setFont("Helvetica-Bold", 6)
-                phone_text = (emp.phone or "-")[:28]
-                c.drawString(28, footer_y - 2, phone_text)
-
-                # Emergency Contact
-                emergency_contact = emp.emergency_contact_name or "-"
-                emergency_phone = emp.emergency_phone or "-"
                 c.setFont("Helvetica", 5)
-                c.drawString(width/2 + 5, footer_y + 8,
-                             f"Emergency: {emergency_contact}")
-                c.drawString(width/2 + 5, footer_y,
-                             f"Contact: {emergency_phone}")
+                c.drawString(8, footer_y + 8, "Email:")
+                c.setFont("Helvetica-Bold", 5)
+                email_text = (emp.email or "-")[:30]
+                c.drawString(22, footer_y + 8, email_text)
 
-                # Valid Till (1 year from now)
+                # Phone
+                c.setFont("Helvetica", 5)
+                c.drawString(8, footer_y + 2, "Phone:")
+                c.setFont("Helvetica-Bold", 5)
+                phone_text = (emp.phone or "-")[:30]
+                c.drawString(24, footer_y + 2, phone_text)
+
+                # Valid Till
                 valid_date = datetime.now().year + 1
                 c.setFillColor(colors.HexColor("#D32F2F"))
-                c.setFont("Helvetica-Bold", 6)
+                c.setFont("Helvetica-Bold", 5)
                 c.drawRightString(width - 8, footer_y + 8,
                                   f"Valid Till: Dec {valid_date}")
 
                 # Signature line
                 c.setStrokeColor(colors.black)
                 c.setLineWidth(0.5)
-                c.line(width - 60, footer_y + 3, width - 15, footer_y + 3)
-                c.setFont("Helvetica", 5)
-                c.drawCentredString(width - 37, footer_y - 3, "Authorized")
+                c.line(width - 55, footer_y + 5, width - 15, footer_y + 5)
+                c.setFont("Helvetica", 4)
+                c.drawCentredString(width - 35, footer_y, "Authorized")
 
                 # Save PDF
                 c.save()
@@ -1491,8 +1602,8 @@ class EmployeesScreen(ft.Container):
                 content=ft.ListView([
                     id_card
                 ], spacing=0, padding=0, expand=True),
-                width=380,
-                height=280,
+                width=400,
+                height=250,
             ),
             actions=[
                 ft.ElevatedButton(
@@ -1664,7 +1775,7 @@ class EmployeesScreen(ft.Container):
         self._page.update()
 
     def _generate_offer_letter_dialog(self, emp_id: int):
-        """Generate Offer Letter dialog using PostgreSQL - Enhanced with professional contract format"""
+        """Generate Offer Letter dialog using PostgreSQL - Professional Industry Standard Format"""
         from sqlalchemy.orm import joinedload
 
         db = None
@@ -1690,90 +1801,116 @@ class EmployeesScreen(ft.Container):
         dept_name = emp.department.name if emp.department else "General"
         pos_title = emp.position.title if emp.position else "Employee"
 
-        # Calculate total salary
+        # Calculate salary details
         basic = emp.basic_salary or 0
-        allowance = emp.allowance or 0
-        deduction = emp.deduction or 0
-        total_salary = basic + allowance - deduction
+        hra = basic * 0.40 if basic > 0 else 0  # 40% of basic as HRA
+        conv = basic * 0.10 if basic > 0 else 0   # 10% as conveyance
+        medical = 1250 if basic > 0 else 0         # Fixed medical allowance
+        special = basic * 0.10 if basic > 0 else 0  # 10% as special allowance
+        pf = basic * 0.12 if basic > 0 else 0     # 12% as PF
+        pt = 200                                    # Professional Tax
+        gross_salary = basic + hra + conv + medical + special
+        net_salary = gross_salary - pf - pt
 
-        # Format date
-        current_date = datetime.now().strftime('%Y-%m-%d')
-        doj = str(emp.date_of_joining) if emp.date_of_joining else 'To be decided'
+        # Format dates
+        current_date = datetime.now().strftime('%d-%m-%Y')
+        doj = datetime.strptime(str(emp.date_of_joining), '%Y-%m-%d').strftime(
+            '%d-%m-%Y') if emp.date_of_joining else 'To be decided'
 
         # Employment type formatting
         emp_type = (
             emp.employment_type or 'Full-time').replace('_', ' ').title()
 
+        # Employee name
+        emp_name = f"{emp.first_name or ''} {emp.last_name or ''}".strip()
+
+        # Build the offer letter preview
         offer_letter = ft.Container(
-            width=650,
-            height=750,
+            width=680,
+            height=900,
             bgcolor="white",
             content=ft.Column([
-                # Header
+                # Company Header
                 ft.Container(
-                    bgcolor="#2E86AB",
+                    bgcolor="#1A237E",
                     padding=padding.all(20),
                     content=ft.Column([
                         ft.Row([
-                            ft.Icon(ft.Icons.BUSINESS, color="WHITE", size=32),
+                            ft.Icon(ft.Icons.BUSINESS, color="WHITE", size=36),
                             ft.Column([
-                                ft.Text("VERNIKA TECHNOLOGIES", size=18,
+                                ft.Text("VERNIKA TECHNOLOGIES", size=22,
                                         color="WHITE", weight=ft.FontWeight.BOLD),
+                                ft.Text("Registered Office: India",
+                                        size=11, color="WHITE"),
                                 ft.Text(
-                                    "Offer of Employment - Appointment Letter", size=12, color="WHITE"),
+                                    "CIN: U72900XX2024PTC123456 | GST: 22ABCDE1234F1Z5", size=9, color="WHITE"),
                             ], expand=True),
                         ], alignment=ft.MainAxisAlignment.START),
                     ], horizontal_alignment=ft.CrossAxisAlignment.START)
                 ),
-                # Content
+
+                # Letter Content
                 ft.Container(
-                    padding=25,
+                    padding=30,
                     content=ft.Column([
-                        # Date and Address
+                        # Reference and Date
                         ft.Row([
-                            ft.Text(f"Date: {current_date}",
-                                    size=11, color="#333"),
+                            ft.Text(f"Ref: VT/HR/Offer/{emp.employee_code or 'N/A'}/{datetime.now().year}",
+                                    size=10, weight=ft.FontWeight.BOLD),
                             ft.Container(expand=True),
-                            ft.Text("Ref: VT/HR/{EMP001}/2024".replace('{EMP001}',
-                                    emp.employee_code or 'N/A'), size=10, color="#666"),
+                            ft.Text(f"Date: {current_date}", size=10),
                         ]),
                         ft.Container(height=20),
 
                         # Salutation
-                        ft.Text(f"Dear {emp.first_name or ''} {emp.last_name or ''},",
-                                size=12, weight=ft.FontWeight.W_500),
-                        ft.Container(height=15),
-
-                        # Opening paragraph
-                        ft.Text(
-                            "We are pleased to offer you the position of", size=11),
+                        ft.Text(f"To,", size=11),
                         ft.Container(height=5),
-                        ft.Text(f"{pos_title}", size=15,
-                                weight=ft.FontWeight.BOLD, color="#2E86AB"),
-                        ft.Text(f"in the {dept_name} Department.", size=11),
+                        ft.Text(f"Mr./Ms. {emp_name}",
+                                size=11, weight=ft.FontWeight.BOLD),
+                        ft.Text(f"{emp.address or 'India'}", size=10),
+                        ft.Container(height=20),
+
+                        # Subject
+                        ft.Text("Subject: Appointment Letter for the post of {pos_title}".format(pos_title=pos_title),
+                                size=12, weight=ft.FontWeight.BOLD),
                         ft.Container(height=15),
 
-                        # Employment Details Section
+                        # Opening
+                        ft.Text(f"Dear {emp_name},", size=11,
+                                weight=ft.FontWeight.BOLD),
+                        ft.Container(height=10),
+                        ft.Text(
+                            "We are pleased to offer you the position of {position} in our organization.".format(
+                                position=pos_title),
+                            size=11),
+                        ft.Text(
+                            "Your appointment is subject to the terms and conditions mentioned in this letter and the employment agreement.",
+                            size=11),
+                        ft.Container(height=20),
+
+                        # Appointment Details
                         ft.Container(
                             padding=15,
-                            bgcolor="#F5F5F5",
+                            bgcolor="#E8EAF6",
                             border_radius=8,
                             content=ft.Column([
-                                ft.Text("EMPLOYMENT DETAILS", size=12,
-                                        weight=ft.FontWeight.BOLD, color="#2E86AB"),
-                                ft.Divider(height=15),
+                                ft.Text("1. APPOINTMENT DETAILS", size=12,
+                                        weight=ft.FontWeight.BOLD, color="#1A237E"),
+                                ft.Divider(height=10),
                                 ft.Row([
                                     ft.Column([
                                         ft.Text("Position:", size=10,
-                                                color="#666"),
-                                        ft.Text("Department:",
-                                                size=10, color="#666"),
+                                                color="#424242"),
+                                        ft.Text("Department:", size=10,
+                                                color="#424242"),
                                         ft.Text("Employment Type:",
-                                                size=10, color="#666"),
+                                                size=10, color="#424242"),
                                         ft.Text("Date of Joining:",
-                                                size=10, color="#666"),
+                                                size=10, color="#424242"),
                                         ft.Text("Work Location:",
-                                                size=10, color="#666"),
+                                                size=10, color="#424242"),
+                                        ft.Text("Reporting To:",
+                                                size=10, color="#424242"),
                                     ], width=150, spacing=8),
                                     ft.Column([
                                         ft.Text(pos_title, size=10,
@@ -1786,117 +1923,222 @@ class EmployeesScreen(ft.Container):
                                                 weight=ft.FontWeight.W_500),
                                         ft.Text("India", size=10,
                                                 weight=ft.FontWeight.W_500),
+                                        ft.Text("Department Head", size=10,
+                                                weight=ft.FontWeight.W_500),
                                     ], spacing=8),
                                 ], spacing=30),
                             ], spacing=0)
                         ),
                         ft.Container(height=15),
 
-                        # Compensation Section
+                        # Compensation Details
                         ft.Container(
                             padding=15,
                             bgcolor="#E8F5E9",
                             border_radius=8,
                             content=ft.Column([
-                                ft.Text("COMPENSATION PACKAGE", size=12,
-                                        weight=ft.FontWeight.BOLD, color="#2E7D32"),
-                                ft.Divider(height=15),
+                                ft.Text("2. COMPENSATION PACKAGE (Monthly)", size=12,
+                                        weight=ft.FontWeight.BOLD, color="#1B5E20"),
+                                ft.Divider(height=10),
                                 ft.Row([
                                     ft.Column([
-                                        ft.Text("Basic Salary:",
-                                                size=10, color="#666"),
-                                        ft.Text("Allowances:",
-                                                size=10, color="#666"),
-                                        ft.Text("Deductions:",
-                                                size=10, color="#666"),
+                                        ft.Text("Basic Salary:", size=10),
+                                        ft.Text("HRA (40%):", size=10),
+                                        ft.Text("Conveyance (10%):", size=10),
+                                        ft.Text("Medical Allowance:", size=10),
                                         ft.Text(
-                                            "Gross Salary:", size=11, weight=ft.FontWeight.BOLD, color="#2E7D32"),
-                                        ft.Text(
-                                            "Net Monthly Salary:", size=11, weight=ft.FontWeight.BOLD, color="#2E7D32"),
-                                    ], width=150, spacing=8),
+                                            "Special Allowance (10%):", size=10),
+                                        ft.Text("Gross Salary:", size=11,
+                                                weight=ft.FontWeight.BOLD),
+                                    ], width=180, spacing=8),
                                     ft.Column([
+                                        ft.Text(f"Rs.{basic:,.2f}", size=10),
+                                        ft.Text(f"Rs.{hra:,.2f}", size=10),
+                                        ft.Text(f"Rs.{conv:,.2f}", size=10),
+                                        f"Rs.{medical:,.2f}",
+                                        ft.Text(f"Rs.{special:,.2f}", size=10),
                                         ft.Text(
-                                            f"Rs.{basic:,.2f}/-", size=10, weight=ft.FontWeight.W_500),
-                                        ft.Text(
-                                            f"Rs.{allowance:,.2f}/-", size=10, weight=ft.FontWeight.W_500),
-                                        ft.Text(
-                                            f"Rs.{deduction:,.2f}/-", size=10, weight=ft.FontWeight.W_500),
-                                        ft.Text(
-                                            f"Rs.{basic + allowance:,.2f}/-", size=11, weight=ft.FontWeight.BOLD),
-                                        ft.Text(
-                                            f"Rs.{total_salary:,.2f}/-", size=11, weight=ft.FontWeight.BOLD),
+                                            f"Rs.{gross_salary:,.2f}", size=11, weight=ft.FontWeight.BOLD),
                                     ], spacing=8),
                                 ], spacing=30),
+                                ft.Container(height=10),
+                                ft.Divider(),
+                                ft.Row([
+                                    ft.Column([
+                                        ft.Text("Deductions:", size=10,
+                                                color="#B71C1C"),
+                                        ft.Text(
+                                            "Provident Fund (12%):", size=10),
+                                        ft.Text("Professional Tax:", size=10),
+                                        ft.Text("Total Deductions:", size=10,
+                                                weight=ft.FontWeight.BOLD),
+                                    ], width=180, spacing=8),
+                                    ft.Column([
+                                        ft.Text(""),
+                                        ft.Text(f"-Rs.{pf:,.2f}",
+                                                size=10, color="#B71C1C"),
+                                        ft.Text(f"-Rs.{pt:,.2f}",
+                                                size=10, color="#B71C1C"),
+                                        ft.Text(
+                                            f"-Rs.{pf+pt:,.2f}", size=10, weight=ft.FontWeight.BOLD, color="#B71C1C"),
+                                    ], spacing=8),
+                                ], spacing=30),
+                                ft.Container(height=10),
+                                ft.Divider(),
+                                ft.Row([
+                                    ft.Text("NET MONTHLY SALARY:", size=12,
+                                            weight=ft.FontWeight.BOLD, color="#1B5E20"),
+                                    ft.Container(expand=True),
+                                    ft.Text(
+                                        f"Rs.{net_salary:,.2f}", size=14, weight=ft.FontWeight.BOLD, color="#1B5E20"),
+                                ]),
+                                ft.Container(height=5),
+                                ft.Text(
+                                    f"(Rupees {self._number_to_words(net_salary)} Only)", size=9, color="#424242"),
                             ], spacing=0)
                         ),
                         ft.Container(height=15),
 
-                        # Benefits Section
+                        # Probation Period
                         ft.Container(
-                            padding=15,
-                            bgcolor="#FFF3E0",
+                            padding=12,
                             border_radius=8,
+                            border=ft.border.all(1, "#BDBDBD"),
                             content=ft.Column([
-                                ft.Text("BENEFITS & POLICIES", size=12,
+                                ft.Text("3. PROBATION PERIOD", size=12,
                                         weight=ft.FontWeight.BOLD, color="#E65100"),
-                                ft.Divider(height=15),
+                                ft.Divider(height=8),
+                                ft.Text(
+                                    "• You will be on probation for a period of 6 months from the date of joining.", size=10),
+                                ft.Text(
+                                    "• The management may extend the probation period by 3 months if necessary.", size=10),
+                                ft.Text(
+                                    "• On successful completion of probation, your appointment will be confirmed in writing.", size=10),
+                            ], spacing=5)
+                        ),
+                        ft.Container(height=10),
+
+                        # Leave Policy
+                        ft.Container(
+                            padding=12,
+                            border_radius=8,
+                            border=ft.border.all(1, "#BDBDBD"),
+                            content=ft.Column([
+                                ft.Text("4. LEAVE POLICY", size=12,
+                                        weight=ft.FontWeight.BOLD, color="#E65100"),
+                                ft.Divider(height=8),
+                                ft.Text(
+                                    "• Annual Leave: 20 days per calendar year", size=10),
+                                ft.Text(
+                                    "• Sick Leave: 10 days per calendar year", size=10),
+                                ft.Text(
+                                    "• Casual Leave: 5 days per calendar year", size=10),
+                                ft.Text(
+                                    "• Maternity/Paternity Leave: As per statutory regulations", size=10),
+                            ], spacing=5)
+                        ),
+                        ft.Container(height=10),
+
+                        # Working Hours
+                        ft.Container(
+                            padding=12,
+                            border_radius=8,
+                            border=ft.border.all(1, "#BDBDBD"),
+                            content=ft.Column([
+                                ft.Text("5. WORKING HOURS & ATTENDANCE", size=12,
+                                        weight=ft.FontWeight.BOLD, color="#E65100"),
+                                ft.Divider(height=8),
                                 ft.Text(
                                     "• Working Hours: 9:00 AM - 6:00 PM (Monday - Friday)", size=10),
                                 ft.Text(
-                                    "• Leave Policy: 20 days Annual Leave, 10 days Sick Leave per year", size=10),
+                                    "• Saturday: 9:00 AM - 1:00 PM (Half Day)", size=10),
                                 ft.Text(
-                                    "• Probation Period: 6 months (extendable by 3 months)", size=10),
-                                ft.Text(
-                                    "• Notice Period: 30 days (from either side)", size=10),
-                                ft.Text(
-                                    "• Provident Fund: Applicable as per statutory regulations", size=10),
-                                ft.Text(
-                                    "• Medical Insurance: Coverage for employee and family", size=10),
-                                ft.Text(
-                                    "• Annual Bonus: Performance-based (as per company policy)", size=10),
+                                    "• Late arrival more than 3 times in a month will be treated as leave.", size=10),
                             ], spacing=5)
                         ),
-                        ft.Container(height=15),
+                        ft.Container(height=10),
 
-                        # Terms and Conditions
+                        # Terms & Conditions
                         ft.Container(
-                            padding=15,
+                            padding=12,
                             border_radius=8,
-                            border=ft.border.all(1, "#E0E0E0"),
+                            border=ft.border.all(1, "#BDBDBD"),
                             content=ft.Column([
-                                ft.Text("TERMS & CONDITIONS", size=12,
-                                        weight=ft.FontWeight.BOLD, color="#333"),
-                                ft.Divider(height=15),
+                                ft.Text("6. TERMS & CONDITIONS", size=12,
+                                        weight=ft.FontWeight.BOLD, color="#E65100"),
+                                ft.Divider(height=8),
                                 ft.Text(
-                                    "1. This offer is subject to verification of your original documents and references.", size=10),
+                                    "1. This offer is subject to verification of all original documents.", size=9),
                                 ft.Text(
-                                    "2. You will be required to sign an Employment Agreement upon joining.", size=10),
+                                    "2. You will maintain strict confidentiality of company information.", size=9),
                                 ft.Text(
-                                    "3. The company reserves the right to terminate employment with cause.", size=10),
+                                    "3. All work product and intellectual property belongs to the company.", size=9),
                                 ft.Text(
-                                    "4. All intellectual property created during employment belongs to the company.", size=10),
+                                    "4. Notice period: 30 days from either party during probation, 60 days after confirmation.", size=9),
                                 ft.Text(
-                                    "5. You must maintain confidentiality of company information.", size=10),
+                                    "5. The company reserves the right to terminate employment with cause.", size=9),
+                                ft.Text(
+                                    "6. You must comply with all company policies, rules, and regulations.", size=9),
+                                ft.Text(
+                                    "7. Transfer/Deputation: You may be posted to any location as per company requirements.", size=9),
+                            ], spacing=5)
+                        ),
+                        ft.Container(height=10),
+
+                        # Benefits
+                        ft.Container(
+                            padding=12,
+                            border_radius=8,
+                            border=ft.border.all(1, "#BDBDBD"),
+                            content=ft.Column([
+                                ft.Text("7. BENEFITS", size=12,
+                                        weight=ft.FontWeight.BOLD, color="#E65100"),
+                                ft.Divider(height=8),
+                                ft.Text(
+                                    "• Provident Fund (PF) as per statutory regulations", size=9),
+                                ft.Text(
+                                    "• ESIC (Employee State Insurance) as applicable", size=9),
+                                ft.Text(
+                                    "• Group Medical Insurance for employee", size=9),
+                                ft.Text(
+                                    "• Annual Performance Bonus (as per company policy)", size=9),
+                                ft.Text(
+                                    "• Training & Development Opportunities", size=9),
                             ], spacing=5)
                         ),
                         ft.Container(height=20),
 
-                        # Closing
+                        # Acceptance
+                        ft.Text("If you accept this offer, please sign and return the duplicate copy of this letter",
+                                size=10, weight=ft.FontWeight.BOLD),
                         ft.Text(
-                            "We welcome you to Vernika Technologies and look forward to a long and mutually beneficial relationship.", size=11),
-                        ft.Container(height=20),
-                        ft.Text("For Vernika Technologies,", size=11),
-                        ft.Container(height=30),
-                        ft.Text("_______________________________", size=11),
-                        ft.Text("Authorized Signatory", size=10, color="#666"),
-                        ft.Text("(HR Manager / Director)",
-                                size=9, color="#666"),
+                            "within 7 days from the date of this letter.", size=10),
+                        ft.Container(height=25),
+
+                        # Signatures
+                        ft.Row([
+                            ft.Column([
+                                ft.Text(
+                                    "____________________________", size=10),
+                                ft.Text("Candidate Signature",
+                                        size=9, color="#424242"),
+                                ft.Text("Date: ________________", size=9),
+                            ], spacing=5),
+                            ft.Container(expand=True),
+                            ft.Column([
+                                ft.Text(
+                                    "____________________________", size=10),
+                                ft.Text("Authorized Signatory",
+                                        size=9, color="#424242"),
+                                ft.Text("For Vernika Technologies", size=9),
+                            ], horizontal_alignment=ft.CrossAxisAlignment.END, spacing=5),
+                        ], spacing=10),
                     ], spacing=5)
                 )
             ], spacing=0)
         )
 
-        # Download function for Offer Letter
+        # Download function for Offer Letter - Multi-page professional format
         def download_offer_letter(e):
             try:
                 import io
@@ -1904,89 +2146,304 @@ class EmployeesScreen(ft.Container):
                 from reportlab.lib import colors
                 from reportlab.pdfgen import canvas
                 from reportlab.lib.units import mm
+                from reportlab.platypus import Table, TableStyle, Paragraph, Spacer
+                from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
+                from reportlab.lib.enums import TA_CENTER, TA_JUSTIFY, TA_LEFT
 
-                # Create PDF
+                # Create PDF with multiple pages if needed
                 buffer = io.BytesIO()
+                story = []
+
+                # Styles
+                styles = getSampleStyleSheet()
+                title_style = ParagraphStyle(
+                    'Title', parent=styles['Heading1'], fontSize=16, alignment=TA_CENTER, spaceAfter=10)
+                heading_style = ParagraphStyle(
+                    'Heading', parent=styles['Heading2'], fontSize=12, spaceAfter=8, spaceBefore=10)
+                normal_style = ParagraphStyle(
+                    'Normal', parent=styles['Normal'], fontSize=10, alignment=TA_JUSTIFY, spaceAfter=5)
+                small_style = ParagraphStyle(
+                    'Small', parent=styles['Normal'], fontSize=9, spaceAfter=3)
+
+                # Page 1: Offer Letter
                 c = canvas.Canvas(buffer, pagesize=A4)
                 width, height = A4
 
                 # Header
-                c.setFillColor(colors.HexColor("#2E86AB"))
+                c.setFillColor(colors.HexColor("#1A237E"))
+
                 c.rect(0, height - 50*mm, width, 50*mm, fill=True)
 
                 c.setFillColor(colors.white)
                 c.setFont("Helvetica-Bold", 18)
                 c.drawString(20*mm, height - 25*mm, "VERNIKA TECHNOLOGIES")
-                c.setFont("Helvetica", 10)
-                c.drawString(20*mm, height - 35*mm,
-                             "Offer of Employment - Appointment Letter")
+                c.setFont("Helvetica", 9)
+                c.drawString(20*mm, height - 32*mm, "Registered Office: India")
+                c.setFont("Helvetica", 8)
+                c.drawString(20*mm, height - 38*mm,
+                             "CIN: U72900XX2024PTC123456 | GST: 22ABCDE1234F1Z5")
 
                 # Content
                 y = height - 60*mm
                 c.setFillColor(colors.black)
-                c.setFont("Helvetica", 10)
-                c.drawString(20*mm, y, f"Date: {current_date}")
-                y -= 15*mm
-
-                # Salutation
-                name = f"{emp.first_name or ''} {emp.last_name or ''}".strip()
-                c.drawString(20*mm, y, f"Dear {name},")
-                y -= 10*mm
-
-                # Offer text
+                c.setFont("Helvetica", 9)
                 c.drawString(
-                    20*mm, y, "We are pleased to offer you the position of")
-                y -= 7*mm
-                c.setFont("Helvetica-Bold", 12)
-                c.drawString(20*mm, y, pos_title)
-                y -= 7*mm
-                c.setFont("Helvetica", 10)
-                c.drawString(20*mm, y, f"in the {dept_name} Department.")
-                y -= 15*mm
+                    20*mm, y, f"Ref: VT/HR/Offer/{emp.employee_code or 'N/A'}/{datetime.now().year}")
+                c.drawRightString(width - 20*mm, y, f"Date: {current_date}")
 
-                # Employment Details
-                c.setFont("Helvetica-Bold", 11)
-                c.drawString(20*mm, y, "EMPLOYMENT DETAILS")
-                y -= 8*mm
-                c.setFont("Helvetica", 10)
-                c.drawString(20*mm, y, f"Position: {pos_title}")
-                y -= 6*mm
-                c.drawString(20*mm, y, f"Department: {dept_name}")
-                y -= 6*mm
-                c.drawString(20*mm, y, f"Employment Type: {emp_type}")
-                y -= 6*mm
-                c.drawString(20*mm, y, f"Date of Joining: {doj}")
-                y -= 6*mm
-                c.drawString(20*mm, y, "Work Location: India")
                 y -= 15*mm
-
-                # Compensation
-                c.setFont("Helvetica-Bold", 11)
-                c.drawString(20*mm, y, "COMPENSATION PACKAGE")
+                c.drawString(20*mm, y, "To,")
                 y -= 8*mm
-                c.setFont("Helvetica", 10)
-                c.drawString(20*mm, y, f"Basic Salary: Rs.{basic:,.2f}/-")
-                y -= 6*mm
-                c.drawString(20*mm, y, f"Allowances: Rs.{allowance:,.2f}/-")
-                y -= 6*mm
-                c.drawString(20*mm, y, f"Deductions: Rs.{deduction:,.2f}/-")
-                y -= 6*mm
                 c.setFont("Helvetica-Bold", 10)
-                c.drawString(
-                    20*mm, y, f"Net Monthly Salary: Rs.{total_salary:,.2f}/-")
-                y -= 20*mm
-
-                # Closing
-                c.setFont("Helvetica", 10)
-                c.drawString(
-                    20*mm, y, "We welcome you to Vernika Technologies!")
-                y -= 10*mm
-                c.drawString(20*mm, y, "For Vernika Technologies,")
-                y -= 15*mm
-                c.drawString(20*mm, y, "_______________________________")
+                c.drawString(20*mm, y, f"Mr./Ms. {emp_name}")
                 y -= 6*mm
                 c.setFont("Helvetica", 9)
-                c.drawString(20*mm, y, "Authorized Signatory")
+                c.drawString(20*mm, y, emp.address or "India")
+
+                y -= 15*mm
+                c.setFont("Helvetica-Bold", 11)
+                c.drawString(
+                    20*mm, y, f"Subject: Appointment Letter for the post of {pos_title}")
+
+                y -= 12*mm
+                c.setFont("Helvetica-Bold", 10)
+                c.drawString(20*mm, y, f"Dear {emp_name},")
+                y -= 8*mm
+                c.setFont("Helvetica", 9)
+                c.drawString(
+                    20*mm, y, "We are pleased to offer you the position of")
+                y -= 6*mm
+                c.setFont("Helvetica-Bold", 10)
+                c.drawString(20*mm, y, f"{pos_title}")
+                y -= 6*mm
+                c.setFont("Helvetica", 9)
+                c.drawString(20*mm, y, f"in {dept_name} Department.")
+
+                y -= 10*mm
+                text = "Your appointment is subject to the terms and conditions mentioned in this letter and the employment agreement."
+                c.drawString(20*mm, y, text[:80])
+                y -= 5*mm
+                c.drawString(20*mm, y, text[80:])
+
+                # Appointment Details
+                y -= 15*mm
+                c.setFont("Helvetica-Bold", 11)
+                c.setFillColor(colors.HexColor("#1A237E"))
+                c.drawString(20*mm, y, "1. APPOINTMENT DETAILS")
+
+                y -= 8*mm
+                c.setFillColor(colors.black)
+                c.setFont("Helvetica", 9)
+                c.drawString(25*mm, y, f"Position: {pos_title}")
+                y -= 5*mm
+                c.drawString(25*mm, y, f"Department: {dept_name}")
+                y -= 5*mm
+                c.drawString(25*mm, y, f"Employment Type: {emp_type}")
+                y -= 5*mm
+                c.drawString(25*mm, y, f"Date of Joining: {doj}")
+                y -= 5*mm
+                c.drawString(25*mm, y, "Work Location: India")
+
+                # Compensation Table
+                y -= 15*mm
+                c.setFont("Helvetica-Bold", 11)
+                c.setFillColor(colors.HexColor("#1B5E20"))
+                c.drawString(20*mm, y, "2. COMPENSATION PACKAGE (Monthly)")
+
+                y -= 10*mm
+                c.setFillColor(colors.black)
+                c.setFont("Helvetica", 9)
+
+                # Earnings
+                c.drawString(25*mm, y, "Earnings:")
+                c.drawRightString(100*mm, y, "Amount (Rs.)")
+                y -= 6*mm
+                c.drawString(30*mm, y, "Basic Salary")
+                c.drawRightString(100*mm, y, f"{basic:,.2f}")
+                y -= 5*mm
+                c.drawString(30*mm, y, "HRA (40%)")
+                c.drawRightString(100*mm, y, f"{hra:,.2f}")
+                y -= 5*mm
+                c.drawString(30*mm, y, "Conveyance (10%)")
+                c.drawRightString(100*mm, y, f"{conv:,.2f}")
+                y -= 5*mm
+                c.drawString(30*mm, y, "Medical Allowance")
+                c.drawRightString(100*mm, y, f"{medical:,.2f}")
+                y -= 5*mm
+                c.drawString(30*mm, y, "Special Allowance (10%)")
+                c.drawRightString(100*mm, y, f"{special:,.2f}")
+                y -= 6*mm
+                c.setFont("Helvetica-Bold", 10)
+                c.drawString(30*mm, y, "Gross Salary")
+                c.drawRightString(100*mm, y, f"{gross_salary:,.2f}")
+
+                # Deductions
+                y -= 10*mm
+                c.setFont("Helvetica", 9)
+                c.setFillColor(colors.HexColor("#B71C1C"))
+                c.drawString(25*mm, y, "Deductions:")
+                y -= 6*mm
+                c.drawString(30*mm, y, "Provident Fund (12%)")
+                c.drawRightString(100*mm, y, f"-{pf:,.2f}")
+                y -= 5*mm
+                c.drawString(30*mm, y, "Professional Tax")
+                c.drawRightString(100*mm, y, f"-{pt:,.2f}")
+                y -= 6*mm
+                c.setFont("Helvetica-Bold", 10)
+                c.drawString(30*mm, y, "Total Deductions")
+                c.drawRightString(100*mm, y, f"-{pf+pt:,.2f}")
+
+                # Net Salary
+                y -= 12*mm
+                c.setFillColor(colors.HexColor("#1B5E20"))
+                c.setFont("Helvetica-Bold", 11)
+                c.drawString(25*mm, y, "NET MONTHLY SALARY:")
+                c.drawRightString(100*mm, y, f"Rs.{net_salary:,.2f}")
+
+                y -= 6*mm
+                c.setFillColor(colors.black)
+                c.setFont("Helvetica", 8)
+                c.drawString(
+                    25*mm, y, f"(Rupees {self._number_to_words(net_salary)} Only)")
+
+                # Continue on Page 2
+                c.showPage()
+
+                # Page 2
+                y = height - 30*mm
+
+                # Probation
+                c.setFont("Helvetica-Bold", 11)
+                c.setFillColor(colors.HexColor("#E65100"))
+                c.drawString(20*mm, y, "3. PROBATION PERIOD")
+                y -= 8*mm
+                c.setFillColor(colors.black)
+                c.setFont("Helvetica", 9)
+                c.drawString(
+                    25*mm, y, "• You will be on probation for a period of 6 months from the date of joining.")
+                y -= 5*mm
+                c.drawString(
+                    25*mm, y, "• The management may extend the probation period by 3 months if necessary.")
+                y -= 5*mm
+                c.drawString(
+                    25*mm, y, "• On successful completion of probation, your appointment will be confirmed in writing.")
+
+                # Leave Policy
+                y -= 15*mm
+                c.setFont("Helvetica-Bold", 11)
+                c.setFillColor(colors.HexColor("#E65100"))
+                c.drawString(20*mm, y, "4. LEAVE POLICY")
+                y -= 8*mm
+                c.setFillColor(colors.black)
+                c.setFont("Helvetica", 9)
+                c.drawString(
+                    25*mm, y, "• Annual Leave: 20 days per calendar year")
+                y -= 5*mm
+                c.drawString(
+                    25*mm, y, "• Sick Leave: 10 days per calendar year")
+                y -= 5*mm
+                c.drawString(
+                    25*mm, y, "• Casual Leave: 5 days per calendar year")
+                y -= 5*mm
+                c.drawString(
+                    25*mm, y, "• Maternity/Paternity Leave: As per statutory regulations")
+
+                # Working Hours
+                y -= 15*mm
+                c.setFont("Helvetica-Bold", 11)
+                c.setFillColor(colors.HexColor("#E65100"))
+                c.drawString(20*mm, y, "5. WORKING HOURS & ATTENDANCE")
+                y -= 8*mm
+                c.setFillColor(colors.black)
+                c.setFont("Helvetica", 9)
+                c.drawString(
+                    25*mm, y, "• Working Hours: 9:00 AM - 6:00 PM (Monday - Friday)")
+                y -= 5*mm
+                c.drawString(
+                    25*mm, y, "• Saturday: 9:00 AM - 1:00 PM (Half Day)")
+                y -= 5*mm
+                c.drawString(
+                    25*mm, y, "• Late arrival more than 3 times in a month will be treated as leave.")
+
+                # Terms & Conditions
+                y -= 15*mm
+                c.setFont("Helvetica-Bold", 11)
+                c.setFillColor(colors.HexColor("#E65100"))
+                c.drawString(20*mm, y, "6. TERMS & CONDITIONS")
+                y -= 8*mm
+                c.setFillColor(colors.black)
+                c.setFont("Helvetica", 9)
+                c.drawString(
+                    25*mm, y, "1. This offer is subject to verification of all original documents.")
+                y -= 5*mm
+                c.drawString(
+                    25*mm, y, "2. You will maintain strict confidentiality of company information.")
+                y -= 5*mm
+                c.drawString(
+                    25*mm, y, "3. All work product and intellectual property belongs to the company.")
+                y -= 5*mm
+                c.drawString(
+                    25*mm, y, "4. Notice period: 30 days during probation, 60 days after confirmation.")
+                y -= 5*mm
+                c.drawString(
+                    25*mm, y, "5. The company reserves the right to terminate employment with cause.")
+                y -= 5*mm
+                c.drawString(
+                    25*mm, y, "6. You must comply with all company policies, rules, and regulations.")
+                y -= 5*mm
+                c.drawString(
+                    25*mm, y, "7. Transfer/Deputation: You may be posted to any location as per requirements.")
+
+                # Benefits
+                y -= 15*mm
+                c.setFont("Helvetica-Bold", 11)
+                c.setFillColor(colors.HexColor("#E65100"))
+                c.drawString(20*mm, y, "7. BENEFITS")
+                y -= 8*mm
+                c.setFillColor(colors.black)
+                c.setFont("Helvetica", 9)
+                c.drawString(
+                    25*mm, y, "• Provident Fund (PF) as per statutory regulations")
+                y -= 5*mm
+                c.drawString(
+                    25*mm, y, "• ESIC (Employee State Insurance) as applicable")
+                y -= 5*mm
+                c.drawString(
+                    25*mm, y, "• Group Medical Insurance for employee")
+                y -= 5*mm
+                c.drawString(
+                    25*mm, y, "• Annual Performance Bonus (as per company policy)")
+                y -= 5*mm
+                c.drawString(
+                    25*mm, y, "• Training & Development Opportunities")
+
+                # Acceptance
+                y -= 25*mm
+                c.setFont("Helvetica-Bold", 9)
+                c.drawString(
+                    20*mm, y, "If you accept this offer, please sign and return the duplicate copy of this letter")
+                y -= 5*mm
+                c.drawString(
+                    20*mm, y, "within 7 days from the date of this letter.")
+
+                # Signatures
+                y -= 25*mm
+                c.setFont("Helvetica", 9)
+                c.drawString(20*mm, y, "____________________________")
+                c.drawRightString(width - 20*mm, y,
+                                  "____________________________")
+                y -= 5*mm
+                c.drawString(20*mm, y, "Candidate Signature")
+                c.drawRightString(width - 20*mm, y, "Authorized Signatory")
+                y -= 5*mm
+                c.drawString(20*mm, y, "Date: ________________")
+                c.drawRightString(width - 20*mm, y, "For Vernika Technologies")
+
+                # Footer
+                c.setFont("Helvetica", 8)
+                c.setFillColor(colors.gray)
+                c.drawCentredString(
+                    width/2, 15*mm, "This is a computer-generated document. No signature required.")
 
                 c.save()
                 buffer.seek(0)
@@ -2005,17 +2462,19 @@ class EmployeesScreen(ft.Container):
 
             except Exception as ex:
                 print(f"Error generating PDF: {ex}")
+                import traceback
+                traceback.print_exc()
                 self._show_error(f"Error generating PDF: {str(ex)}")
 
         dialog = ft.AlertDialog(
             modal=True,
-            title=ft.Text("Offer Letter - Professional Contract"),
+            title=ft.Text("Offer Letter - Professional Format"),
             content=ft.Container(
                 content=ft.ListView([
                     offer_letter
                 ], spacing=0, padding=0, expand=True),
-                width=650,
-                height=750,
+                width=680,
+                height=600,
             ),
             actions=[
                 ft.ElevatedButton(

@@ -76,7 +76,6 @@ class DashboardScreen(ft.Container):
                 (8, "Departments", ft.Icons.BUSINESS, ft.Icons.BUSINESS_OUTLINED),
                 (9, "Teams", ft.Icons.GROUP, ft.Icons.GROUP_OUTLINED),
                 (10, "Projects", ft.Icons.WORK, ft.Icons.WORK_OUTLINED),
-                (11, "Reports", ft.Icons.ASSESSMENT, ft.Icons.ASSESSMENT_OUTLINED),
             ])
 
         self._selected_nav_index = 0
@@ -212,8 +211,6 @@ class DashboardScreen(ft.Container):
             return self._create_teams_tab()
         elif index == 10 and self._is_admin():
             return self._create_projects_tab()
-        elif index == 11 and self._is_admin():
-            return self._create_reports_tab()
         return self._create_dashboard_tab()
 
     def _is_admin(self):
@@ -449,10 +446,6 @@ class DashboardScreen(ft.Container):
     def _create_projects_tab(self):
         from screens.projects_screen import ProjectsScreen
         return ft.Container(content=ProjectsScreen(self._page, self.user), expand=True)
-
-    def _create_reports_tab(self):
-        from screens.reports_screen import ReportsScreen
-        return ft.Container(content=ReportsScreen(self._page), expand=True)
 
     # Navigation methods
     def _go_to_profile(self, e):

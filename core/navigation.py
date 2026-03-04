@@ -5,6 +5,9 @@ Provides navigation stack functionality for back button support
 
 import flet as ft
 
+# Import overlay cleanup utilities
+from utils.overlay_cleanup import cleanup_all_pickers, close_all_dialogs
+
 # Global navigation stack
 _nav_stack = []
 _current_screen = None
@@ -24,9 +27,20 @@ def push_screen(page: ft.Page, screen_name: str, screen_content):
         'content': screen_content
     }
 
+    # Clean up overlays before navigation to prevent stale FilePicker errors
+    cleanup_all_pickers(page)
+    close_all_dialogs(page)
+
     # Clear and add new screen
     page.clean()
     page.add(screen_content)
+
+    # Re-initialize notifications after navigation
+    try:
+        from utils.notification_manager import ensure_notification_manager
+        ensure_notification_manager(page)
+    except:
+        pass
 
 
 def pop_screen(page: ft.Page):
@@ -43,9 +57,20 @@ def pop_screen(page: ft.Page):
     # Set current screen to previous
     _current_screen = prev_screen
 
+    # Clean up overlays before navigation to prevent stale FilePicker errors
+    cleanup_all_pickers(page)
+    close_all_dialogs(page)
+
     # Navigate to previous screen
     page.clean()
     page.add(prev_screen['content'])
+
+    # Re-initialize notifications after navigation
+    try:
+        from utils.notification_manager import ensure_notification_manager
+        ensure_notification_manager(page)
+    except:
+        pass
 
     return True
 
@@ -59,12 +84,23 @@ def go_back(page: ft.Page, user=None):
     """
     global _nav_stack, _current_screen
 
+    # Clean up overlays before navigation
+    cleanup_all_pickers(page)
+    close_all_dialogs(page)
+
     if _nav_stack:
         # We have history, go back
         pop_screen(page)
     else:
         # No history, go to home screen based on role
         navigate_to_home(page, user)
+
+    # Re-initialize notifications after navigation
+    try:
+        from utils.notification_manager import ensure_notification_manager
+        ensure_notification_manager(page)
+    except:
+        pass
 
 
 def can_go_back() -> bool:
@@ -89,6 +125,10 @@ def navigate_to_home(page: ft.Page, user=None):
     global _nav_stack, _current_screen
     _nav_stack = []
     _current_screen = None
+
+    # Clean up overlays before navigation to prevent stale FilePicker errors
+    cleanup_all_pickers(page)
+    close_all_dialogs(page)
 
     # Get current user if not provided
     current_user = user
@@ -136,6 +176,13 @@ def navigate_to_home(page: ft.Page, user=None):
         # Default to employee screen for non-admin users
         from screens.employee_screen import EmployeeScreen
         page.add(EmployeeScreen(page, current_user))
+
+    # Re-initialize notifications after navigation
+    try:
+        from utils.notification_manager import ensure_notification_manager
+        ensure_notification_manager(page)
+    except:
+        pass
 
 
 def get_stack_size() -> int:

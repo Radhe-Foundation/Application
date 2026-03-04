@@ -2,6 +2,8 @@
 Vernika HRA - Main Entry Point
 Fixed version with proper session management and performance optimizations
 """
+from utils.notification_manager import init_notification_manager
+from core.keyboard_shortcuts_v2 import init_keyboard_shortcuts
 import flet as ft
 import logging
 from config import APP_NAME, APP_VERSION, WINDOW_MIN_WIDTH, WINDOW_MIN_HEIGHT, WINDOW_RESIZABLE, WINDOW_MAXIMIZED
@@ -12,6 +14,8 @@ logging.basicConfig(
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
 )
 logger = logging.getLogger(__name__)
+
+# Import keyboard shortcuts and notification manager
 
 
 def init_db():
@@ -97,9 +101,25 @@ def main(page: ft.Page):
             ]))
             return
 
-        # Initialize navigation manager
+# Initialize navigation manager
         from core.navigation_v2 import init_navigation
         init_navigation(page)
+
+        # Initialize keyboard shortcuts manager for global keyboard handling
+        try:
+            from core.keyboard_shortcuts_v2 import init_keyboard_shortcuts
+            init_keyboard_shortcuts(page)
+            logger.info("✓ Keyboard shortcuts initialized")
+        except Exception as e:
+            logger.warning(f"Keyboard shortcuts initialization failed: {e}")
+
+        # Initialize notification manager
+        try:
+            from utils.notification_manager import init_notification_manager
+            init_notification_manager(page)
+            logger.info("✓ Notification manager initialized")
+        except Exception as e:
+            logger.warning(f"Notification manager initialization failed: {e}")
 
         # Show login screen
         from screens.login_screen import LoginScreen
@@ -117,7 +137,7 @@ def main(page: ft.Page):
 
 if __name__ == "__main__":
     try:
-        ft.app(target=main)
+        ft.run(main)
     except KeyboardInterrupt:
         logger.info("Application stopped by user")
     except Exception as e:

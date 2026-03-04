@@ -118,8 +118,7 @@ class OrganizationTreeScreen(ft.Container):
         return ft.Container(
             expand=True,
             content=ft.Column([
-                # Header
-                self._create_header(is_admin),
+                # Header - removed self._create_header(is_admin)
                 # Toolbar with search
                 self._create_toolbar(),
                 # Content area with tree - expand to fill available space
@@ -162,14 +161,6 @@ class OrganizationTreeScreen(ft.Container):
 
     def _create_header(self, is_admin):
         """Create header with navigation, company name, welcome text, and logout"""
-        # Back button to navigate to home
-        back_btn = ft.IconButton(
-            icon=ft.Icons.ARROW_BACK,
-            tooltip="Back to Dashboard",
-            on_click=lambda e: _safe_navigate_to_home(self._page, self.user),
-            icon_color="WHITE"
-        )
-
         # View toggle button (Hierarchy vs Department)
         view_toggle = ft.Container(
             content=ft.SegmentedButton(
@@ -204,8 +195,6 @@ class OrganizationTreeScreen(ft.Container):
                 # Left section - Back button and title
                 ft.Container(
                     content=ft.Row([
-                        back_btn,
-                        ft.Container(width=5),
                         ft.Icon(ft.Icons.ACCOUNT_TREE, color="WHITE", size=28),
                         ft.Container(width=10),
                         ft.Text("Organization Tree", size=18,

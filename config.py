@@ -26,14 +26,18 @@ APP_DESCRIPTION = "Industry-Level Human Resource Management System"
 # Database type: postgresql ONLY (cloud database - no SQLite)
 DATABASE_TYPE = "postgresql"
 
-# PostgreSQL configuration (for cloud database - Supabase)
-DATABASE_URL = os.getenv(
-    "DATABASE_URL", "postgresql://postgres:!vrMVXZrv84wmKH@db.tbofjzzufxqbwfmfapxh.supabase.co:5432/postgres")
-DB_HOST = os.getenv("DB_HOST", "db.tbofjzzufxqbwfmfapxh.supabase.co")
+# PostgreSQL configuration - LOAD FROM ENVIRONMENT VARIABLES
+# These MUST be set in .env file or environment
+DATABASE_URL = os.getenv("DATABASE_URL")
+if not DATABASE_URL:
+    raise ValueError(
+        "DATABASE_URL environment variable is not set. Please create a .env file with your database credentials.")
+
+DB_HOST = os.getenv("DB_HOST")
 DB_PORT = int(os.getenv("DB_PORT", "5432"))
 DB_NAME = os.getenv("DB_NAME", "postgres")
-DB_USER = os.getenv("DB_USER", "postgres")
-DB_PASSWORD = os.getenv("DB_PASSWORD", "!vrMVXZrv84wmKH")
+DB_USER = os.getenv("DB_USER")
+DB_PASSWORD = os.getenv("DB_PASSWORD")
 DB_SSL_MODE = os.getenv("DB_SSL_MODE", "require")
 DB_SSL_CERT = os.getenv("DB_SSL_CERT", "None")
 
@@ -194,14 +198,17 @@ for directory in [ASSETS_DIR, LOGO_DIR, PROFILE_PHOTOS_DIR, DOCUMENTS_DIR]:
     directory.mkdir(parents=True, exist_ok=True)
 
 # ==================== SUPABASE CONFIGURATION ====================
-SUPABASE_URL = os.getenv(
-    "SUPABASE_URL", "https://tbofjzzufxqbwfmfapxh.supabase.co")
-SUPABASE_KEY = os.getenv(
-    "SUPABASE_KEY", "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InRib2Zqenp1ZnhxYndmbWZhcHhoIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc3MTk1MDAwNCwiZXhwIjoyMDg3NTI2MDA0fQ.l_OP2BCTYN8W-M3c3SJRxg_pNgu8Kmpp0tLBIVAo7JM")
-SUPABASE_REALTIME_URL = f"{SUPABASE_URL}/realtime/v1"
+# These MUST be set in .env file or environment
+SUPABASE_URL = os.getenv("SUPABASE_URL")
+SUPABASE_KEY = os.getenv("SUPABASE_KEY")
+
+if not SUPABASE_URL or not SUPABASE_KEY:
+    print("WARNING: SUPABASE_URL or SUPABASE_KEY not set in environment variables.")
+
+SUPABASE_REALTIME_URL = f"{SUPABASE_URL}/realtime/v1" if SUPABASE_URL else ""
 
 # Supabase Storage Configuration
-SUPABASE_STORAGE_URL = f"{SUPABASE_URL}/storage/v1"
+SUPABASE_STORAGE_URL = f"{SUPABASE_URL}/storage/v1" if SUPABASE_URL else ""
 SUPABASE_STORAGE_BUCKET = os.getenv("SUPABASE_STORAGE_BUCKET", "vernika-files")
 
 # ==================== HELPERS ====================

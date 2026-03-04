@@ -457,6 +457,224 @@ BUTTON_ACCESS_CONFIG = {
         "default_admin": True,
         "default_employee": False
     },
+    # CRM buttons
+    "crm_leads_add": {
+        "name": "Add Lead",
+        "screen": "crm",
+        "description": "Add new CRM lead",
+        "default_admin": True,
+        "default_employee": False
+    },
+    "crm_leads_edit": {
+        "name": "Edit Lead",
+        "screen": "crm",
+        "description": "Edit CRM lead",
+        "default_admin": True,
+        "default_employee": False
+    },
+    "crm_leads_delete": {
+        "name": "Delete Lead",
+        "screen": "crm",
+        "description": "Delete CRM lead",
+        "default_admin": True,
+        "default_employee": False
+    },
+    "crm_contacts_add": {
+        "name": "Add Contact",
+        "screen": "crm",
+        "description": "Add new contact",
+        "default_admin": True,
+        "default_employee": False
+    },
+    "crm_contacts_edit": {
+        "name": "Edit Contact",
+        "screen": "crm",
+        "description": "Edit contact",
+        "default_admin": True,
+        "default_employee": False
+    },
+    "crm_contacts_delete": {
+        "name": "Delete Contact",
+        "screen": "crm",
+        "description": "Delete contact",
+        "default_admin": True,
+        "default_employee": False
+    },
+    "crm_deals_add": {
+        "name": "Add Deal",
+        "screen": "crm",
+        "description": "Add new deal",
+        "default_admin": True,
+        "default_employee": False
+    },
+    "crm_deals_edit": {
+        "name": "Edit Deal",
+        "screen": "crm",
+        "description": "Edit deal",
+        "default_admin": True,
+        "default_employee": False
+    },
+    "crm_activities_add": {
+        "name": "Add Activity",
+        "screen": "crm",
+        "description": "Add CRM activity",
+        "default_admin": True,
+        "default_employee": False
+    },
+    "crm_quotes_add": {
+        "name": "Create Quote",
+        "screen": "crm",
+        "description": "Create quote/proposal",
+        "default_admin": True,
+        "default_employee": False
+    },
+    "crm_products_add": {
+        "name": "Add Product",
+        "screen": "crm",
+        "description": "Add CRM product",
+        "default_admin": True,
+        "default_employee": False
+    },
+    # Invoicing buttons
+    "invoicing_create": {
+        "name": "Create Invoice",
+        "screen": "invoicing",
+        "description": "Create new invoice",
+        "default_admin": True,
+        "default_employee": False
+    },
+    "invoicing_edit": {
+        "name": "Edit Invoice",
+        "screen": "invoicing",
+        "description": "Edit invoice",
+        "default_admin": True,
+        "default_employee": False
+    },
+    "invoicing_delete": {
+        "name": "Delete Invoice",
+        "screen": "invoicing",
+        "description": "Delete invoice",
+        "default_admin": True,
+        "default_employee": False
+    },
+    "invoicing_items_add": {
+        "name": "Add Invoice Item",
+        "screen": "invoicing",
+        "description": "Add item to invoice",
+        "default_admin": True,
+        "default_employee": False
+    },
+    # Asset Management buttons
+    "assets_add": {
+        "name": "Add Asset",
+        "screen": "assets",
+        "description": "Add new asset",
+        "default_admin": True,
+        "default_employee": False
+    },
+    "assets_edit": {
+        "name": "Edit Asset",
+        "screen": "assets",
+        "description": "Edit asset",
+        "default_admin": True,
+        "default_employee": False
+    },
+    "assets_delete": {
+        "name": "Delete Asset",
+        "screen": "assets",
+        "description": "Delete asset",
+        "default_admin": True,
+        "default_employee": False
+    },
+    "assets_assign": {
+        "name": "Assign Asset",
+        "screen": "assets",
+        "description": "Assign asset to employee",
+        "default_admin": True,
+        "default_employee": False
+    },
+    "assets_maintenance_add": {
+        "name": "Add Maintenance",
+        "screen": "assets",
+        "description": "Add maintenance record",
+        "default_admin": True,
+        "default_employee": False
+    },
+    # Announcements buttons
+    "announcements_add": {
+        "name": "Add Announcement",
+        "screen": "announcements",
+        "description": "Add new announcement",
+        "default_admin": True,
+        "default_employee": False
+    },
+    "announcements_edit": {
+        "name": "Edit Announcement",
+        "screen": "announcements",
+        "description": "Edit announcement",
+        "default_admin": True,
+        "default_employee": False
+    },
+    "announcements_delete": {
+        "name": "Delete Announcement",
+        "screen": "announcements",
+        "description": "Delete announcement",
+        "default_admin": True,
+        "default_employee": False
+    },
+    # Documents buttons
+    "documents_share": {
+        "name": "Share Document",
+        "screen": "documents",
+        "description": "Share document with others",
+        "default_admin": True,
+        "default_employee": False
+    },
+    "documents_delete": {
+        "name": "Delete Document",
+        "screen": "documents",
+        "description": "Delete document",
+        "default_admin": True,
+        "default_employee": False
+    },
+    # Time Tracking buttons
+    "timetracking_add": {
+        "name": "Add Time Entry",
+        "screen": "time_tracking",
+        "description": "Add time entry",
+        "default_admin": True,
+        "default_employee": False
+    },
+    # Inventory buttons
+    "inventory_add": {
+        "name": "Add Product",
+        "screen": "inventory",
+        "description": "Add inventory product",
+        "default_admin": True,
+        "default_employee": False
+    },
+    "inventory_edit": {
+        "name": "Edit Product",
+        "screen": "inventory",
+        "description": "Edit inventory product",
+        "default_admin": True,
+        "default_employee": False
+    },
+    "inventory_delete": {
+        "name": "Delete Product",
+        "screen": "inventory",
+        "description": "Delete inventory product",
+        "default_admin": True,
+        "default_employee": False
+    },
+    # Transactions buttons
+    "transactions_add": {
+        "name": "Add Transaction",
+        "screen": "transactions",
+        "description": "Add financial transaction",
+        "default_admin": True,
+        "default_employee": False
+    },
 }
 
 
@@ -468,6 +686,53 @@ def get_all_screen_keys():
 def get_all_button_keys():
     """Get list of all available button keys"""
     return list(BUTTON_ACCESS_CONFIG.keys())
+
+
+def is_admin_user(user_id: int) -> bool:
+    """
+    Check if user is an admin.
+
+    Args:
+        user_id: The user's ID
+
+    Returns:
+        True if user is admin, False otherwise
+    """
+    if not user_id:
+        return False
+
+    db = None
+    try:
+        db = get_db_session()
+        user = db.query(User).filter(User.id == user_id).first()
+        if not user or not user.role:
+            return False
+        return user.role.name.lower() == 'admin'
+    except Exception as e:
+        print(f"Error checking admin status: {e}")
+        return False
+    finally:
+        if db:
+            db.close()
+
+
+def check_button_access_with_admin_override(user_id: int, button_key: str) -> bool:
+    """
+    Check if user has access to a specific button.
+    Admin users always have access to all buttons.
+
+    Args:
+        user_id: The user's ID
+        button_key: The button identifier
+
+    Returns:
+        True if access is allowed, False otherwise
+    """
+    # Admin users always have access
+    if is_admin_user(user_id):
+        return True
+
+    return check_button_access(user_id, button_key)
 
 
 def get_screens_by_category():

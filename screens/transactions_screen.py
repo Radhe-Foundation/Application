@@ -10,6 +10,7 @@ import io
 from datetime import datetime, date
 from database.session_manager import get_session, get_db_session, check_db_connection
 from database.models import Transaction, TransactionAttachment, BillingRequest, BillingRequestAttachment
+from config import MAX_UPLOAD_SIZE_MB
 
 
 # Theme colors
@@ -27,7 +28,8 @@ GREEN = "#4CAF50"
 RED = "#F44336"
 
 
-MAX_FILE_SIZE = 512000  # 500KB in bytes
+# File size limit - use config value converted to bytes
+MAX_FILE_SIZE = MAX_UPLOAD_SIZE_MB * 1024 * 1024  # Convert MB to bytes
 
 
 def _safe_navigate_to_home(page, user=None):
@@ -74,20 +76,15 @@ class TransactionsScreen(ft.Container):
         """Initialize file picker for attachments"""
         if not self._file_picker:
             self._file_picker = ft.FilePicker()
-            # Add to page services for Flet
-            if self._file_picker not in self._page.services:
-                self._page.services.append(self._file_picker)
+            # Use overlay instead of deprecated services (Flet 0.80+)
+            if self._file_picker not in self._page.overlay:
+                self._page.overlay.append(self._file_picker)
 
     def _build_content(self):
         header = ft.Container(
             padding=15,
             bgcolor=PRIMARY,
             content=ft.Row([
-                ft.IconButton(
-                    icon=ft.Icons.ARROW_BACK,
-                    icon_color="WHITE",
-                    on_click=self.on_back
-                ),
                 ft.Icon(ft.Icons.PAYMENT, color="WHITE", size=28),
                 ft.Text("Payment & Transactions", size=20,
                         color="WHITE", weight=ft.FontWeight.BOLD),
@@ -516,7 +513,7 @@ class TransactionsScreen(ft.Container):
         attachment_info = ft.Container(
             content=ft.Row([
                 ft.Icon(ft.Icons.INFO_OUTLINE, size=16, color=INFO),
-                ft.Text("You can add attachments (max 500KB each) after creating the transaction",
+                ft.Text(f"You can add attachments (max {MAX_UPLOAD_SIZE_MB}MB each) after creating the transaction",
                         size=11, color=TEXT_SECONDARY),
             ]),
             bgcolor="#E3F2FD",
@@ -845,7 +842,7 @@ class TransactionsScreen(ft.Container):
                     ),
                     ft.Container(height=10),
                     ft.ElevatedButton(
-                        "Add Attachment (Max 500KB)",
+                        f"Add Attachment (Max {MAX_UPLOAD_SIZE_MB}MB)",
                         icon=ft.Icons.ADD,
                         on_click=add_attachment,
                         style=ft.ButtonStyle(bgcolor=SUCCESS, color="WHITE")
@@ -1047,7 +1044,7 @@ class TransactionsScreen(ft.Container):
             file_size = os.path.getsize(path_input.value)
             if file_size > MAX_FILE_SIZE:
                 self._show_error(
-                    f"File too large! Max 500KB allowed (yours: {file_size/1024:.1f}KB)")
+                    f"File too large! Max {MAX_UPLOAD_SIZE_MB}MB allowed (yours: {file_size/1024/1024:.1f}MB)")
                 return
 
             # Read file content for database storage
@@ -1083,7 +1080,8 @@ class TransactionsScreen(ft.Container):
             modal=True,
             title=ft.Text("Add Attachment"),
             content=ft.Column([
-                ft.Text("Max file size: 500KB", size=11, color=TEXT_SECONDARY),
+                ft.Text(
+                    f"Max file size: {MAX_UPLOAD_SIZE_MB}MB", size=11, color=TEXT_SECONDARY),
                 ft.Row([path_input, browse_btn], spacing=10),
             ], spacing=10),
             actions=[
@@ -2390,7 +2388,7 @@ class TransactionsScreen(ft.Container):
             file_size = os.path.getsize(path_input.value)
             if file_size > MAX_FILE_SIZE:
                 self._show_error(
-                    f"File too large! Max 500KB allowed (yours: {file_size/1024:.1f}KB)")
+                    f"File too large! Max {MAX_UPLOAD_SIZE_MB}MB allowed (yours: {file_size/1024/1024:.1f}MB)")
                 return
 
             file_name = os.path.basename(path_input.value)
@@ -2440,7 +2438,7 @@ class TransactionsScreen(ft.Container):
                     ], spacing=10),
                     padding=10,
                 ),
-                ft.Text(f"Max file size: 500KB",
+                ft.Text(f"Max file size: {MAX_UPLOAD_SIZE_MB}MB",
                         size=11, color=TEXT_SECONDARY),
                 ft.Row([path_input, browse_btn], spacing=10),
             ], spacing=10),

@@ -13,8 +13,11 @@ from database.operations import (
     mark_email_as_read, delete_email, get_unread_email_count, get_all_users,
     create_email_group, add_email_group_member, get_user_email_groups,
     get_email_group_members, get_email_group_member_ids, get_all_email_groups,
-    remove_email_group_member
+    remove_email_group_member, save_draft, get_draft_by_id
 )
+
+# Import Supabase storage for file attachments
+from utils.supabase_storage import upload_to_supabase, get_storage
 
 # Teams-like palette
 TEAMS_BLUE = "#6264A7"
@@ -56,6 +59,13 @@ class MailScreen(ft.Container):
         self.email_detail_dialog = None
         self._hovered_email = None
 
+        # Draft tracking
+        self._current_draft_id = None
+
+        # Attachment tracking
+        self._attached_file_path = {"path": None, "name": None, "url": None}
+        self._attached_file_container = None  # UI container for attachment preview
+
         # Multi-select recipients
         self._to_recipients = []
         self._cc_recipients = []
@@ -72,22 +82,57 @@ class MailScreen(ft.Container):
         self.content = self._build_content()
         self._load_emails()
 
+        # Note: Mail notifications are handled for new emails
+
     def _load_email_groups(self):
         """Load user's email groups"""
+        db = None
         try:
             db = get_db_session()
+            # Rollback any pending transaction first to handle aborted state
+            try:
+                db.rollback()
+            except:
+                pass
             self._email_groups = get_user_email_groups(
                 db, self.current_user_id)
-            db.close()
-        except:
-            pass
+        except Exception as e:
+            print(f"[Mail] Error loading email groups: {e}")
+            if db:
+                try:
+                    db.rollback()
+                except:
+                    pass
+        finally:
+            if db:
+                try:
+                    db.close()
+                except:
+                    pass
 
     def _load_all_users(self):
+        db = None
         try:
             db = get_db_session()
+            # Rollback any pending transaction first to handle aborted state
+            try:
+                db.rollback()
+            except:
+                pass
             self._all_users = get_all_users(db)
-            db.close()
-        except:
+        except Exception as e:
+            print(f"[Mail] Error loading users: {e}")
+            if db:
+                try:
+                    db.rollback()
+                except:
+                    pass
+        finally:
+            if db:
+                try:
+                    db.close()
+                except:
+                    pass
             pass
 
     def _build_content(self):
@@ -224,8 +269,14 @@ class MailScreen(ft.Container):
 
     def _get_mail_stats(self):
         stats = {'inbox': 0, 'sent': 0, 'drafts': 0, 'unread': 0, 'total': 0}
+        db = None
         try:
             db = get_db_session()
+            # Rollback any pending transaction first to handle aborted state
+            try:
+                db.rollback()
+            except:
+                pass
             stats['unread'] = get_unread_email_count(db, self.current_user_id)
             stats['inbox'] = len(get_user_emails(
                 db, self.current_user_id, "inbox", 1000))
@@ -234,9 +285,19 @@ class MailScreen(ft.Container):
             stats['drafts'] = len(get_user_emails(
                 db, self.current_user_id, "drafts", 1000))
             stats['total'] = stats['inbox'] + stats['sent'] + stats['drafts']
-            db.close()
-        except:
-            pass
+        except Exception as e:
+            print(f"[Mail] Error getting mail stats: {e}")
+            if db:
+                try:
+                    db.rollback()
+                except:
+                    pass
+        finally:
+            if db:
+                try:
+                    db.close()
+                except:
+                    pass
         return stats
 
     def _build_main_panel(self):
@@ -357,17 +418,33 @@ class MailScreen(ft.Container):
 
         # Get email groups for this user
         email_group_list = []
+        db = None
         try:
             db = get_db_session()
+            # Rollback any pending transaction first to handle aborted state
+            try:
+                db.rollback()
+            except:
+                pass
             all_groups = get_all_email_groups(db)
             for g in all_groups:
                 member_ids = get_email_group_member_ids(db, g.id)
                 # Show groups user has created or is a member of
                 if g.created_by == self.current_user_id or self.current_user_id in member_ids:
                     email_group_list.append((g.id, g.name, len(member_ids)))
-            db.close()
-        except:
-            pass
+        except Exception as e:
+            print(f"[Mail] Error loading email groups: {e}")
+            if db:
+                try:
+                    db.rollback()
+                except:
+                    pass
+        finally:
+            if db:
+                try:
+                    db.close()
+                except:
+                    pass
 
         filtered_users = list(user_list)
 
@@ -628,6 +705,71 @@ class MailScreen(ft.Container):
         self.content = self._build_content()
         self._page.update()
 
+    def _remove_attachment(self, e=None):
+        """Remove the attached file"""
+        self._attached_file_path = {"path": None, "name": None, "url": None}
+        # Rebuild compose panel to remove attachment preview
+        self.content = self._build_content()
+        self._page.update()
+        self._show_success("Attachment removed")
+
+    def _build_attachment_preview(self):
+        """Build the attachment preview container for compose panel"""
+        if not self._attached_file_path.get('name'):
+            return ft.Container()
+
+        file_name = self._attached_file_path.get('name', 'Unknown file')
+
+        # Determine file icon based on extension
+        file_ext = file_name.lower().split('.')[-1] if '.' in file_name else ''
+        file_icon = ft.Icons.INSERT_DRIVE_FILE
+        if file_ext in ['pdf']:
+            file_icon = ft.Icons.PICTURE_AS_PDF
+        elif file_ext in ['doc', 'docx']:
+            file_icon = ft.Icons.DESCRIPTION
+        elif file_ext in ['xls', 'xlsx']:
+            file_icon = ft.Icons.TABLE_CHART
+        elif file_ext in ['jpg', 'jpeg', 'png', 'gif', 'webp']:
+            file_icon = ft.Icons.IMAGE
+        elif file_ext in ['zip', 'rar', '7z']:
+            file_icon = ft.Icons.FOLDER_ZIP
+
+        return ft.Container(
+            margin=ft.margin.only(top=8),
+            padding=ft.padding.all(12),
+            bgcolor="#E3F2FD",
+            border_radius=8,
+            border=ft.border.all(1, TEAMS_BLUE),
+            content=ft.Row([
+                ft.Container(
+                    width=36,
+                    height=36,
+                    bgcolor=TEAMS_BLUE,
+                    border_radius=6,
+                    content=ft.Icon(file_icon, color="white", size=20),
+                    alignment=ft.alignment.Alignment(0, 0)
+                ),
+                ft.Container(width=12),
+                ft.Column([
+                    ft.Text(file_name, size=13, weight=ft.FontWeight.W_500,
+                            color=TEAMS_TEXT, overflow=ft.TextOverflow.ELLIPSIS),
+                    ft.Text("Attached (cloud storage)",
+                            size=10, color=TEAMS_SUBTEXT)
+                ], expand=True, spacing=0),
+                ft.Container(
+                    on_click=self._remove_attachment,
+                    padding=ft.padding.all(6),
+                    bgcolor=ERROR + "15",
+                    border_radius=4,
+                    content=ft.Row([
+                        ft.Icon(ft.Icons.CLOSE, size=16, color=ERROR),
+                        ft.Text("Remove", size=11, color=ERROR,
+                                weight=ft.FontWeight.W_500)
+                    ], spacing=2)
+                )
+            ], spacing=0)
+        )
+
     def _get_recipient_ids(self, recipients):
         """Get list of recipient IDs, expanding groups to member IDs"""
         recipient_ids = []
@@ -723,6 +865,20 @@ class MailScreen(ft.Container):
                 self._page.update()
                 return
 
+            # Check if there's an attached file
+            has_attachment = False
+            attachment_path_value = None
+            attachment_name_value = None
+
+            if hasattr(self, '_attached_file_path') and self._attached_file_path:
+                attached = self._attached_file_path
+                if attached.get('url') and attached.get('name'):
+                    has_attachment = True
+                    attachment_path_value = str(attached.get('url', ''))
+                    attachment_name_value = str(attached.get('name', ''))
+
+            # Get db session and send email
+            db = None
             try:
                 db = get_db_session()
                 cat = EmailCategory.GENERAL
@@ -734,17 +890,32 @@ class MailScreen(ft.Container):
                 bcc_ids = self._get_recipient_ids(self._bcc_recipients)
 
                 send_email(db, self.current_user_id, subject_field.value, body_field.value,
-                           recipient_ids, cat, cc_ids=cc_ids, bcc_ids=bcc_ids)
+                           recipient_ids, cat, cc_ids=cc_ids, bcc_ids=bcc_ids,
+                           has_attachment=has_attachment,
+                           attachment_path=attachment_path_value,
+                           attachment_name=attachment_name_value)
+                db.commit()
                 db.close()
+                db = None
+
                 self._show_success("Mail sent successfully")
                 self._to_recipients = []
                 self._cc_recipients = []
                 self._bcc_recipients = []
+                # Clear attached file
+                self._attached_file_path = {
+                    "path": None, "name": None, "url": None}
                 self.current_folder = "sent"
                 self.content = self._build_content()
                 self._load_emails()
                 self._page.update()
             except Exception as ex:
+                if db:
+                    try:
+                        db.rollback()
+                        db.close()
+                    except:
+                        pass
                 error_txt.value = str(ex)
                 error_txt.visible = True
                 self._page.update()
@@ -795,6 +966,8 @@ class MailScreen(ft.Container):
                                 icon_color=ERROR,
                             ),
                         ]),
+                        # Attachment preview (shows when file is attached)
+                        self._build_attachment_preview(),
                         error_txt
                     ], spacing=0)
                 ),
@@ -898,12 +1071,28 @@ class MailScreen(ft.Container):
 
     def _build_offer_letter_panel(self):
         all_users = []
+        db = None
         try:
             db = get_db_session()
+            # Rollback any pending transaction first to handle aborted state
+            try:
+                db.rollback()
+            except:
+                pass
             all_users = get_all_users(db)
-            db.close()
-        except:
-            pass
+        except Exception as e:
+            print(f"[Mail] Error loading users for offer letter: {e}")
+            if db:
+                try:
+                    db.rollback()
+                except:
+                    pass
+        finally:
+            if db:
+                try:
+                    db.close()
+                except:
+                    pass
 
         user_opts = [ft.dropdown.Option(
             str(u.id), f"{u.username}") for u in all_users if u.id != self.current_user_id]
@@ -927,7 +1116,7 @@ class MailScreen(ft.Container):
                 db = get_db_session()
                 send_email(db, self.current_user_id, f"Offer - {position_field.value}",
                            body, [int(to_dropdown.value)], EmailCategory.PROMOTION)
-                db.close()
+                db.commit()
                 self._show_success("Sent!")
                 self.current_folder = "sent"
                 self.content = self._build_content()
@@ -937,6 +1126,17 @@ class MailScreen(ft.Container):
                 error_txt.value = str(ex)
                 error_txt.visible = True
                 self._page.update()
+                if db:
+                    try:
+                        db.rollback()
+                    except:
+                        pass
+            finally:
+                if db:
+                    try:
+                        db.close()
+                    except:
+                        pass
 
         return ft.Container(
             expand=True,
@@ -1340,6 +1540,9 @@ class MailScreen(ft.Container):
         self._to_recipients = []
         self._cc_recipients = []
         self._bcc_recipients = []
+        self._current_draft_id = None
+        # Clear any attached files when starting a new compose
+        self._attached_file_path = {"path": None, "name": None, "url": None}
         self.current_folder = "compose"
         self.content = self._build_content()
         self._page.update()
@@ -1349,22 +1552,24 @@ class MailScreen(ft.Container):
         self._to_recipients = []
         self._cc_recipients = []
         self._bcc_recipients = []
+        # Clear attached files
+        self._attached_file_path = {"path": None, "name": None, "url": None}
         self.current_folder = "inbox"
         self.content = self._build_content()
         self._page.update()
 
     def _attach_file_in_compose(self, e=None):
-        """Attach file in compose mail"""
+        """Attach file in compose mail - uploads to Supabase for cloud access"""
         # Initialize file picker if not already done
         if not hasattr(self, '_file_picker') or not self._file_picker:
             self._file_picker = ft.FilePicker()
             self._page.services.append(self._file_picker)
 
-        # Store selected file path
-        self._attached_file_path = {"path": None, "name": None}
+        # Store selected file info (will store Supabase URL after upload)
+        self._attached_file_path = {"path": None, "name": None, "url": None}
 
         def handle_picked_files(files):
-            """Process picked files after selection"""
+            """Process picked files after selection - with Supabase upload"""
             try:
                 if not files:
                     return
@@ -1375,13 +1580,66 @@ class MailScreen(ft.Container):
                 file_name = file_path.split(
                     '/')[-1] if '/' in file_path else file_path
 
-                # Store the file path
-                self._attached_file_path["path"] = file_path
+                # Show uploading message
+                snack = ft.SnackBar(content=ft.Text(
+                    f"Uploading {file_name} to cloud..."), bgcolor=TEAMS_BLUE)
+                self._page.overlay.append(snack)
+                snack.open = True
+                self._page.update()
+
+                # Try to upload to Supabase Storage
+                file_url = None
+                upload_success = False
+                upload_error = None
+
+                try:
+                    storage = get_storage()
+                    if storage.available:
+                        # Upload to Supabase Storage
+                        success, url_or_error, bucket_path = upload_to_supabase(
+                            file_path,
+                            folder="mail_attachments",
+                            custom_filename=f"{self.current_user_id}_{int(datetime.now().timestamp())}_{file_name}"
+                        )
+
+                        if success and url_or_error:
+                            file_url = url_or_error
+                            upload_success = True
+                            print(
+                                f"[Mail] File uploaded to Supabase: {file_url}")
+                        else:
+                            upload_error = url_or_error
+                            print(
+                                f"[Mail] Supabase upload failed: {url_or_error}")
+                    else:
+                        upload_error = "Cloud storage not configured"
+                        print("[Mail] Supabase storage not available")
+                except Exception as upload_err:
+                    upload_error = str(upload_err)
+                    print(f"[Mail] Upload error: {upload_err}")
+
+                # If upload failed, show error
+                if not upload_success:
+                    error_msg = upload_error or "Upload failed"
+                    snack = ft.SnackBar(content=ft.Text(
+                        f"Cloud upload failed: {error_msg}. File not attached."), bgcolor=ERROR)
+                    self._page.overlay.append(snack)
+                    snack.open = True
+                    self._page.update()
+                    return
+
+                # Store the Supabase URL (cloud accessible)
+                self._attached_file_path["path"] = file_url
                 self._attached_file_path["name"] = file_name
+                self._attached_file_path["url"] = file_url
+
+                # Refresh the compose panel to show attachment preview
+                self.content = self._build_content()
+                self._page.update()
 
                 # Show success message with filename
                 snack = ft.SnackBar(content=ft.Text(
-                    f"Attached: {file_name}"), bgcolor=SUCCESS)
+                    f"Attached (cloud): {file_name}"), bgcolor=SUCCESS)
                 self._page.overlay.append(snack)
                 snack.open = True
                 self._page.update()
@@ -1414,14 +1672,32 @@ class MailScreen(ft.Container):
         self._page.run_task(pick_and_attach)
 
     def _load_emails(self):
+        """Load emails for the current user and folder"""
         self.emails = []
+        db = None
         try:
             db = get_db_session()
+            # Rollback any pending transaction first to handle aborted state
+            try:
+                db.rollback()
+            except:
+                pass
             self.emails = get_user_emails(
                 db, self.current_user_id, self.current_folder)
-            db.close()
-        except:
-            pass
+        except Exception as e:
+            print(f"[Mail] Error loading emails: {e}")
+            # Try to rollback to recover the session
+            if db:
+                try:
+                    db.rollback()
+                except:
+                    pass
+        finally:
+            if db:
+                try:
+                    db.close()
+                except:
+                    pass
 
     def _view_email(self, email_id):
         try:
@@ -1445,6 +1721,11 @@ class MailScreen(ft.Container):
         created_at = getattr(email, 'created_at', datetime.now())
         category = getattr(email, 'category', EmailCategory.GENERAL)
         email_id = getattr(email, 'id', 0)
+
+        # Get attachment info
+        has_attachment = getattr(email, 'has_attachment', False)
+        attachment_path = getattr(email, 'attachment_path', None)
+        attachment_name = getattr(email, 'attachment_name', None)
 
         cat_color = {
             EmailCategory.GENERAL: TEAMS_BLUE,
@@ -1485,6 +1766,14 @@ class MailScreen(ft.Container):
             except:
                 pass
 
+        def download_attachment(e):
+            """Open attachment URL in browser"""
+            import webbrowser
+            if attachment_path and attachment_path.startswith('http'):
+                webbrowser.open(attachment_path)
+            else:
+                self._show_snackbar("Invalid attachment URL")
+
         try:
             db = get_db_session()
             if not getattr(email, 'is_read', False):
@@ -1492,6 +1781,108 @@ class MailScreen(ft.Container):
             db.close()
         except:
             pass
+
+        # Build attachment display (if exists)
+        attachment_widget = None
+        if has_attachment and attachment_path and attachment_name:
+            # Check if it's an image
+            is_image = any(attachment_name.lower().endswith(ext)
+                           for ext in ['.jpg', '.jpeg', '.png', '.gif', '.webp'])
+
+            # Check if URL is valid
+            is_url = attachment_path.startswith(
+                'http') if attachment_path else False
+
+            if is_image and is_url:
+                # Show image preview with download button
+                attachment_widget = ft.Container(
+                    margin=ft.margin.only(top=12),
+                    content=ft.Column([
+                        ft.Container(
+                            content=ft.Image(
+                                src=attachment_path,
+                                width=300,
+                                height=200,
+                                fit="contain",
+                                border_radius=8,
+                            ),
+                            alignment=ft.alignment.Alignment(0, 0)
+                        ),
+                        ft.Container(height=8),
+                        ft.Container(
+                            padding=ft.padding.all(8),
+                            bgcolor=TEAMS_GRAY,
+                            border_radius=8,
+                            content=ft.Row([
+                                ft.Icon(ft.Icons.ATTACH_FILE,
+                                        size=16, color=TEAMS_BLUE),
+                                ft.Text(attachment_name, size=12,
+                                        weight=ft.FontWeight.W_500, expand=True),
+                                ft.Container(
+                                    on_click=download_attachment,
+                                    padding=ft.padding.symmetric(
+                                        horizontal=12, vertical=6),
+                                    bgcolor=TEAMS_BLUE,
+                                    border_radius=4,
+                                    content=ft.Row([
+                                        ft.Icon(ft.Icons.DOWNLOAD,
+                                                size=14, color="white"),
+                                        ft.Text("Download", size=11,
+                                                color="white"),
+                                    ], spacing=4)
+                                )
+                            ], spacing=8)
+                        )
+                    ], spacing=0)
+                )
+            elif is_url:
+                # Show file attachment with download button
+                file_ext = attachment_name.lower().split(
+                    '.')[-1] if attachment_name else ''
+                file_icon = ft.Icons.INSERT_DRIVE_FILE
+                if file_ext in ['pdf']:
+                    file_icon = ft.Icons.PICTURE_AS_PDF
+                elif file_ext in ['doc', 'docx']:
+                    file_icon = ft.Icons.DESCRIPTION
+                elif file_ext in ['xls', 'xlsx']:
+                    file_icon = ft.Icons.TABLE_CHART
+                elif file_ext in ['zip', 'rar', '7z']:
+                    file_icon = ft.Icons.FOLDER_ZIP
+
+                attachment_widget = ft.Container(
+                    margin=ft.margin.only(top=12),
+                    padding=ft.padding.all(12),
+                    bgcolor=TEAMS_GRAY,
+                    border_radius=8,
+                    content=ft.Row([
+                        ft.Container(
+                            width=40,
+                            height=40,
+                            bgcolor=TEAMS_BLUE,
+                            border_radius=8,
+                            content=ft.Icon(file_icon, color="white", size=20),
+                            alignment=ft.alignment.Alignment(0, 0)
+                        ),
+                        ft.Column([
+                            ft.Text(attachment_name or "File", size=13,
+                                    weight=ft.FontWeight.W_500),
+                            ft.Text("Tap to download", size=10,
+                                    color=TEAMS_SUBTEXT)
+                        ], expand=True, spacing=2),
+                        ft.Container(
+                            on_click=download_attachment,
+                            padding=ft.padding.symmetric(
+                                horizontal=12, vertical=8),
+                            bgcolor=TEAMS_BLUE,
+                            border_radius=4,
+                            content=ft.Row([
+                                ft.Icon(ft.Icons.DOWNLOAD,
+                                        size=16, color="white"),
+                                ft.Text("Download", size=12, color="white"),
+                            ], spacing=4)
+                        )
+                    ], spacing=12)
+                )
 
         email_content = ft.Container(
             width=600,
@@ -1541,6 +1932,8 @@ class MailScreen(ft.Container):
                     content=ft.Text(body, size=14, color=TEAMS_TEXT,
                                     selectable=True, text_align=ft.TextAlign.LEFT)
                 ),
+                # Add attachment widget if exists
+                attachment_widget if attachment_widget else ft.Container(),
             ], scroll=ft.ScrollMode.AUTO)
         )
 

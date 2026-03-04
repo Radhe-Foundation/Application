@@ -157,19 +157,25 @@ class User(Base):
             password_bytes = password.encode(
                 'utf-8') if isinstance(password, str) else password
 
-            # Get stored hash from database (handles both Column and string types)
+            if not self.password_hash:
+                return False
+
+            # Get the stored hash - handle both string and Column types
             stored_hash = self.password_hash
             if hasattr(stored_hash, 'first'):
                 # It's a Column, get the actual value
-                stored_hash = stored_hash.first(
-                )[0] if stored_hash.first() else None
+                result = stored_hash.first()
+                if result:
+                    stored_hash = result[0]
+                else:
+                    return False
 
-            if not stored_hash:
-                return False
-
-            # Ensure stored hash is bytes
-            hash_bytes = stored_hash.encode(
-                'utf-8') if isinstance(stored_hash, str) else stored_hash
+            # Ensure stored hash is string
+            if hasattr(stored_hash, 'decode'):
+                hash_bytes = stored_hash
+            else:
+                hash_bytes = stored_hash.encode(
+                    'utf-8') if isinstance(stored_hash, str) else stored_hash
 
             return bcrypt.checkpw(password_bytes, hash_bytes)
         except Exception as e:
@@ -230,6 +236,13 @@ class Announcement(Base):
     created_at = Column(DateTime, default=datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.utcnow,
                         onupdate=datetime.utcnow)
+    # Recipient targeting
+    # all, department, employee
+    target_audience = Column(String(50), default="all")
+    target_department_id = Column(
+        Integer, ForeignKey("departments.id"), nullable=True)
+    # Comma-separated employee IDs
+    target_employee_ids = Column(Text, nullable=True)
 
 
 class Project(Base):
@@ -525,6 +538,10 @@ class EmailMessage(Base):
     category = Column(Enum(EmailCategory), default=EmailCategory.GENERAL)
     is_read = Column(Boolean, default=False)
     is_draft = Column(Boolean, default=False)
+    # Attachment fields for cloud storage
+    has_attachment = Column(Boolean, default=False)
+    attachment_path = Column(String(500))  # Stores Supabase URL
+    attachment_name = Column(String(255))  # Original filename
     created_at = Column(DateTime, default=datetime.utcnow)
 
     sender = relationship("User", backref="sent_emails")
@@ -645,6 +662,66 @@ class CallLog(Base):
                           caller_id], backref="calls_made")
     receiver = relationship("User", foreign_keys=[
                             receiver_id], backref="calls_received")
+
+
+# ==================== NOTIFICATION MODEL ====================
+
+class NotificationType(str, enum.Enum):
+    """Notification type enumeration"""
+    LEAVE_REQUEST = "leave_request"
+    LEAVE_APPROVED = "leave_approved"
+    LEAVE_REJECTED = "leave_rejected"
+    TASK_ASSIGNED = "task_assigned"
+    TASK_UPDATED = "task_updated"
+    CHAT_MESSAGE = "chat_message"
+    EMAIL_RECEIVED = "email_received"
+    MEETING_INVITE = "meeting_invite"
+    ANNOUNCEMENT = "announcement"
+    SYSTEM = "system"
+
+
+class NotificationPriority(str, enum.Enum):
+    """Notification priority"""
+    LOW = "low"
+    MEDIUM = "medium"
+    HIGH = "high"
+    URGENT = "urgent"
+
+
+class AppNotification(Base):
+    """Application notifications for users"""
+    __tablename__ = "app_notifications"
+
+    id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(Integer, ForeignKey("users.id"),
+                     nullable=False)  # Recipient
+    sender_id = Column(Integer, ForeignKey("users.id"),
+                       nullable=True)  # Who triggered it
+
+    # Notification content
+    title = Column(String(200), nullable=False)
+    message = Column(Text, nullable=False)
+    notification_type = Column(Enum(NotificationType), nullable=False)
+    priority = Column(Enum(NotificationPriority),
+                      default=NotificationPriority.MEDIUM)
+
+    # Related entity (optional - for navigation)
+    # leave_request, task, chat, email, meeting
+    related_entity_type = Column(String(50))
+    related_entity_id = Column(Integer)
+
+    # Status
+    is_read = Column(Boolean, default=False)
+    read_at = Column(DateTime)
+
+    # Timestamps
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+    # Relationships
+    user = relationship("User", foreign_keys=[
+                        user_id], backref="notifications")
+    sender = relationship("User", foreign_keys=[
+                          sender_id], backref="sent_notifications")
 
 
 class Document(Base):
@@ -921,188 +998,6 @@ def init_database():
     finally:
         session.close()
 
-
-# ==================== ETL & DATA INTEGRATION MODELS ====================
-
-class ETLJobStatus(str, enum.Enum):
-    """ETL Job status enumeration"""
-    PENDING = "pending"
-    IN_PROGRESS = "in_progress"
-    COMPLETED = "completed"
-    FAILED = "failed"
-    CANCELLED = "cancelled"
-
-
-class ETLJobType(str, enum.Enum):
-    """ETL Job type enumeration"""
-    IMPORT = "import"
-    EXPORT = "export"
-    SYNC = "sync"
-    POWERBI_REFRESH = "powerbi_refresh"
-
-
-class ETLJob(Base):
-    """
-    ETL Job model for tracking data import/export operations
-    """
-    __tablename__ = "etl_jobs"
-
-    id = Column(Integer, primary_key=True, index=True)
-    job_name = Column(String(200), nullable=False)
-    job_type = Column(Enum(ETLJobType), nullable=False)
-    # Source table for export, target for import
-    source_table = Column(String(100))
-    # Target table for import, source for export
-    target_table = Column(String(100))
-    source_file = Column(String(500))  # Excel file path for import
-    status = Column(Enum(ETLJobStatus), default=ETLJobStatus.PENDING)
-    total_rows = Column(Integer, default=0)
-    processed_rows = Column(Integer, default=0)
-    success_rows = Column(Integer, default=0)
-    failed_rows = Column(Integer, default=0)
-    error_log = Column(Text)  # JSON string of errors
-    column_mapping = Column(JSON)  # Mapping of Excel columns to DB fields
-    created_by_id = Column(Integer, ForeignKey("users.id"), nullable=True)
-    started_at = Column(DateTime)
-    completed_at = Column(DateTime)
-    created_at = Column(DateTime, default=datetime.utcnow)
-    updated_at = Column(DateTime, default=datetime.utcnow,
-                        onupdate=datetime.utcnow)
-
-    created_by = relationship("User", backref="etl_jobs")
-
-
-class DataImportLog(Base):
-    """
-    Log for individual row imports
-    """
-    __tablename__ = "data_import_logs"
-
-    id = Column(Integer, primary_key=True, index=True)
-    etl_job_id = Column(Integer, ForeignKey("etl_jobs.id"), nullable=False)
-    row_number = Column(Integer, nullable=False)  # Row number in source Excel
-    status = Column(String(20), default="success")  # success, failed, skipped
-    error_message = Column(Text)
-    data_hash = Column(String(64))  # Hash of row data for deduplication
-    imported_data = Column(JSON)  # The imported data as JSON
-    created_at = Column(DateTime, default=datetime.utcnow)
-
-    etl_job = relationship("ETLJob", backref="import_logs")
-
-
-class PowerBIRefreshLog(Base):
-    """
-    Log for Power BI dataset refresh operations
-    """
-    __tablename__ = "powerbi_refresh_logs"
-
-    id = Column(Integer, primary_key=True, index=True)
-    dataset_id = Column(String(100), nullable=False)
-    dataset_name = Column(String(200), nullable=False)
-    workspace_id = Column(String(100))
-    status = Column(Enum(ETLJobStatus), default=ETLJobStatus.PENDING)
-    triggered_by_id = Column(Integer, ForeignKey("users.id"), nullable=True)
-    refresh_type = Column(String(50), default="full")  # full, incremental
-    error_message = Column(Text)
-    started_at = Column(DateTime)
-    completed_at = Column(DateTime)
-    created_at = Column(DateTime, default=datetime.utcnow)
-
-    triggered_by = relationship("User", backref="powerbi_refresh_logs")
-
-
-class ExcelTemplate(Base):
-    """
-    Store Excel template configurations for data import
-    """
-    __tablename__ = "excel_templates"
-
-    id = Column(Integer, primary_key=True, index=True)
-    name = Column(String(200), nullable=False)
-    description = Column(Text)
-    target_table = Column(String(100), nullable=False)
-    column_mappings = Column(JSON, nullable=False)  # {excel_col: db_field}
-    required_columns = Column(JSON)  # List of required columns
-    sample_file_path = Column(String(500))
-    is_active = Column(Boolean, default=True)
-    created_by_id = Column(Integer, ForeignKey("users.id"), nullable=True)
-    created_at = Column(DateTime, default=datetime.utcnow)
-    updated_at = Column(DateTime, default=datetime.utcnow,
-                        onupdate=datetime.utcnow)
-
-    created_by = relationship("User", backref="excel_templates")
-
-
-# ==================== ETL HELPER FUNCTIONS ====================
-
-def get_etl_status_counts() -> dict:
-    """Get counts of ETL jobs by status"""
-    from database.connection import get_db_session
-    session = get_db_session()
-    try:
-        result = {}
-        for status in ETLJobStatus:
-            count = session.query(ETLJob).filter_by(status=status).count()
-            result[status.value] = count
-        return result
-    finally:
-        session.close()
-
-
-def get_recent_etl_jobs(limit: int = 10) -> list:
-    """Get recent ETL jobs"""
-    from database.connection import get_db_session
-    session = get_db_session()
-    try:
-        jobs = session.query(ETLJob).order_by(
-            ETLJob.created_at.desc()
-        ).limit(limit).all()
-        return jobs
-    finally:
-        session.close()
-
-
-# ==================== POWER BI CONFIGURATION ====================
-
-# Power BI configuration keys (stored in database or config)
-POWERBI_CONFIG = {
-    "tenant_id": "",
-    "client_id": "",
-    "client_secret": "",
-    "workspace_id": "",
-    "authority_url": "https://login.microsoftonline.com/",
-    "resource_url": "https://analysis.windows.net/powerbi/api",
-}
-
-# Default column mappings for common tables
-DEFAULT_COLUMN_MAPPINGS = {
-    "employees": {
-        "Employee Code": "employee_code",
-        "First Name": "first_name",
-        "Last Name": "last_name",
-        "Email": "email",
-        "Phone": "phone",
-        "Department": "department_id",
-        "Position": "position_id",
-        "Date of Joining": "date_of_joining",
-        "Basic Salary": "basic_salary",
-    },
-    "departments": {
-        "Department Name": "name",
-        "Code": "code",
-        "Description": "description",
-    },
-    "attendances": {
-        "Employee Code": "employee_id",
-        "Date": "date",
-        "Status": "status",
-        "Check In": "check_in",
-        "Check Out": "check_out",
-    },
-}
-
-
-# ==================== NEW MODELS FOR ENHANCED FEATURES ====================
 
 # ==================== Organization Hierarchy ====================
 
@@ -1385,384 +1280,6 @@ class DataSheetRow(Base):
     created_by = relationship("User")
 
 
-# ==================== CRM MODELS ====================
-
-class LeadStatus(str, enum.Enum):
-    """Lead status enumeration"""
-    NEW = "new"
-    CONTACTED = "contacted"
-    QUALIFIED = "qualified"
-    PROPOSAL = "proposal"
-    NEGOTIATION = "negotiation"
-    WON = "won"
-    LOST = "lost"
-
-
-class LeadSource(str, enum.Enum):
-    """Lead source enumeration"""
-    WEBSITE = "website"
-    REFERRAL = "referral"
-    SOCIAL_MEDIA = "social_media"
-    COLD_CALL = "cold_call"
-    TRADE_SHOW = "trade_show"
-    ADVERTISEMENT = "advertisement"
-    OTHER = "other"
-
-
-class LeadPriority(str, enum.Enum):
-    """Lead priority enumeration"""
-    LOW = "low"
-    MEDIUM = "medium"
-    HIGH = "high"
-    URGENT = "urgent"
-
-
-class ContactCategory(str, enum.Enum):
-    """Contact category"""
-    CUSTOMER = "customer"
-    PROSPECT = "prospect"
-    PARTNER = "partner"
-    VENDOR = "vendor"
-    OTHER = "other"
-
-
-class DealStage(str, enum.Enum):
-    """Deal pipeline stages"""
-    QUALIFICATION = "qualification"
-    MEETING_SCHEDULED = "meeting_scheduled"
-    PROPOSAL_SENT = "proposal_sent"
-    NEGOTIATION = "negotiation"
-    CLOSED_WON = "closed_won"
-    CLOSED_LOST = "closed_lost"
-
-
-class CRMCustomer(Base):
-    """CRM Customers/Contacts"""
-    __tablename__ = "crm_customers"
-
-    id = Column(Integer, primary_key=True, index=True)
-    name = Column(String(200), nullable=False)
-    email = Column(String(100))
-    phone = Column(String(20))
-    company = Column(String(200))
-    designation = Column(String(100))
-    address = Column(Text)
-    city = Column(String(100))
-    state = Column(String(100))
-    country = Column(String(100))
-    pincode = Column(String(20))
-    # customer, prospect, partner
-    category = Column(String(50), default="prospect")
-    source = Column(String(50), default="website")
-    notes = Column(Text)
-    tags = Column(JSON, default=list)  # List of tags
-    assigned_to_id = Column(Integer, ForeignKey("users.id"), nullable=True)
-    is_active = Column(Boolean, default=True)
-    created_by_id = Column(Integer, ForeignKey("users.id"))
-    created_at = Column(DateTime, default=datetime.utcnow)
-    updated_at = Column(DateTime, default=datetime.utcnow,
-                        onupdate=datetime.utcnow)
-
-    assigned_to = relationship("User", foreign_keys=[assigned_to_id])
-    created_by = relationship("User", foreign_keys=[created_by_id])
-
-
-class CRMLead(Base):
-    """CRM Leads"""
-    __tablename__ = "crm_leads"
-
-    id = Column(Integer, primary_key=True, index=True)
-    name = Column(String(200), nullable=False)
-    email = Column(String(100))
-    phone = Column(String(20))
-    company = Column(String(200))
-    designation = Column(String(100))
-    source = Column(String(50), default="website")
-    # new, contacted, qualified, proposal, negotiation, won, lost
-    status = Column(String(50), default="new")
-    # low, medium, high, urgent
-    priority = Column(String(50), default="medium")
-    expected_value = Column(Float, default=0)
-    probability = Column(Integer, default=0)  # 0-100%
-    notes = Column(Text)
-    next_follow_up = Column(DateTime)
-    converted_to_customer_id = Column(
-        Integer, ForeignKey("crm_customers.id"), nullable=True)
-    converted_at = Column(DateTime)
-    assigned_to_id = Column(Integer, ForeignKey("users.id"), nullable=True)
-    created_by_id = Column(Integer, ForeignKey("users.id"))
-    created_at = Column(DateTime, default=datetime.utcnow)
-    updated_at = Column(DateTime, default=datetime.utcnow,
-                        onupdate=datetime.utcnow)
-
-    assigned_to = relationship("User", foreign_keys=[assigned_to_id])
-    created_by = relationship("User", foreign_keys=[created_by_id])
-    converted_to_customer = relationship(
-        "CRMCustomer", foreign_keys=[converted_to_customer_id])
-
-
-class CRMDeal(Base):
-    """CRM Deals/Pipeline"""
-    __tablename__ = "crm_deals"
-
-    id = Column(Integer, primary_key=True, index=True)
-    title = Column(String(200), nullable=False)
-    customer_id = Column(Integer, ForeignKey(
-        "crm_customers.id"), nullable=False)
-    value = Column(Float, default=0)
-    # qualification, meeting_scheduled, proposal_sent, negotiation, closed_won, closed_lost
-    stage = Column(String(50), default="qualification")
-    expected_close_date = Column(Date)
-    probability = Column(Integer, default=0)  # 0-100%
-    notes = Column(Text)
-    lost_reason = Column(Text)
-    won_notes = Column(Text)
-    closed_at = Column(DateTime)
-    assigned_to_id = Column(Integer, ForeignKey("users.id"), nullable=True)
-    created_by_id = Column(Integer, ForeignKey("users.id"))
-    created_at = Column(DateTime, default=datetime.utcnow)
-    updated_at = Column(DateTime, default=datetime.utcnow,
-                        onupdate=datetime.utcnow)
-
-    customer = relationship("CRMCustomer", backref="deals")
-    assigned_to = relationship("User", foreign_keys=[assigned_to_id])
-    created_by = relationship("User", foreign_keys=[created_by_id])
-
-
-class CRMActivity(Base):
-    """CRM Activities (calls, meetings, tasks)"""
-    __tablename__ = "crm_activities"
-
-    id = Column(Integer, primary_key=True, index=True)
-    title = Column(String(200), nullable=False)
-    # call, meeting, task, email, note
-    activity_type = Column(String(50), nullable=False)
-    description = Column(Text)
-    due_date = Column(DateTime)
-    completed_at = Column(DateTime)
-    is_completed = Column(Boolean, default=False)
-
-    # Related to
-    lead_id = Column(Integer, ForeignKey("crm_leads.id"), nullable=True)
-    customer_id = Column(Integer, ForeignKey(
-        "crm_customers.id"), nullable=True)
-    deal_id = Column(Integer, ForeignKey("crm_deals.id"), nullable=True)
-
-    assigned_to_id = Column(Integer, ForeignKey("users.id"), nullable=True)
-    created_by_id = Column(Integer, ForeignKey("users.id"))
-    created_at = Column(DateTime, default=datetime.utcnow)
-    updated_at = Column(DateTime, default=datetime.utcnow,
-                        onupdate=datetime.utcnow)
-
-    lead = relationship("CRMLead", foreign_keys=[lead_id])
-    customer = relationship("CRMCustomer", foreign_keys=[customer_id])
-    deal = relationship("CRMDeal", foreign_keys=[deal_id])
-    assigned_to = relationship("User", foreign_keys=[assigned_to_id])
-    created_by = relationship("User", foreign_keys=[created_by_id])
-
-
-class CRMProductCategory(Base):
-    """CRM Product Categories"""
-    __tablename__ = "crm_product_categories"
-
-    id = Column(Integer, primary_key=True, index=True)
-    name = Column(String(100), nullable=False)
-    description = Column(Text)
-    is_active = Column(Boolean, default=True)
-    created_at = Column(DateTime, default=datetime.utcnow)
-    updated_at = Column(DateTime, default=datetime.utcnow,
-                        onupdate=datetime.utcnow)
-
-
-class CRMProduct(Base):
-    """CRM Products/Services"""
-    __tablename__ = "crm_products"
-
-    id = Column(Integer, primary_key=True, index=True)
-    name = Column(String(200), nullable=False)
-    sku = Column(String(50), unique=True, nullable=True)
-    description = Column(Text)
-    category_id = Column(Integer, ForeignKey(
-        "crm_product_categories.id"), nullable=True)
-    unit_price = Column(Float, default=0)
-    cost_price = Column(Float, default=0)
-    is_active = Column(Boolean, default=True)
-    created_at = Column(DateTime, default=datetime.utcnow)
-    updated_at = Column(DateTime, default=datetime.utcnow,
-                        onupdate=datetime.utcnow)
-
-    category = relationship("CRMProductCategory", backref="products")
-
-
-class CRMQuote(Base):
-    """CRM Quotes/Proposals"""
-    __tablename__ = "crm_quotes"
-
-    id = Column(Integer, primary_key=True, index=True)
-    title = Column(String(200), nullable=False)
-    quote_number = Column(String(50), unique=True, nullable=True)
-    customer_id = Column(Integer, ForeignKey(
-        "crm_customers.id"), nullable=False)
-    deal_id = Column(Integer, ForeignKey("crm_deals.id"), nullable=True)
-
-    # Quote details
-    subtotal = Column(Float, default=0)
-    tax_amount = Column(Float, default=0)
-    discount_amount = Column(Float, default=0)
-    total_amount = Column(Float, default=0)
-
-    # Status: draft, sent, accepted, rejected, declined
-    status = Column(String(50), default="draft")
-    valid_until = Column(Date)
-    notes = Column(Text)
-
-    # Timestamps
-    created_by_id = Column(Integer, ForeignKey("users.id"))
-    created_at = Column(DateTime, default=datetime.utcnow)
-    updated_at = Column(DateTime, default=datetime.utcnow,
-                        onupdate=datetime.utcnow)
-
-    customer = relationship("CRMCustomer", backref="quotes")
-    deal = relationship("CRMDeal", foreign_keys=[deal_id])
-    created_by = relationship("User", foreign_keys=[created_by_id])
-
-
-class CRMQuoteItem(Base):
-    """CRM Quote Line Items"""
-    __tablename__ = "crm_quote_items"
-
-    id = Column(Integer, primary_key=True, index=True)
-    quote_id = Column(Integer, ForeignKey("crm_quotes.id"), nullable=False)
-    product_id = Column(Integer, ForeignKey("crm_products.id"), nullable=True)
-    description = Column(String(500))
-    quantity = Column(Float, default=1)
-    unit_price = Column(Float, default=0)
-    tax_rate = Column(Float, default=0)
-    amount = Column(Float, default=0)
-
-    created_at = Column(DateTime, default=datetime.utcnow)
-
-    quote = relationship("CRMQuote", backref="items")
-    product = relationship("CRMProduct", foreign_keys=[product_id])
-
-
-class CRMTask(Base):
-    """CRM Tasks"""
-    __tablename__ = "crm_tasks"
-
-    id = Column(Integer, primary_key=True, index=True)
-    title = Column(String(200), nullable=False)
-    description = Column(Text)
-    # Related to
-    lead_id = Column(Integer, ForeignKey("crm_leads.id"), nullable=True)
-    customer_id = Column(Integer, ForeignKey(
-        "crm_customers.id"), nullable=True)
-    deal_id = Column(Integer, ForeignKey("crm_deals.id"), nullable=True)
-
-    # Task details
-    due_date = Column(DateTime)
-    completed_at = Column(DateTime)
-    is_completed = Column(Boolean, default=False)
-    # low, medium, high, urgent
-    priority = Column(String(50), default="medium")
-
-    assigned_to_id = Column(Integer, ForeignKey("users.id"), nullable=True)
-    created_by_id = Column(Integer, ForeignKey("users.id"))
-    created_at = Column(DateTime, default=datetime.utcnow)
-    updated_at = Column(DateTime, default=datetime.utcnow,
-                        onupdate=datetime.utcnow)
-
-    lead = relationship("CRMLead", foreign_keys=[lead_id])
-    customer = relationship("CRMCustomer", foreign_keys=[customer_id])
-    deal = relationship("CRMDeal", foreign_keys=[deal_id])
-    assigned_to = relationship("User", foreign_keys=[assigned_to_id])
-    created_by = relationship("User", foreign_keys=[created_by_id])
-
-
-# ==================== INVOICING MODELS ====================
-
-class InvoiceStatus(str, enum.Enum):
-    """Invoice status"""
-    DRAFT = "draft"
-    SENT = "sent"
-    VIEWED = "viewed"
-    PAID = "paid"
-    PARTIAL = "partial"
-    OVERDUE = "overdue"
-    CANCELLED = "cancelled"
-
-
-class Invoice(Base):
-    """Invoice for customers"""
-    __tablename__ = "invoices"
-
-    id = Column(Integer, primary_key=True, index=True)
-    invoice_number = Column(String(50), unique=True, nullable=False)
-    customer_id = Column(Integer, ForeignKey(
-        "crm_customers.id"), nullable=False)
-    deal_id = Column(Integer, ForeignKey("crm_deals.id"), nullable=True)
-
-    invoice_date = Column(Date, nullable=False)
-    due_date = Column(Date, nullable=False)
-
-    subtotal = Column(Float, default=0)
-    tax_amount = Column(Float, default=0)
-    discount_amount = Column(Float, default=0)
-    total_amount = Column(Float, default=0)
-
-    status = Column(String(50), default="draft")
-    notes = Column(Text)
-    terms = Column(Text)
-
-    paid_amount = Column(Float, default=0)
-    paid_at = Column(DateTime)
-
-    created_by_id = Column(Integer, ForeignKey("users.id"))
-    created_at = Column(DateTime, default=datetime.utcnow)
-    updated_at = Column(DateTime, default=datetime.utcnow,
-                        onupdate=datetime.utcnow)
-
-    customer = relationship("CRMCustomer", backref="invoices")
-    deal = relationship("CRMDeal", foreign_keys=[deal_id])
-    created_by = relationship("User", foreign_keys=[created_by_id])
-
-
-class InvoiceItem(Base):
-    """Invoice line items"""
-    __tablename__ = "invoice_items"
-
-    id = Column(Integer, primary_key=True, index=True)
-    invoice_id = Column(Integer, ForeignKey("invoices.id"), nullable=False)
-    description = Column(String(500), nullable=False)
-    quantity = Column(Float, default=1)
-    unit_price = Column(Float, default=0)
-    tax_rate = Column(Float, default=0)  # Percentage
-    amount = Column(Float, default=0)
-    sort_order = Column(Integer, default=0)
-
-    invoice = relationship("Invoice", backref="items")
-
-
-class Payment(Base):
-    """Payment records for invoices"""
-    __tablename__ = "payments"
-
-    id = Column(Integer, primary_key=True, index=True)
-    invoice_id = Column(Integer, ForeignKey("invoices.id"), nullable=False)
-    payment_number = Column(String(50), unique=True, nullable=False)
-    amount = Column(Float, nullable=False)
-    payment_date = Column(Date, nullable=False)
-    # cash, bank_transfer, upi, card, cheque
-    payment_method = Column(String(50), default="cash")
-    reference_number = Column(String(100))
-    notes = Column(Text)
-    created_by_id = Column(Integer, ForeignKey("users.id"))
-    created_at = Column(DateTime, default=datetime.utcnow)
-
-    invoice = relationship("Invoice", backref="payments")
-    created_by = relationship("User", foreign_keys=[created_by_id])
-
-
 # ==================== TIME TRACKING MODELS ====================
 
 class TimesheetStatus(str, enum.Enum):
@@ -1813,92 +1330,6 @@ class TimeEntry(Base):
     timesheet = relationship("Timesheet", backref="entries")
     project = relationship("Project", foreign_keys=[project_id])
     task = relationship("Task", foreign_keys=[task_id])
-
-
-# ==================== ASSET MANAGEMENT MODELS ====================
-
-class AssetStatus(str, enum.Enum):
-    """Asset status"""
-    AVAILABLE = "available"
-    ASSIGNED = "assigned"
-    MAINTENANCE = "maintenance"
-    RETIRED = "retired"
-    LOST = "lost"
-
-
-class AssetCategory(str, enum.Enum):
-    """Asset categories"""
-    HARDWARE = "hardware"
-    FURNITURE = "furniture"
-    VEHICLE = "vehicle"
-    EQUIPMENT = "equipment"
-    SOFTWARE = "software"
-    OTHER = "other"
-
-
-class Asset(Base):
-    """Company assets"""
-    __tablename__ = "assets"
-
-    id = Column(Integer, primary_key=True, index=True)
-    name = Column(String(200), nullable=False)
-    asset_code = Column(String(50), unique=True, nullable=False)
-    category = Column(String(50), default="hardware")
-    description = Column(Text)
-    purchase_date = Column(Date)
-    purchase_price = Column(Float, default=0)
-    warranty_expiry = Column(Date)
-    serial_number = Column(String(100))
-    location = Column(String(200))
-    status = Column(String(50), default="available")
-    notes = Column(Text)
-    image_path = Column(String(500))
-    is_active = Column(Boolean, default=True)
-    created_at = Column(DateTime, default=datetime.utcnow)
-    updated_at = Column(DateTime, default=datetime.utcnow,
-                        onupdate=datetime.utcnow)
-
-
-class AssetAssignment(Base):
-    """Asset assignment to employees"""
-    __tablename__ = "asset_assignments"
-
-    id = Column(Integer, primary_key=True, index=True)
-    asset_id = Column(Integer, ForeignKey("assets.id"), nullable=False)
-    employee_id = Column(Integer, ForeignKey("employees.id"), nullable=False)
-    assigned_date = Column(Date, nullable=False)
-    returned_date = Column(Date, nullable=True)
-    condition_on_issue = Column(String(100), default="good")
-    condition_on_return = Column(String(100), nullable=True)
-    notes = Column(Text)
-    assigned_by_id = Column(Integer, ForeignKey("users.id"))
-    created_at = Column(DateTime, default=datetime.utcnow)
-    updated_at = Column(DateTime, default=datetime.utcnow,
-                        onupdate=datetime.utcnow)
-
-    asset = relationship("Asset", backref="assignments")
-    employee = relationship("Employee", backref="asset_assignments")
-    assigned_by = relationship("User", foreign_keys=[assigned_by_id])
-
-
-class AssetMaintenance(Base):
-    """Asset maintenance records"""
-    __tablename__ = "asset_maintenance"
-
-    id = Column(Integer, primary_key=True, index=True)
-    asset_id = Column(Integer, ForeignKey("assets.id"), nullable=False)
-    # repair, service, inspection
-    maintenance_type = Column(String(50), nullable=False)
-    description = Column(Text, nullable=False)
-    maintenance_date = Column(Date, nullable=False)
-    next_maintenance_date = Column(Date)
-    cost = Column(Float, default=0)
-    vendor = Column(String(200))
-    performed_by = Column(String(200))
-    status = Column(String(50), default="completed")
-    created_at = Column(DateTime, default=datetime.utcnow)
-
-    asset = relationship("Asset", backref="maintenance_records")
 
 
 # ==================== Helper Functions ====================

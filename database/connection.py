@@ -46,6 +46,12 @@ def get_engine() -> Engine:
     global _engine
 
     if _engine is None:
+        # Validate DATABASE_URL is set
+        if not DATABASE_URL:
+            logger.error("DATABASE_URL is not set in configuration")
+            raise ValueError(
+                "DATABASE_URL must be configured. Please set it in .env file or environment variables.")
+
         # PostgreSQL connection settings with optimizations for 200+ users
         connect_args = {
             "connect_timeout": 10,
@@ -56,22 +62,26 @@ def get_engine() -> Engine:
             "options": "-c statement_timeout=30000"
         }
 
-        _engine = create_engine(
-            DATABASE_URL,
-            echo=DB_ECHO,
-            pool_size=DB_POOL_SIZE,  # 20 connections for 200 users
-            max_overflow=DB_MAX_OVERFLOW,  # 40 overflow
-            pool_recycle=DB_POOL_RECYCLE,
-            pool_timeout=DB_POOL_TIMEOUT,
-            pool_pre_ping=True,
-            connect_args=connect_args
-        )
+        try:
+            _engine = create_engine(
+                DATABASE_URL,
+                echo=DB_ECHO,
+                pool_size=DB_POOL_SIZE,  # 20 connections for 200 users
+                max_overflow=DB_MAX_OVERFLOW,  # 40 overflow
+                pool_recycle=DB_POOL_RECYCLE,
+                pool_timeout=DB_POOL_TIMEOUT,
+                pool_pre_ping=True,
+                connect_args=connect_args
+            )
 
-        # Set up PostgreSQL-specific optimizations
-        _setup_postgresql_optimizations(_engine)
+            # Set up PostgreSQL-specific optimizations
+            _setup_postgresql_optimizations(_engine)
 
-        logger.info(
-            f"Database engine created: {DATABASE_TYPE} (pool_size={DB_POOL_SIZE})")
+            logger.info(
+                f"Database engine created: {DATABASE_TYPE} (pool_size={DB_POOL_SIZE})")
+        except Exception as e:
+            logger.error(f"Failed to create database engine: {e}")
+            raise
 
     return _engine
 

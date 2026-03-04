@@ -65,11 +65,6 @@ class TeamsScreen(ft.Container):
             padding=15,
             bgcolor=PRIMARY,
             content=ft.Row([
-                ft.IconButton(
-                    icon=ft.Icons.ARROW_BACK,
-                    icon_color="WHITE",
-                    on_click=self.on_back
-                ),
                 ft.Text("Teams Management", size=18,
                         color="WHITE", weight=ft.FontWeight.BOLD),
                 ft.Container(expand=True),

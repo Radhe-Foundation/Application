@@ -188,13 +188,21 @@ def get_db_session() -> Session:
     """
     Get a new database session (non-context manager).
     IMPORTANT: Caller MUST close this session when done!
-
     Prefer using get_session() context manager instead.
 
     Returns:
         SQLAlchemy Session instance
     """
-    return get_session_factory()()
+    try:
+        session = get_session_factory()()
+        # Track session for debugging
+        session_id = id(session)
+        logger.debug(
+            f"Session {session_id} created. Active: {len(_active_sessions)}")
+        return session
+    except Exception as e:
+        logger.error(f"Failed to create database session: {e}")
+        raise
 
 
 @contextmanager

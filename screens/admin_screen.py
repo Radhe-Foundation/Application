@@ -76,6 +76,8 @@ class AdminScreen(ft.Container):
         """Toggle navigation rail visibility"""
         self._nav_rail_visible = not self._nav_rail_visible
         try:
+            # Update the icon to toggle between MENU_OPEN and MENU
+            self.nav_toggle_btn.icon = ft.Icons.MENU_OPEN if self._nav_rail_visible else ft.Icons.MENU
             self.content.content.controls[0].visible = self._nav_rail_visible
             self.content.content.controls[1].visible = self._nav_rail_visible
             self._page.update()
@@ -126,6 +128,8 @@ class AdminScreen(ft.Container):
         # Create toggle button for navigation rail
         def toggle_nav_rail(e):
             self._nav_rail_visible = not self._nav_rail_visible
+            # Update the icon to toggle between MENU_OPEN and MENU
+            self.nav_toggle_btn.icon = ft.Icons.MENU_OPEN if self._nav_rail_visible else ft.Icons.MENU
             self.content.content.controls[0].visible = self._nav_rail_visible
             self.content.content.controls[1].visible = self._nav_rail_visible
             self._page.update()
@@ -140,8 +144,7 @@ class AdminScreen(ft.Container):
         # Custom Navigation Sidebar - compact with proper icon-text alignment
         nav_items = []
 
-        # Define navigation items with icon and label
-        # FIXED: Corrected navigation order and added missing screens
+        # FIXED: Navigation only includes existing screens
         nav_data = [
             (0, "Dashboard", ft.Icons.DASHBOARD, ft.Icons.DASHBOARD_OUTLINED),
             (1, "Chat", ft.Icons.CHAT, ft.Icons.CHAT_OUTLINED),
@@ -160,24 +163,13 @@ class AdminScreen(ft.Container):
              ft.Icons.CALENDAR_TODAY_OUTLINED),
             (13, "Meetings", ft.Icons.VIDEO_CALL, ft.Icons.VIDEO_CALL_OUTLINED),
             (14, "News", ft.Icons.CAMPAIGN, ft.Icons.CAMPAIGN_OUTLINED),
-            (15, "Docs", ft.Icons.FOLDER, ft.Icons.FOLDER_OUTLINED),
-            (16, "Performance", ft.Icons.TRENDING_UP, ft.Icons.TRENDING_UP_OUTLINED),
-            (17, "Reports", ft.Icons.ASSESSMENT, ft.Icons.ASSESSMENT_OUTLINED),
-            (18, "Settings", ft.Icons.SETTINGS, ft.Icons.SETTINGS_OUTLINED),
-            (19, "Audit", ft.Icons.HISTORY, ft.Icons.HISTORY_OUTLINED),
-            (20, "ETL", ft.Icons.STORAGE, ft.Icons.STORAGE_OUTLINED),
-            (21, "Org Tree", ft.Icons.ACCOUNT_TREE, ft.Icons.ACCOUNT_TREE_OUTLINED),
-            (22, "Data Entry", ft.Icons.TABLE_ROWS, ft.Icons.TABLE_ROWS_OUTLINED),
-            (23, "Inventory", ft.Icons.INVENTORY, ft.Icons.INVENTORY_OUTLINED),
-            (24, "Transactions", ft.Icons.PAYMENT, ft.Icons.PAYMENT_OUTLINED),
-            # New Business Features
-            (25, "CRM", ft.Icons.PEOPLE, ft.Icons.PEOPLE_OUTLINED),
-            (26, "Invoicing", ft.Icons.RECEIPT_LONG,
-             ft.Icons.RECEIPT_LONG_OUTLINED),
-            (27, "Assets", ft.Icons.INVENTORY_2, ft.Icons.INVENTORY_2_OUTLINED),
-            (28, "Time Track", ft.Icons.TIMER, ft.Icons.TIMER_OUTLINED),
-            # Storage Management - NEW
-            (29, "Storage", ft.Icons.CLOUD, ft.Icons.CLOUD_OUTLINED),
+            (15, "Settings", ft.Icons.SETTINGS, ft.Icons.SETTINGS_OUTLINED),
+            (16, "Org Tree", ft.Icons.ACCOUNT_TREE, ft.Icons.ACCOUNT_TREE_OUTLINED),
+            (17, "Data Entry", ft.Icons.TABLE_ROWS, ft.Icons.TABLE_ROWS_OUTLINED),
+            (18, "Inventory", ft.Icons.INVENTORY, ft.Icons.INVENTORY_OUTLINED),
+            (19, "Transactions", ft.Icons.PAYMENT, ft.Icons.PAYMENT_OUTLINED),
+            (20, "Time Track", ft.Icons.TIMER, ft.Icons.TIMER_OUTLINED),
+            (21, "Storage", ft.Icons.CLOUD, ft.Icons.CLOUD_OUTLINED),
         ]
 
         # Track selected index
@@ -266,90 +258,193 @@ class AdminScreen(ft.Container):
         content.content = self._get_tab_content_lazy(index)
         self.page.update()
 
+    def _wrap_with_admin_header(self, screen_title: str, content, show_back_button: bool = True):
+        """Wrap any screen content with the consistent admin header"""
+
+        def handle_back(e):
+            """Handle back navigation to return to dashboard"""
+            # Navigate back to dashboard tab (index 0)
+            self._selected_nav_index = 0
+            # Update nav items visual state
+            for item in nav_items:
+                item.bgcolor = "transparent"
+            if nav_items:
+                nav_items[0].bgcolor = PRIMARY + "15"
+            # Navigate to dashboard
+            content_area = self.content.content.controls[2]
+            content_area.content = self._get_tab_content_lazy(0)
+            self._page.update()
+
+        # Get nav_items from _build_content for back navigation
+        nav_items = []
+        try:
+            # Try to get nav_items from the sidebar
+            sidebar = self.content.content.controls[0]
+            if hasattr(sidebar, 'content'):
+                # sidebar.content is the ListView directly (not another Container)
+                list_view = sidebar.content
+                if hasattr(list_view, 'controls'):
+                    nav_items = list_view.controls
+        except Exception as e:
+            print(f"Could not get nav_items: {e}")
+
+        return ft.Container(
+            content=ft.Column([
+                # Consistent Header for all admin screens - matching employee portal style
+                ft.Container(
+                    content=ft.Row([
+                        # Back button (navigation button)
+                        ft.IconButton(
+                            icon=ft.Icons.ARROW_BACK,
+                            tooltip="Back to Dashboard",
+                            on_click=handle_back,
+                            icon_color=PRIMARY
+                        ) if show_back_button else ft.Container(width=0),
+                        # Navigation toggle - menu button (like employee portal)
+                        ft.IconButton(
+                            icon=ft.Icons.MENU_OPEN if self._nav_rail_visible else ft.Icons.MENU,
+                            tooltip="Toggle Navigation",
+                            on_click=self._toggle_nav_rail,
+                            icon_color=PRIMARY
+                        ),
+                        ft.Container(width=5),
+                        # Screen title
+                        ft.Text(
+                            f"Vernika HRA - {screen_title}",
+                            size=18,
+                            weight=ft.FontWeight.BOLD,
+                            color=PRIMARY
+                        ),
+                        ft.Container(expand=True),
+                        # Welcome message
+                        ft.Text(
+                            f"Welcome, {self.current_user.get('username', 'Admin') if isinstance(self.current_user, dict) else 'Admin'}",
+                            size=14,
+                            color=TEXT_SECONDARY
+                        ),
+                        ft.Container(width=10),
+                        # Logout button
+                        ft.IconButton(
+                            icon=ft.Icons.LOGOUT,
+                            tooltip="Logout",
+                            on_click=self._handle_logout,
+                            icon_color=ERROR
+                        )
+                    ], alignment=ft.MainAxisAlignment.SPACE_BETWEEN),
+                    padding=ft.padding.symmetric(horizontal=20, vertical=15),
+                    bgcolor=SURFACE,
+                ),
+                # Content area
+                ft.Container(
+                    content=content,
+                    expand=True,
+                ),
+            ], expand=True),
+            expand=True,
+        )
+
     def _get_tab_content_lazy(self, index):
-        """Get content for the selected tab - lazy loaded"""
-        # Only load the requested tab
+        """Get content for the selected tab - lazy loaded with consistent header"""
+        # Ensure notification manager is initialized before showing any tab
+        try:
+            from utils.notification_manager import ensure_notification_manager
+            ensure_notification_manager(self.page)
+        except Exception as e:
+            print(f"[Admin] Notification init error: {e}")
+        # Only load the requested tab - matches nav_data indices 0-21
         if index == 0:
             return self._create_dashboard_tab()
         elif index == 1:
             from screens.chat_screen import ChatScreen
-            return ft.Container(content=ChatScreen(self.page, self.current_user), expand=True)
+            chat_content = ChatScreen(self.page, self.current_user)
+            return self._wrap_with_admin_header("Chat", chat_content)
         elif index == 2:
             from screens.mail_screen import MailScreen
-            return ft.Container(content=MailScreen(self.page, self.current_user), expand=True)
+            mail_content = MailScreen(self.page, self.current_user)
+            return self._wrap_with_admin_header("Mail", mail_content)
         elif index == 3:
             from screens.tasks_screen import TasksScreen
-            return ft.Container(content=TasksScreen(self.page, self.current_user), expand=True)
+            tasks_content = TasksScreen(self.page, self.current_user)
+            return self._wrap_with_admin_header("Tasks", tasks_content)
         elif index == 4:
             from screens.todo_screen import TodoScreen
-            return ft.Container(content=TodoScreen(self.page, self.current_user), expand=True)
+            todo_content = TodoScreen(self.page, self.current_user)
+            return self._wrap_with_admin_header("Todo", todo_content, show_back_button=False)
         elif index == 5:
-            return self._create_employees_tab()
+            from screens.employees_screen import EmployeesScreen
+            emp_content = EmployeesScreen(self._page, self.current_user)
+            return self._wrap_with_admin_header("Employees", emp_content, show_back_button=False)
         elif index == 6:
             from screens.departments_screen import DepartmentsScreen
-            return ft.Container(content=DepartmentsScreen(self.page, self.current_user), expand=True)
+            dept_content = DepartmentsScreen(self.page, self.current_user)
+            return self._wrap_with_admin_header("Departments", dept_content)
         elif index == 7:
             from screens.positions_screen import PositionsScreen
-            return ft.Container(content=PositionsScreen(self.page, self.current_user), expand=True)
+            pos_content = PositionsScreen(self.page, self.current_user)
+            return self._wrap_with_admin_header("Positions", pos_content)
         elif index == 8:
             from screens.attendance_screen import AttendanceScreen
-            return ft.Container(content=AttendanceScreen(self.page, self.current_user, view_mode="admin"), expand=True)
+            att_content = AttendanceScreen(
+                self.page, self.current_user, view_mode="admin")
+            return self._wrap_with_admin_header("Attendance", att_content)
         elif index == 9:
             from screens.leaves_screen import LeavesScreen
-            return ft.Container(content=LeavesScreen(self.page, self.current_user, view_mode="admin"), expand=True)
+            leave_content = LeavesScreen(
+                self.page, self.current_user, view_mode="admin")
+
+            # Re-initialize notifications after tab navigation
+            try:
+                from utils.notification_manager import ensure_notification_manager
+                ensure_notification_manager(self.page)
+            except Exception as ne:
+                pass
+
+            return self._wrap_with_admin_header("Leave Management", leave_content)
         elif index == 10:
             from screens.teams_screen import TeamsScreen
-            return ft.Container(content=TeamsScreen(self.page, self.current_user), expand=True)
+            teams_content = TeamsScreen(self.page, self.current_user)
+            return self._wrap_with_admin_header("Teams", teams_content)
         elif index == 11:
             from screens.projects_screen import ProjectsScreen
-            return ft.Container(content=ProjectsScreen(self.page, self.current_user), expand=True)
+            proj_content = ProjectsScreen(self.page, self.current_user)
+            return self._wrap_with_admin_header("Projects", proj_content)
         elif index == 12:
             from screens.holidays_screen import HolidaysScreen
-            return ft.Container(content=HolidaysScreen(self.page, self.current_user), expand=True)
+            hol_content = HolidaysScreen(self.page, self.current_user)
+            return self._wrap_with_admin_header("Holidays", hol_content)
         elif index == 13:
             from screens.meetings_screen import MeetingsScreen
-            return ft.Container(content=MeetingsScreen(self.page, self.current_user), expand=True)
+            meet_content = MeetingsScreen(self.page, self.current_user)
+            return self._wrap_with_admin_header("Meetings", meet_content)
         elif index == 14:
             from screens.announcements_screen import AnnouncementsScreen
-            return ft.Container(content=AnnouncementsScreen(self.page), expand=True)
+            news_content = AnnouncementsScreen(self.page, self.current_user)
+            return self._wrap_with_admin_header("News / Announcements", news_content)
         elif index == 15:
-            from screens.documents_screen import DocumentsScreen
-            return ft.Container(content=DocumentsScreen(self.page), expand=True)
-        elif index == 16:
-            from screens.performance_screen import PerformanceScreen
-            return ft.Container(content=PerformanceScreen(self.page), expand=True)
-        elif index == 17:
-            from screens.reports_screen import ReportsScreen
-            return ft.Container(content=ReportsScreen(self.page), expand=True)
-        elif index == 18:
             from screens.settings_screen import SettingsScreen
-            return ft.Container(content=SettingsScreen(self.page, self.current_user), expand=True)
-        elif index == 19:
-            return self._create_audit_tab()
-        elif index == 20:
-            from screens.etl_screen import ETLScreen
-            return ft.Container(content=ETLScreen(self.page, self.current_user), expand=True)
-        elif index == 21:
+            settings_content = SettingsScreen(self.page, self.current_user)
+            return self._wrap_with_admin_header("Settings", settings_content, show_back_button=False)
+        elif index == 16:
             from screens.organization_tree_screen import OrganizationTreeScreen
-            return ft.Container(content=OrganizationTreeScreen(self.page, self.current_user), expand=True)
-        elif index == 22:
+            org_content = OrganizationTreeScreen(self.page, self.current_user)
+            return self._wrap_with_admin_header("Organization Tree", org_content)
+        elif index == 17:
             from screens.data_entry_screen import DataEntryScreen
-            return ft.Container(content=DataEntryScreen(self.page, self.current_user), expand=True)
-        elif index == 23:
+            data_content = DataEntryScreen(self.page, self.current_user)
+            return self._wrap_with_admin_header("Data Entry", data_content)
+        elif index == 18:
             from screens.inventory_screen import InventoryScreen
-            return ft.Container(content=InventoryScreen(self.page, self.current_user), expand=True)
-        elif index == 24:
+            inv_content = InventoryScreen(self.page, self.current_user)
+            return self._wrap_with_admin_header("Inventory", inv_content)
+        elif index == 19:
             from screens.transactions_screen import TransactionsScreen
-            return ft.Container(content=TransactionsScreen(self.page, self.current_user), expand=True)
-        elif index == 25:
-            return self._create_crm_tab()
-        elif index == 26:
-            return self._create_invoicing_tab()
-        elif index == 27:
-            return self._create_assets_tab()
-        elif index == 28:
-            return self._create_time_tracking_tab()
-        elif index == 29:
+            trans_content = TransactionsScreen(self.page, self.current_user)
+            return self._wrap_with_admin_header("Transactions", trans_content)
+        elif index == 20:
+            from screens.time_tracking_screen import TimeTrackingScreen
+            time_content = TimeTrackingScreen(self.page, self.current_user)
+            return self._wrap_with_admin_header("Time Tracking", time_content)
+        elif index == 21:
             return self._create_storage_tab()
         return self._create_dashboard_tab()
 
@@ -371,16 +466,13 @@ class AdminScreen(ft.Container):
             self._create_holidays_tab,
             self._create_meetings_tab,
             self._create_announcements_tab,
-            self._create_documents_tab,
-            self._create_performance_tab,
-            self._create_reports_tab,
             self._create_settings_tab,
-            self._create_audit_tab,
-            self._create_etl_tab,
             self._create_org_tree_tab,
             self._create_data_entry_tab,
             self._create_inventory_tab,
             self._create_transactions_tab,
+            self._create_time_tracking_tab,
+            self._create_storage_tab,
         ]
         if 0 <= index < len(tab_methods):
             return tab_methods[index]()
@@ -545,28 +637,28 @@ class AdminScreen(ft.Container):
                         "Add New Employee",
                         icon=ft.Icons.PERSON_ADD,
                         on_click=lambda _: self._navigate_to_tab(
-                            5),  # Fixed: was 8
+                            5),
                         style=ft.ButtonStyle(bgcolor=PRIMARY, color="white")
                     ),
                     ft.ElevatedButton(
                         "Manage Employees",
                         icon=ft.Icons.BADGE,
                         on_click=lambda _: self._navigate_to_tab(
-                            5),  # Fixed: was 8
+                            5),
                         style=ft.ButtonStyle(bgcolor=ORANGE_500, color="white")
                     ),
                     ft.ElevatedButton(
-                        "View Reports",
-                        icon=ft.Icons.ASSESSMENT,
+                        "Manage Departments",
+                        icon=ft.Icons.BUSINESS,
                         on_click=lambda _: self._navigate_to_tab(
-                            17),  # Fixed: was 13
+                            6),
                         style=ft.ButtonStyle(bgcolor=PURPLE_500, color="white")
                     ),
                     ft.ElevatedButton(
                         "System Settings",
                         icon=ft.Icons.SETTINGS,
                         on_click=lambda _: self._navigate_to_tab(
-                            18),  # Fixed: was 14
+                            15),
                         style=ft.ButtonStyle(bgcolor=TEAL_500, color="white")
                     ),
                 ], spacing=10),
@@ -600,7 +692,7 @@ class AdminScreen(ft.Container):
                 ], spacing=15),
 
                 ft.Container(height=15),
-                # Row 2: Leave, Announcements, Documents, Positions
+                # Row 2: Leave, Announcements, Teams, Positions
                 ft.Text("HR Management", size=14, color=TEXT_SECONDARY,
                         weight=ft.FontWeight.W_500),
                 ft.Container(height=8),
@@ -610,25 +702,25 @@ class AdminScreen(ft.Container):
                     self._create_module_card(
                         "Announcements", ft.Icons.CAMPAIGN, "News & Updates", 14, RED_500),
                     self._create_module_card(
-                        "Documents", ft.Icons.FOLDER, "Documents", 15, AMBER_500),
+                        "Teams", ft.Icons.GROUP, "Team Management", 10, TEAL_500),
                     self._create_module_card(
                         "Positions", ft.Icons.WORK, "Job Positions", 7, INDIGO_500),
                 ], spacing=15),
 
                 ft.Container(height=15),
-                # Row 3: Performance, Reports, Settings, Chat
-                ft.Text("Admin & Tools", size=14, color=TEXT_SECONDARY,
+                # Row 3: Projects, Holidays, Meetings, Settings
+                ft.Text("Projects & Operations", size=14, color=TEXT_SECONDARY,
                         weight=ft.FontWeight.W_500),
                 ft.Container(height=8),
                 ft.Row([
                     self._create_module_card(
-                        "Performance", ft.Icons.TRENDING_UP, "Performance Reviews", 16, PINK_500),
+                        "Projects", ft.Icons.FOLDER_SPECIAL, "Project Mgmt", 11, BLUE_500),
                     self._create_module_card(
-                        "Reports", ft.Icons.ASSESSMENT, "Reports & Analytics", 17, CYAN_600),
+                        "Holidays", ft.Icons.CALENDAR_TODAY, "Holiday Calendar", 12, GREEN_500),
                     self._create_module_card(
-                        "Settings", ft.Icons.SETTINGS, "System Settings", 18, TEAL_500),
+                        "Meetings", ft.Icons.VIDEO_CALL, "Schedule Meetings", 13, ORANGE_500),
                     self._create_module_card(
-                        "Chat", ft.Icons.CHAT, "Team Chat", 1, BLUE_500),
+                        "Settings", ft.Icons.SETTINGS, "System Settings", 15, TEAL_500),
                 ], spacing=15),
 
                 ft.Container(height=30),
@@ -647,7 +739,7 @@ class AdminScreen(ft.Container):
                     self._create_module_card(
                         "Employees", ft.Icons.BADGE, "Employee Mgmt", 5, SUCCESS),
                     self._create_module_card(
-                        "Audit Logs", ft.Icons.HISTORY, "Activity Logs", 19, ERROR),
+                        "Org Tree", ft.Icons.ACCOUNT_TREE, "Organization Tree", 16, INDIGO_500),
                 ], spacing=15),
 
             ], scroll=ft.ScrollMode.AUTO),
@@ -1167,14 +1259,6 @@ class AdminScreen(ft.Container):
                             icon=ft.Icons.MENU,
                             tooltip="Toggle Navigation",
                             on_click=self._toggle_nav_rail,
-                            icon_color=PRIMARY,
-                        ),
-                        ft.Container(width=5),
-                        # Back button
-                        ft.IconButton(
-                            icon=ft.Icons.ARROW_BACK,
-                            tooltip="Back to Dashboard",
-                            on_click=lambda e: self._navigate_to_tab(0),
                             icon_color=PRIMARY,
                         ),
                         ft.Container(width=10),
@@ -1866,14 +1950,6 @@ class AdminScreen(ft.Container):
             padding=ft.padding.all(10)
         )
 
-    def _create_etl_tab(self):
-        """Create ETL tab"""
-        from screens.etl_screen import ETLScreen
-        return ft.Container(
-            content=ETLScreen(self.page, self.current_user),
-            expand=True
-        )
-
     def _create_org_tree_tab(self):
         """Create Organization Tree tab"""
         from screens.organization_tree_screen import OrganizationTreeScreen
@@ -1909,33 +1985,6 @@ class AdminScreen(ft.Container):
         )
 
     # ============ NEW BUSINESS FEATURE TABS ============
-
-    def _create_crm_tab(self):
-        """Create CRM tab"""
-        from screens.crm_screen import CRMScreen
-        return ft.Container(
-            content=CRMScreen(self.page, self.current_user),
-            expand=True,
-
-        )
-
-    def _create_invoicing_tab(self):
-        """Create Invoicing tab"""
-        from screens.invoicing_screen import InvoicingScreen
-        return ft.Container(
-            content=InvoicingScreen(self.page, self.current_user),
-            expand=True,
-
-        )
-
-    def _create_assets_tab(self):
-        """Create Asset Management tab"""
-        from screens.asset_management_screen import AssetManagementScreen
-        return ft.Container(
-            content=AssetManagementScreen(self.page, self.current_user),
-            expand=True,
-
-        )
 
     def _create_time_tracking_tab(self):
         """Create Time Tracking tab"""
@@ -2380,30 +2429,6 @@ class AdminScreen(ft.Container):
             expand=True
         )
 
-    def _create_documents_tab(self):
-        """Create documents management tab"""
-        from screens.documents_screen import DocumentsScreen
-        return ft.Container(
-            content=DocumentsScreen(self.page),
-            expand=True
-        )
-
-    def _create_performance_tab(self):
-        """Create performance review tab"""
-        from screens.performance_screen import PerformanceScreen
-        return ft.Container(
-            content=PerformanceScreen(self.page),
-            expand=True
-        )
-
-    def _create_reports_tab(self):
-        """Create reports tab"""
-        from screens.reports_screen import ReportsScreen
-        return ft.Container(
-            content=ReportsScreen(self.page),
-            expand=True
-        )
-
     def _create_settings_tab(self):
         """Create settings tab"""
         from screens.settings_screen import SettingsScreen
@@ -2484,6 +2509,13 @@ class AdminScreen(ft.Container):
         self.page.add(LeavesScreen(
             self.page, self.current_user, view_mode="admin"))
 
+        # Re-initialize notifications after navigation
+        try:
+            from utils.notification_manager import ensure_notification_manager
+            ensure_notification_manager(self.page)
+        except Exception as e:
+            print(f"Notification init error: {e}")
+
     def _show_employees(self, e):
         """Navigate to Employees screen"""
         from screens.employees_screen import show_employees
@@ -2500,24 +2532,6 @@ class AdminScreen(ft.Container):
         self.page.clean()
         self.page.add(AnnouncementsScreen(self.page))
 
-    def _show_documents(self, e):
-        """Navigate to Documents screen"""
-        from screens.documents_screen import DocumentsScreen
-        self.page.clean()
-        self.page.add(DocumentsScreen(self.page))
-
-    def _show_performance(self, e):
-        """Navigate to Performance screen"""
-        from screens.performance_screen import PerformanceScreen
-        self.page.clean()
-        self.page.add(PerformanceScreen(self.page))
-
-    def _show_reports(self, e):
-        """Navigate to Reports screen"""
-        from screens.reports_screen import ReportsScreen
-        self.page.clean()
-        self.page.add(ReportsScreen(self.page))
-
     def _show_settings(self, e):
         """Navigate to Settings screen"""
         from screens.settings_screen import SettingsScreen
@@ -2531,7 +2545,24 @@ class AdminScreen(ft.Container):
         self.page.update()
 
     def _show_message(self, message, type="info"):
-        """Show a snackbar message"""
+        """Show a snackbar message using global notification system"""
+        try:
+            from utils.notification_manager import get_notification_manager
+            nm = get_notification_manager()
+            if nm:
+                if type == "success":
+                    nm.show_success(message)
+                elif type == "error":
+                    nm.show_error(message)
+                elif type == "warning":
+                    nm.show_warning(message)
+                else:
+                    nm.show_info(message)
+                return
+        except Exception as e:
+            print(f"[Admin] Notification error: {e}")
+
+        # Fallback to local snackbar
         bgcolor = GREEN_600 if type == "success" else RED_500 if type == "error" else BLUE_600
         snack = ft.SnackBar(
             content=ft.Text(message),
@@ -2543,6 +2574,21 @@ class AdminScreen(ft.Container):
 
     def _handle_logout(self, e):
         """Handle logout button click"""
+        from database.session_manager import get_db_session
+        from database.operations import logout_user
+
+        # Update user online status in database
+        try:
+            user_id = self.current_user.get('id') if isinstance(
+                self.current_user, dict) else None
+            if user_id:
+                db = get_db_session()
+                logout_user(db, user_id)
+                db.close()
+        except Exception as ex:
+            print(f"Error updating logout status: {ex}")
+
+        # Navigate to login screen
         from screens.login_screen import LoginScreen
         self.page.clean()
         self.page.add(LoginScreen(self.page))

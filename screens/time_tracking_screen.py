@@ -43,6 +43,10 @@ class TimeTrackingScreen(ft.Container):
         self.current_view = "list"  # list, create, view
         self.selected_timesheet = None
         self.current_week_start = self._get_week_start(date.today())
+
+        # Store form field references for saving
+        self._day_fields = {}  # Dictionary to store day entry fields by day_index
+
         self.content = self._build_content()
 
     def refresh(self):
@@ -124,12 +128,6 @@ class TimeTrackingScreen(ft.Container):
                         icon_color="WHITE",
                         on_click=self.refresh,
                         tooltip="Refresh"
-                    ),
-                    ft.IconButton(
-                        icon=ft.Icons.ARROW_BACK,
-                        icon_color="WHITE",
-                        on_click=self._go_back,
-                        tooltip="Back to Dashboard"
                     ),
                 ], spacing=5),
             ], alignment=ft.MainAxisAlignment.SPACE_BETWEEN),
@@ -352,6 +350,9 @@ class TimeTrackingScreen(ft.Container):
 
     def _build_timesheet_form(self):
         """Build timesheet creation form with proper time entry capture"""
+        # Clear previous day fields when building new form
+        self._day_fields = {}
+
         projects = self._get_projects()
 
         # Get current user employee
@@ -412,14 +413,16 @@ class TimeTrackingScreen(ft.Container):
             width=500,
         )
 
-        # Total hours display
+# Total hours display - will be updated dynamically via JavaScript-like update
+        self._total_hours_text = ft.Text(
+            "0.0 hours", size=16, weight=ft.FontWeight.BOLD, color=SUCCESS)
+
         total_display = ft.Container(
             content=ft.Row([
                 ft.Icon(ft.Icons.ACCESS_TIME, color=PRIMARY, size=24),
                 ft.Text("Total Hours This Week:", size=14,
                         weight=ft.FontWeight.BOLD),
-                ft.Text("0.0 hours", size=16, weight=ft.FontWeight.BOLD,
-                        color=SUCCESS),
+                self._total_hours_text,
             ], spacing=10),
             padding=15,
             bgcolor="#E8F5E9",
@@ -524,7 +527,6 @@ class TimeTrackingScreen(ft.Container):
             [ft.dropdown.Option("none", "No Project")],
             width=200,
             border_color=PRIMARY,
-            key=f"project_{day_index}",
         )
 
         hours_field = ft.TextField(
@@ -532,29 +534,36 @@ class TimeTrackingScreen(ft.Container):
             value="0",
             width=80,
             border_color=PRIMARY,
-            key=f"hours_{day_index}",
+            on_change=lambda e: self._update_total_hours(),
         )
 
         desc_field = ft.TextField(
             hint_text="Work description...",
             expand=True,
             border_color=PRIMARY,
-            key=f"desc_{day_index}",
         )
 
         billable_check = ft.Checkbox(
             label="Billable",
             value=True,
-            key=f"billable_{day_index}",
         )
 
-        # Calculate day hours
+        # Calculate day hours display
         hours_display = ft.Text(
             "0h",
             size=12,
             color=TEXT_SECONDARY,
-            key=f"hours_display_{day_index}",
         )
+
+        # Store field references for saving - use unique keys per day
+        if day_index not in self._day_fields:
+            self._day_fields[day_index] = {
+                'project': project_dropdown,
+                'hours': hours_field,
+                'description': desc_field,
+                'billable': billable_check,
+                'hours_display': hours_display,
+            }
 
         return ft.Container(
             content=ft.Column([
@@ -908,23 +917,91 @@ class TimeTrackingScreen(ft.Container):
             notes = notes_field.value if notes_field else ""
             timesheet.notes = notes
 
-            # Note: In Flet, we can't directly access form fields from here
-            # The actual implementation would need a different approach
-            # For now, save the basic timesheet
+            # Use stored _day_fields to get form values
+            entries_saved = 0
+
+            for day_index in range(7):
+                day = week_start + timedelta(days=day_index)
+
+                # Skip weekends
+                if day.weekday() >= 5:
+                    continue
+
+                # Get stored fields for this day
+                if day_index not in self._day_fields:
+                    continue
+
+                day_fields = self._day_fields[day_index]
+                project_dropdown = day_fields.get('project')
+                hours_field = day_fields.get('hours')
+                desc_field = day_fields.get('description')
+                billable_check = day_fields.get('billable')
+
+                # Get project dropdown value
+                project_value = None
+                if project_dropdown and hasattr(project_dropdown, 'value') and project_dropdown.value:
+                    project_value = project_dropdown.value
+
+                # Get hours field value
+                hours_value = 0.0
+                if hours_field and hasattr(hours_field, 'value') and hours_field.value:
+                    try:
+                        hours_value = float(hours_field.value)
+                    except:
+                        hours_value = 0.0
+
+                # Get description field value
+                desc_value = ""
+                if desc_field and hasattr(desc_field, 'value') and desc_field.value:
+                    desc_value = desc_field.value
+
+                # Get billable checkbox value
+                billable_value = True
+                if billable_check and hasattr(billable_check, 'value'):
+                    billable_value = billable_check.value
+
+                # Only create entry if there's hours entered
+                if hours_value and hours_value > 0:
+                    # Get project name from dropdown
+                    project_name = "No Project"
+                    if project_value and project_value != "none":
+                        project_name = project_value
+
+                    # Create time entry
+                    time_entry = TimeEntry(
+                        timesheet_id=timesheet.id,
+                        date=day,
+                        project_id=int(
+                            project_value) if project_value and project_value != "none" else None,
+                        description=desc_value,
+                        hours=hours_value,
+                        is_billable=billable_value,
+                    )
+                    session.add(time_entry)
+                    total_hours += hours_value
+                    entries_saved += 1
 
             # Update total hours
             timesheet.total_hours = total_hours
             timesheet.status = status
 
             session.commit()
-            self._page.snack_bar = ft.SnackBar(
-                content=ft.Text(f"Timesheet saved as {status}! You can now add time entries."), bgcolor=SUCCESS)
+
+            if entries_saved > 0:
+                self._page.snack_bar = ft.SnackBar(
+                    content=ft.Text(f"Timesheet saved with {entries_saved} entries ({total_hours:.1f} hours) as {status}!"), bgcolor=SUCCESS)
+            else:
+                self._page.snack_bar = ft.SnackBar(
+                    content=ft.Text(f"Timesheet saved as {status}! (No hours entered)"), bgcolor=WARNING)
             self._page.snack_bar.open = True
             self._page.update()
             self.current_view = "list"
             self.refresh()
         except Exception as ex:
             session.rollback()
+            import traceback
+            print(f"Error saving timesheet: {ex}")
+            print(traceback.format_exc())
             self._page.snack_bar = ft.SnackBar(
                 content=ft.Text(f"Error: {str(ex)}"), bgcolor=ERROR)
             self._page.snack_bar.open = True
@@ -1021,6 +1098,25 @@ class TimeTrackingScreen(ft.Container):
             self._page.update()
         finally:
             session.close()
+
+    def _update_total_hours(self):
+        """Update total hours display when user changes hours field"""
+        total = 0.0
+        for day_index in range(7):
+            if day_index in self._day_fields:
+                day_fields = self._day_fields[day_index]
+                hours_field = day_fields.get('hours')
+                if hours_field and hasattr(hours_field, 'value') and hours_field.value:
+                    try:
+                        hours = float(hours_field.value)
+                        total += hours
+                    except (ValueError, TypeError):
+                        pass
+
+        # Update the total hours text display
+        if hasattr(self, '_total_hours_text'):
+            self._total_hours_text.value = f"{total:.1f} hours"
+            self._total_hours_text.update()
 
     def _go_back(self, e):
         """Navigate back to home screen"""

@@ -60,25 +60,14 @@ class DepartmentsScreen(ft.Container):
         self.content = self._build_content()
 
     def _build_content(self):
-        # Create toggle button for navigation
-        def toggle_nav_rail(e):
-            self._nav_rail_visible = not self._nav_rail_visible
-            self.content.content.controls[0].visible = self._nav_rail_visible
-            self.content.content.controls[1].visible = self._nav_rail_visible
-            self._page.update()
-
-        self.nav_toggle_btn = ft.IconButton(
-            icon=ft.Icons.MENU_OPEN if self._nav_rail_visible else ft.Icons.MENU,
-            tooltip="Toggle Navigation",
-            on_click=toggle_nav_rail,
-            icon_color="WHITE"
-        )
-
+        # Note: Header is now handled by admin wrapper (_wrap_with_admin_header)
+        # This screen provides just the content without duplicate header elements
+        # But we need a header within the screen for standalone viewing
+        header = self._create_header()
         department_list = self._build_department_list()
 
         content = ft.Column([
-            # Header with navigation, company name, welcome text, and logout
-            self._create_header(),
+            header,
             ft.Container(
                 padding=20,
                 content=department_list,
@@ -89,20 +78,18 @@ class DepartmentsScreen(ft.Container):
         return content
 
     def _create_header(self):
-        """Create header with navigation, company name, welcome text, and logout"""
+        """Create header with Add Department button"""
         return ft.Container(
             content=ft.Row([
-                # Navigation toggle button
-                self.nav_toggle_btn,
                 ft.Container(width=10),
                 ft.Icon(ft.Icons.BUSINESS, color="WHITE", size=28),
-                ft.Text("Vernika HRA - Department Management", size=18,
+                ft.Text("Vernika HRA - Departments Management", size=18,
                         color="WHITE", weight=ft.FontWeight.BOLD),
                 ft.Container(expand=True),
-                # Add Department button
+                # Add Department button in header
                 ft.ElevatedButton(
                     "Add Department",
-                    icon=ft.Icons.ADD,
+                    icon=ft.Icons.ADD_BUSINESS,
                     on_click=self.on_add,
                     style=ft.ButtonStyle(
                         bgcolor="WHITE",
@@ -131,13 +118,6 @@ class DepartmentsScreen(ft.Container):
         from screens.login_screen import LoginScreen
         self._page.clean()
         self._page.add(LoginScreen(self._page))
-
-    def on_back(self, e):
-        """Handle back navigation"""
-        _safe_navigate_to_home(self._page, self.user)
-
-    def on_add(self, e):
-        self._show_add_dialog()
 
     def _get_departments(self):
         """Get all departments from PostgreSQL with head names"""
@@ -259,6 +239,9 @@ class DepartmentsScreen(ft.Container):
         )
 
         return ft.Container(content=table, expand=True)
+
+    def on_add(self, e):
+        self._show_add_dialog()
 
     def _show_add_dialog(self):
         """Show add department dialog"""
