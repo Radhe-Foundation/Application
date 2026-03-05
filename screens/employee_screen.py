@@ -139,6 +139,8 @@ class EmployeeScreen(ft.Container):
             (15, "Time Track", ft.Icons.TIMER, ft.Icons.TIMER_OUTLINED),
             # Org Tree
             (16, "Org Tree", ft.Icons.ACCOUNT_TREE, ft.Icons.ACCOUNT_TREE_OUTLINED),
+            # CRM
+            (17, "CRM", ft.Icons.PEOPLE, ft.Icons.PEOPLE_OUTLINED),
         ]
 
         # Track selected index
@@ -265,6 +267,8 @@ class EmployeeScreen(ft.Container):
             return self._create_time_tracking_tab()
         elif index == 16:
             return self._create_org_tree_tab()
+        elif index == 17:
+            return self._create_crm_tab()
         return self._create_dashboard_tab()
 
     def _handle_back(self, e):
@@ -508,6 +512,17 @@ class EmployeeScreen(ft.Container):
             )
         )
 
+        # CRM (index 17)
+        action_cards.append(
+            self._create_action_card(
+                "CRM",
+                "Customer relationship management",
+                ft.Icons.PEOPLE,
+                lambda _: self._navigate_to(17),
+                PURPLE_500
+            )
+        )
+
         # Dashboard content
         dashboard_content = ft.Container(
             content=ft.Column([
@@ -525,7 +540,7 @@ class EmployeeScreen(ft.Container):
                 ft.Container(height=15),
                 ft.Row(action_cards[8:12], spacing=20),
                 ft.Container(height=15),
-                ft.Row(action_cards[12:16], spacing=20),
+                ft.Row(action_cards[12:17], spacing=20),
 
                 ft.Container(height=30),
 
@@ -689,6 +704,12 @@ class EmployeeScreen(ft.Container):
         org_tree_content = OrganizationTreeScreen(
             self._page, self.current_user)
         return self._wrap_with_employee_header("Org Tree", org_tree_content)
+
+    def _create_crm_tab(self):
+        """Create CRM tab"""
+        from screens.crm_screen import CRMScreen
+        crm_content = CRMScreen(self._page, self.current_user)
+        return self._wrap_with_employee_header("CRM", crm_content)
 
     def _wrap_with_employee_header(self, screen_title: str, content, show_back_button: bool = True):
         """Wrap any screen content with the consistent employee portal header"""

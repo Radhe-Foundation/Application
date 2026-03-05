@@ -1508,3 +1508,330 @@ def get_transaction_summary(start_date=None, end_date=None):
         }
     finally:
         session.close()
+
+
+# ==================== CRM MODELS ====================
+
+class LeadStatus(str, enum.Enum):
+    """Lead status enumeration"""
+    NEW = "new"
+    CONTACTED = "contacted"
+    QUALIFIED = "qualified"
+    PROPOSAL = "proposal"
+    NEGOTIATION = "negotiation"
+    WON = "won"
+    LOST = "lost"
+
+
+class LeadSource(str, enum.Enum):
+    """Lead source enumeration"""
+    WEBSITE = "website"
+    REFERRAL = "referral"
+    SOCIAL_MEDIA = "social_media"
+    COLD_CALL = "cold_call"
+    TRADE_SHOW = "trade_show"
+    ADVERTISEMENT = "advertisement"
+    OTHER = "other"
+
+
+class Lead(Base):
+    """CRM Leads"""
+    __tablename__ = "crm_leads"
+
+    id = Column(Integer, primary_key=True, index=True)
+    name = Column(String(200), nullable=False)
+    company = Column(String(200))
+    email = Column(String(100))
+    phone = Column(String(20))
+    position = Column(String(100))
+    source = Column(String(50), default="website")
+    status = Column(String(50), default="new")
+    value = Column(Float, default=0)
+    notes = Column(Text)
+    assigned_to_id = Column(Integer, ForeignKey("users.id"), nullable=True)
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow,
+                        onupdate=datetime.utcnow)
+
+    assigned_to = relationship("User", foreign_keys=[assigned_to_id])
+
+
+class Contact(Base):
+    """CRM Contacts"""
+    __tablename__ = "crm_contacts"
+
+    id = Column(Integer, primary_key=True, index=True)
+    first_name = Column(String(100), nullable=False)
+    last_name = Column(String(100))
+    company = Column(String(200))
+    email = Column(String(100))
+    phone = Column(String(20))
+    position = Column(String(100))
+    address = Column(Text)
+    notes = Column(Text)
+    is_customer = Column(Boolean, default=False)
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow,
+                        onupdate=datetime.utcnow)
+
+
+class EventType(str, enum.Enum):
+    """Event type enumeration"""
+    MEETING = "meeting"
+    CALL = "call"
+    DEMO = "demo"
+    FOLLOWUP = "followup"
+    OTHER = "other"
+
+
+class CalendarEvent(Base):
+    """Calendar Events"""
+    __tablename__ = "calendar_events"
+
+    id = Column(Integer, primary_key=True, index=True)
+    title = Column(String(200), nullable=False)
+    description = Column(Text)
+    event_type = Column(String(50), default="meeting")
+    start_time = Column(DateTime, nullable=False)
+    end_time = Column(DateTime, nullable=False)
+    location = Column(String(200))
+    organizer_id = Column(Integer, ForeignKey("users.id"))
+    attendees = Column(Text)  # Comma-separated employee IDs
+    is_all_day = Column(Boolean, default=False)
+    reminder_minutes = Column(Integer, default=15)
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow,
+                        onupdate=datetime.utcnow)
+
+    organizer = relationship("User", foreign_keys=[organizer_id])
+
+
+class Warehouse(Base):
+    """Warehouses for inventory management"""
+    __tablename__ = "warehouses"
+
+    id = Column(Integer, primary_key=True, index=True)
+    name = Column(String(200), nullable=False)
+    code = Column(String(20), unique=True)
+    address = Column(Text)
+    city = Column(String(100))
+    state = Column(String(100))
+    pincode = Column(String(20))
+    manager_id = Column(Integer, ForeignKey("employees.id"))
+    capacity = Column(Integer, default=0)
+    is_active = Column(Boolean, default=True)
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+    manager = relationship("Employee", foreign_keys=[manager_id])
+
+
+class AssetCategory(str, enum.Enum):
+    """Asset category enumeration"""
+    ELECTRONICS = "electronics"
+    FURNITURE = "furniture"
+    VEHICLE = "vehicle"
+    MACHINERY = "machinery"
+    OFFICE_EQUIPMENT = "office_equipment"
+    SOFTWARE = "software"
+    OTHER = "other"
+
+
+class AssetStatus(str, enum.Enum):
+    """Asset status enumeration"""
+    AVAILABLE = "available"
+    IN_USE = "in_use"
+    MAINTENANCE = "maintenance"
+    RETIRED = "retired"
+
+
+class Asset(Base):
+    """Company Assets"""
+    __tablename__ = "assets"
+
+    id = Column(Integer, primary_key=True, index=True)
+    name = Column(String(200), nullable=False)
+    asset_code = Column(String(50), unique=True)
+    category = Column(String(50), default="other")
+    description = Column(Text)
+    purchase_date = Column(Date)
+    purchase_price = Column(Float, default=0)
+    current_value = Column(Float, default=0)
+    status = Column(String(50), default="available")
+    assigned_to_id = Column(Integer, ForeignKey("employees.id"), nullable=True)
+    warehouse_id = Column(Integer, ForeignKey("warehouses.id"), nullable=True)
+    serial_number = Column(String(100))
+    warranty_expiry = Column(Date)
+    notes = Column(Text)
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow,
+                        onupdate=datetime.utcnow)
+
+    assigned_to = relationship("Employee", foreign_keys=[assigned_to_id])
+    warehouse = relationship("Warehouse", foreign_keys=[warehouse_id])
+
+
+class ContractStatus(str, enum.Enum):
+    """Contract status enumeration"""
+    DRAFT = "draft"
+    ACTIVE = "active"
+    EXPIRED = "expired"
+    TERMINATED = "terminated"
+    RENEWED = "renewed"
+
+
+class Contract(Base):
+    """Contracts Management"""
+    __tablename__ = "contracts"
+
+    id = Column(Integer, primary_key=True, index=True)
+    contract_number = Column(String(50), unique=True, nullable=False)
+    title = Column(String(200), nullable=False)
+    contract_type = Column(String(50))  # vendor, client, employee, lease
+    vendor_id = Column(Integer, ForeignKey("suppliers.id"), nullable=True)
+    client_name = Column(String(200))
+    start_date = Column(Date, nullable=False)
+    end_date = Column(Date, nullable=False)
+    value = Column(Float, default=0)
+    status = Column(String(50), default="draft")
+    description = Column(Text)
+    terms = Column(Text)
+    created_by_id = Column(Integer, ForeignKey("users.id"))
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow,
+                        onupdate=datetime.utcnow)
+
+    vendor = relationship("Supplier", foreign_keys=[vendor_id])
+    created_by = relationship("User", foreign_keys=[created_by_id])
+
+
+class InvoiceStatus(str, enum.Enum):
+    """Invoice status enumeration"""
+    DRAFT = "draft"
+    SENT = "sent"
+    PAID = "paid"
+    OVERDUE = "overdue"
+    CANCELLED = "cancelled"
+
+
+class Invoice(Base):
+    """Invoices Management"""
+    __tablename__ = "invoices"
+
+    id = Column(Integer, primary_key=True, index=True)
+    invoice_number = Column(String(50), unique=True, nullable=False)
+    customer_name = Column(String(200))
+    customer_email = Column(String(100))
+    customer_address = Column(Text)
+    invoice_date = Column(Date, nullable=False)
+    due_date = Column(Date)
+    subtotal = Column(Float, default=0)
+    tax_amount = Column(Float, default=0)
+    total_amount = Column(Float, default=0)
+    status = Column(String(50), default="draft")
+    notes = Column(Text)
+    contract_id = Column(Integer, ForeignKey("contracts.id"), nullable=True)
+    created_by_id = Column(Integer, ForeignKey("users.id"))
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow,
+                        onupdate=datetime.utcnow)
+
+    contract = relationship("Contract", foreign_keys=[contract_id])
+    created_by = relationship("User", foreign_keys=[created_by_id])
+
+
+class InvoiceItem(Base):
+    """Invoice line items"""
+    __tablename__ = "invoice_items"
+
+    id = Column(Integer, primary_key=True, index=True)
+    invoice_id = Column(Integer, ForeignKey("invoices.id"), nullable=False)
+    description = Column(String(500))
+    quantity = Column(Float, default=1)
+    unit_price = Column(Float, default=0)
+    total = Column(Float, default=0)
+
+    invoice = relationship("Invoice", foreign_keys=[invoice_id])
+
+
+# ==================== ETL/DATA PROCESSING MODELS ====================
+
+class ETLProject(Base):
+    """ETL Projects for data processing"""
+    __tablename__ = "etl_projects"
+
+    id = Column(Integer, primary_key=True, index=True)
+    name = Column(String(200), nullable=False)
+    description = Column(Text)
+    created_by_id = Column(Integer, ForeignKey("users.id"))
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow,
+                        onupdate=datetime.utcnow)
+
+    created_by = relationship("User", foreign_keys=[created_by_id])
+
+
+class ETLDataSet(Base):
+    """Imported datasets"""
+    __tablename__ = "etl_datasets"
+
+    id = Column(Integer, primary_key=True, index=True)
+    project_id = Column(Integer, ForeignKey("etl_projects.id"))
+    name = Column(String(200), nullable=False)
+    file_name = Column(String(200))
+    file_path = Column(String(500))
+    row_count = Column(Integer, default=0)
+    column_count = Column(Integer, default=0)
+    columns = Column(JSON, default=dict)  # {name: type}
+    imported_at = Column(DateTime, default=datetime.utcnow)
+
+    project = relationship("ETLProject", foreign_keys=[project_id])
+
+
+class ETLTransformation(Base):
+    """Data transformations applied"""
+    __tablename__ = "etl_transformations"
+
+    id = Column(Integer, primary_key=True, index=True)
+    dataset_id = Column(Integer, ForeignKey("etl_datasets.id"), nullable=False)
+    transformation_type = Column(String(50))  # clean, filter, aggregate, join
+    config = Column(JSON, default=dict)  # transformation parameters
+    result_summary = Column(Text)
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+    dataset = relationship("ETLDataSet", foreign_keys=[dataset_id])
+
+
+# ==================== COMPANY DOCUMENTS MODELS ====================
+
+class CompanyDocumentCategory(str, enum.Enum):
+    """Document category enumeration"""
+    POLICY = "policy"
+    HR = "hr"
+    FINANCE = "finance"
+    LEGAL = "legal"
+    OPERATIONS = "operations"
+    MARKETING = "marketing"
+    IT = "it"
+    OTHER = "other"
+
+
+class CompanyDocument(Base):
+    """Company Documents for internal document management"""
+    __tablename__ = "company_documents"
+
+    id = Column(Integer, primary_key=True, index=True)
+    title = Column(String(200), nullable=False)
+    description = Column(Text)
+    category = Column(String(50), default="other")
+    file_name = Column(String(200))
+    file_path = Column(String(500))
+    file_type = Column(String(50))
+    file_size = Column(Integer)
+    version = Column(String(20), default="1.0")
+    is_active = Column(Boolean, default=True)
+    uploaded_by_id = Column(Integer, ForeignKey("users.id"))
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow,
+                        onupdate=datetime.utcnow)
+
+    uploaded_by = relationship("User", foreign_keys=[uploaded_by_id])

@@ -32,6 +32,7 @@ Vernika/
 │   ├── teams_screen.py
 │   ├── inventory_screen.py
 │   ├── transactions_screen.py
+│   ├── crm_screen.py       # CRM Dashboard
 │   ├── mail_screen.py
 │   └── ...                # Many more screens
 ├── utils/                 # Utility functions
@@ -71,6 +72,7 @@ Vernika/
 - 📦 Inventory Management
 - 📧 Email Integration
 - 📈 Reports & Analytics
+- 🤝 CRM (Leads, Contacts, Calendar, Vendors, Warehouses, Assets, Contracts, Invoices)
 
 ### Database
 - 🗄️ Supabase (PostgreSQL) with RLS

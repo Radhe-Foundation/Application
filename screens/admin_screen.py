@@ -170,6 +170,7 @@ class AdminScreen(ft.Container):
             (19, "Transactions", ft.Icons.PAYMENT, ft.Icons.PAYMENT_OUTLINED),
             (20, "Time Track", ft.Icons.TIMER, ft.Icons.TIMER_OUTLINED),
             (21, "Storage", ft.Icons.CLOUD, ft.Icons.CLOUD_OUTLINED),
+            (22, "CRM", ft.Icons.PEOPLE, ft.Icons.PEOPLE_OUTLINED),
         ]
 
         # Track selected index
@@ -446,6 +447,10 @@ class AdminScreen(ft.Container):
             return self._wrap_with_admin_header("Time Tracking", time_content)
         elif index == 21:
             return self._create_storage_tab()
+        elif index == 22:
+            from screens.crm_screen import CRMScreen
+            crm_content = CRMScreen(self.page, self.current_user)
+            return self._wrap_with_admin_header("CRM Dashboard", crm_content)
         return self._create_dashboard_tab()
 
     def _get_tab_content(self, index):
@@ -473,10 +478,19 @@ class AdminScreen(ft.Container):
             self._create_transactions_tab,
             self._create_time_tracking_tab,
             self._create_storage_tab,
+            self._create_crm_tab,
         ]
         if 0 <= index < len(tab_methods):
             return tab_methods[index]()
         return self._create_dashboard_tab()
+
+    def _create_crm_tab(self):
+        """Create CRM tab"""
+        from screens.crm_screen import CRMScreen
+        return ft.Container(
+            content=CRMScreen(self._page, self.current_user),
+            expand=True
+        )
 
     def _create_header(self):
         """Create header with user info, toggle button and logout"""
