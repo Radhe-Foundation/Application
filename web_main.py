@@ -105,5 +105,5 @@ if __name__ == "__main__":
     import sys
     port = int(os.getenv("PORT", "8080"))
     logger.info(f"Starting Vernika HRA on port {port}")
-    # Use threaded mode for better compatibility
-    ft.app(target=main, host="0.0.0.0", port=port, thread=True)
+    # Use run() for Flet 0.80.0+ (main as positional argument)
+    ft.run(main, host="0.0.0.0", port=port)
