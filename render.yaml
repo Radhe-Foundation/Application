@@ -8,11 +8,18 @@ services:
       - key: PYTHON_VERSION
         value: "3.11"
       - key: DATABASE_URL
-        sync: false
+        value: "postgresql://postgres:%21vrMVXZrv84wmKH@db.tbofjzzufxqbwfmfapxh.supabase.co:5432/postgres"
       - key: SUPABASE_URL
-        sync: false
+        value: "https://tbofjzzufxqbwfmfapxh.supabase.co"
       - key: SUPABASE_KEY
-        sync: false
+        value: "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InRib2Zqenp1ZnhxYndmbWZhcHhoIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzE5NTAwMDQsImV4cCI6MjA4NzUyNjAwNH0.lzMhQNeNYhXK42id-AH0A4tGxcnbeSPNra6ObOLW-lk"
       - key: SECRET_KEY
-        sync: false
-
+        value: "vernika-production-secret-key-2024"
+      - key: CORS_ORIGINS
+        value: "*"
+      - key: ENVIRONMENT
+        value: "production"
+      - key: THEME_MODE
+        value: "light"
+      - key: DB_SSL_MODE
+        value: "require"
