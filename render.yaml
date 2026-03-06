@@ -3,7 +3,7 @@ services:
     name: vernika-hra
     env: python
     buildCommand: pip install -r requirements-web.txt
-    startCommand: python -m flet web_main
+    startCommand: python web_main.py
     envVars:
       - key: PYTHON_VERSION
         value: "3.11"

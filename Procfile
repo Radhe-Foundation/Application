@@ -1,1 +1,1 @@
-web: python -m flet web_main
+web: python web_main.py
