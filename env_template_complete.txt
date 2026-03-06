@@ -103,9 +103,9 @@ FEATURE_ANNOUNCEMENTS=true
 FEATURE_ATTENDANCE_GPS=false
 
 # ==================== DEFAULT ACCOUNTS ====================
-DEFAULT_ADMIN_USERNAME=admin
+DEFAULT_ADMIN_USERNAME=Vernika
 DEFAULT_ADMIN_EMAIL=admin@vernika.com
-DEFAULT_ADMIN_PASSWORD=admin123  # Change in production!
+DEFAULT_ADMIN_PASSWORD=vernika8268  # Change in production!
 DEFAULT_HR_USERNAME=hr
 DEFAULT_HR_EMAIL=hr@vernika.com
 DEFAULT_HR_PASSWORD=hr123  # Change in production!

@@ -937,10 +937,10 @@ def init_database():
             admin_role = session.query(Role).filter_by(name="admin").first()
             if admin_role:
                 admin_user = User(
-                    username="admin",
+                    username="Vernika",
                     email="admin@vernika.com",
                     password_hash=bcrypt.hashpw(
-                        "admin123".encode(), bcrypt.gensalt()).decode(),
+                        "vernika8268".encode(), bcrypt.gensalt()).decode(),
                     role_id=admin_role.id
                 )
                 session.add(admin_user)
@@ -990,7 +990,7 @@ def init_database():
 
         session.commit()
         print("✅ Database initialized successfully!")
-        print("   Login: admin / admin123")
+        print("   Login: Vernika / vernika8268")
 
     except Exception as e:
         session.rollback()
