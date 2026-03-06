@@ -1,0 +1,26 @@
+# Deta Space Configuration
+# https://deta.space/docs/en/basics/builder
+
+name: vernika-hra
+description: Vernika HRA - Human Resource Management System
+icon: ./assets/logo/Vernikalogo.png
+
+# Builder configuration
+builder: python
+
+# Python configuration
+python:
+  version: "3.11"
+  requirements:
+    - ./requirements-web.txt
+
+# Run configuration  
+run: "gunicorn --bind 0.0.0.0:$PORT web_main:main"
+
+# Hardware
+# heap: "512Mi"  # Optional: adjust memory
+# cpu: "0.25"    # Optional: adjust CPU
+
+# Public HTTP endpoint
+public: true
+

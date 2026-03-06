@@ -1,0 +1,37 @@
+# Vernika HRA - Web Deployment Dependencies
+# For Deta Space, Vercel, Render, Railway
+
+# GUI Framework with web support
+flet[web]>=0.25.0
+
+# Database
+sqlalchemy>=2.0.0
+psycopg2-binary>=2.9.0
+
+# Authentication
+bcrypt>=4.0.0
+python-jose[cryptography]>=3.3.0
+passlib[bcrypt]>=1.7.4
+
+# Configuration
+python-dotenv>=1.0.0
+
+# Image Processing
+pillow>=10.0.0
+
+# Date/Time
+python-dateutil>=2.8.2
+
+# Utilities
+pydantic>=2.0.0
+email-validator>=2.0.0
+
+# Optional: For Excel export
+openpyxl>=3.1.0
+
+# Optional: For PDF generation
+reportlab>=4.0.0
+
+# For web server (Deta Space)
+gunicorn>=21.0.0
+
