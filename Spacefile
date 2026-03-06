@@ -15,7 +15,7 @@ python:
     - ./requirements-web.txt
 
 # Run configuration  
-run: "gunicorn --bind 0.0.0.0:$PORT web_main:main"
+run: "python -m flet web_main"
 
 # Hardware
 # heap: "512Mi"  # Optional: adjust memory
