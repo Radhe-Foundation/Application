@@ -80,7 +80,7 @@ flet build web --publish --domain "your-domain.com"
 
 ### Method 2: Build and Host on Railway/Render
 
-#### Step 1: Create `requirements-deploy.txt`
+#### Step 1: Create `requirements-web.txt`
 ```
 flet[web]>=0.25.0
 sqlalchemy>=2.0.0
@@ -93,12 +93,16 @@ pillow>=10.0.0
 python-dateutil>=2.8.2
 pydantic>=2.0.0
 email-validator>=2.0.0
-gunicorn>=21.0.0
 ```
 
 #### Step 2: Create `Procfile`
 ```
-web: flet web_main.py --port $PORT
+web: python -m flet web_main
+```
+
+**Note for Render:** If you created the service manually in Render dashboard, the YAML config may be cached. Go to your service settings in Render and ensure the "Start Command" is set to:
+```
+python -m flet web_main
 ```
 
 #### Step 3: Deploy to Railway
