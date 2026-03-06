@@ -105,4 +105,5 @@ if __name__ == "__main__":
     import sys
     port = int(os.getenv("PORT", "8080"))
     logger.info(f"Starting Vernika HRA on port {port}")
-    ft.app(target=main, host="0.0.0.0", port=port)
+    # Use threaded mode for better compatibility
+    ft.app(target=main, host="0.0.0.0", port=port, thread=True)
