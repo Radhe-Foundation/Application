@@ -7,7 +7,6 @@ Updated to use REST API directly for more reliable uploads
 import os
 import uuid
 import logging
-import requests
 from typing import Optional, Tuple
 from datetime import datetime
 
@@ -17,6 +16,7 @@ try:
     REQUESTS_AVAILABLE = True
 except ImportError:
     REQUESTS_AVAILABLE = False
+    requests = None
     print("WARNING: 'requests' module not installed. File uploads to Supabase will not work.")
 
 from config import SUPABASE_URL, SUPABASE_KEY, SUPABASE_STORAGE_URL, SUPABASE_STORAGE_BUCKET
@@ -51,6 +51,10 @@ class SupabaseStorage:
 
         if not SUPABASE_URL or not SUPABASE_KEY:
             print("[Storage] Supabase not configured")
+            return
+
+        if not REQUESTS_AVAILABLE or requests is None:
+            print("[Storage] requests module not available")
             return
 
         # Check if bucket exists by testing with a simple request
@@ -105,6 +109,9 @@ class SupabaseStorage:
         """
         if not self.available:
             return False, "Supabase storage not available", None
+
+        if not REQUESTS_AVAILABLE or requests is None:
+            return False, "requests module not installed", None
 
         if not os.path.exists(file_path):
             return False, f"File not found: {file_path}", None
@@ -166,6 +173,9 @@ class SupabaseStorage:
         """
         if not self.available:
             return False, "Supabase storage not available", None
+
+        if not REQUESTS_AVAILABLE or requests is None:
+            return False, "requests module not installed", None
 
         try:
             # Generate unique filename

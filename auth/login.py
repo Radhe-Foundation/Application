@@ -6,7 +6,16 @@ from database.models import User
 from database.operations import get_user_by_username, create_audit_log
 from config import ALGORITHM, ACCESS_TOKEN_EXPIRE_MINUTES, SECRET_KEY
 from datetime import datetime, timedelta
-import jwt  # Use PyJWT directly instead of python-jose
+
+# Try to import PyJWT, fall back to python-jose if not available
+try:
+    import jwt
+except ImportError:
+    try:
+        from jose import jwt  # type: ignore
+    except ImportError:
+        jwt = None
+        print("WARNING: Neither PyJWT nor python-jose is installed. JWT functionality will not work.")
 
 
 class LoginResult:
@@ -88,6 +97,10 @@ def create_access_token(data: dict, expires_delta: timedelta = None) -> str:
     """
     Create JWT access token
     """
+    if jwt is None:
+        raise ImportError(
+            "JWT library not installed. Please install PyJWT or python-jose")
+
     to_encode = data.copy()
 
     if expires_delta:
@@ -105,6 +118,10 @@ def decode_token(token: str) -> dict:
     """
     Decode and validate JWT token
     """
+    if jwt is None:
+        print("WARNING: JWT library not installed. Token validation failed.")
+        return None
+
     try:
         payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
         return payload

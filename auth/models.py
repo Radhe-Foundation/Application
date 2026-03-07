@@ -9,7 +9,17 @@ from datetime import datetime, timedelta
 from typing import Optional, Dict, Any
 from dataclasses import dataclass, field
 from enum import Enum
-import jwt
+
+# Try to import PyJWT, fall back to python-jose if not available
+try:
+    import jwt
+except ImportError:
+    try:
+        from jose import jwt  # type: ignore
+    except ImportError:
+        jwt = None
+        print("WARNING: Neither PyJWT nor python-jose is installed. JWT functionality will not work.")
+
 import bcrypt
 from sqlalchemy import Column, Integer, String, Boolean, DateTime, ForeignKey, Text
 from sqlalchemy.orm import relationship
@@ -264,6 +274,10 @@ class AuthService:
         Returns:
             str: JWT token
         """
+        if jwt is None:
+            raise ImportError(
+                "JWT library not installed. Please install PyJWT or python-jose")
+
         payload = {
             "user_id": user_id,
             "username": username,
@@ -284,12 +298,14 @@ class AuthService:
         Returns:
             TokenPayload or None
         """
+        if jwt is None:
+            print("WARNING: JWT library not installed. Token decode failed.")
+            return None
+
         try:
             payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
             return TokenPayload.from_dict(payload)
-        except jwt.ExpiredSignatureError:
-            return None
-        except jwt.InvalidTokenError:
+        except Exception:
             return None
 
     @staticmethod
