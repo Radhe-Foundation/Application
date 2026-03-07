@@ -4,13 +4,22 @@ Handles file uploads to Supabase Storage for documents, images, and other files
 Updated to use REST API directly for more reliable uploads
 """
 
-from config import SUPABASE_URL, SUPABASE_KEY, SUPABASE_STORAGE_URL, SUPABASE_STORAGE_BUCKET
 import os
 import uuid
 import logging
 import requests
 from typing import Optional, Tuple
 from datetime import datetime
+
+# Check for requests - required for Supabase Storage
+try:
+    import requests
+    REQUESTS_AVAILABLE = True
+except ImportError:
+    REQUESTS_AVAILABLE = False
+    print("WARNING: 'requests' module not installed. File uploads to Supabase will not work.")
+
+from config import SUPABASE_URL, SUPABASE_KEY, SUPABASE_STORAGE_URL, SUPABASE_STORAGE_BUCKET
 
 logger = logging.getLogger(__name__)
 

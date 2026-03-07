@@ -24,11 +24,21 @@ def main(page: ft.Page):
 
         page.title = f"{APP_NAME} v{APP_VERSION}"
 
-        # Responsive window settings
-        page.window.min_width = 1024
-        page.window.min_height = 768
+        # Responsive window settings for web - adaptive to device
+        page.window.min_width = 320  # Support mobile
+        page.window.min_height = 568
         page.window.resizable = True
-        page.window.maximized = True
+        page.window.maximized = False  # Don't force maximize on web
+
+        # Set initial size based on viewport (web handles this automatically)
+        try:
+            # For web, Flet will use viewport size
+            page.window.width = min(1400, page.window_width if hasattr(
+                page, 'window_width') else 1400)
+            page.window.height = min(900, page.window_height if hasattr(
+                page, 'window_height') else 900)
+        except:
+            pass
 
         page.fonts = {
             "Roboto": "https://fonts.googleapis.com/css2?family=Roboto:wght@400;500;700&display=swap"

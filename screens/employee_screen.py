@@ -13,29 +13,10 @@ from database.operations import (
     get_employee_by_user_id,
 )
 
-# Logo path resolution - similar to login_screen
-
 
 def get_logo_path():
-    """Get the absolute path to the Vernikalogo"""
-    # Try multiple paths to find the logo
-    possible_paths = [
-        os.path.join(os.path.dirname(os.path.abspath(__file__)),
-                     "..", "assets", "logo", "Vernikalogo.png"),
-        os.path.join(os.path.dirname(os.path.abspath(__file__)),
-                     "assets", "logo", "Vernikalogo.png"),
-        "assets/logo/Vernikalogo.png",
-    ]
-
-    for logo_path in possible_paths:
-        if os.path.exists(logo_path):
-            # Use forward slashes for Flet with leading slash
-            flet_path = logo_path.replace("\\", "/")
-            if not flet_path.startswith("/"):
-                flet_path = "/" + flet_path
-            return flet_path
-
-    # Fallback to relative path
+    """Get the absolute path to the Vernikalogo - works in both desktop and web"""
+    # For web deployment, use absolute path from root
     return "/assets/logo/Vernikalogo.png"
 
 
@@ -88,6 +69,27 @@ class EmployeeScreen(ft.Container):
 
     def _build_content(self):
         """Build the employee content with custom sidebar navigation - matching admin screen style"""
+
+        # Get window width for responsive design
+        try:
+            window_width = getattr(self._page, 'window_width', 1200)
+        except:
+            window_width = 1200
+
+        # Determine responsive values
+        is_mobile = window_width < 600
+        is_tablet = window_width < 900
+
+        # Responsive sidebar width
+        if is_mobile:
+            sidebar_width = 0  # Hidden on mobile
+            show_labels = False
+        elif is_tablet:
+            sidebar_width = 70  # Icon only on tablet
+            show_labels = False
+        else:
+            sidebar_width = 180
+            show_labels = True
 
         # Create toggle button for navigation rail
         def toggle_nav_rail(e):
@@ -179,27 +181,32 @@ class EmployeeScreen(ft.Container):
                 ink=True,
             )
 
-        # Create nav items
+        # Create nav items with responsive labels
         for idx, label, sel_icon, unsel_icon in nav_data:
             nav_items.append(create_nav_item(idx, label, sel_icon, unsel_icon))
 
-        # Build sidebar with logo at top and scrollable nav items
+        # Build sidebar with logo at top and scrollable nav items - responsive
+        # Hide sidebar on mobile, show icon-only on tablet, full on desktop
+        logo_width = 80 if is_mobile else (90 if is_tablet else 100)
+        logo_height = 50 if is_mobile else (55 if is_tablet else 60)
+
         sidebar = ft.Container(
-            width=180,
+            width=sidebar_width,
             bgcolor=SURFACE,
             content=ft.Column([
-                # Logo at top center
+                # Logo at top center - hide on mobile
                 ft.Container(
                     content=ft.Image(
                         src=get_logo_path(),
-                        width=100,
-                        height=60,
+                        width=logo_width,
+                        height=logo_height,
                     ),
                     alignment=ft.alignment.Alignment(0, 0),
                     padding=ft.padding.only(top=15, bottom=10),
+                    visible=not is_mobile,  # Hide logo on mobile
                 ),
-                # Divider below logo
-                ft.Divider(height=1),
+                # Divider below logo - hide on mobile
+                ft.Divider(height=1, visible=not is_mobile),
                 # Navigation items in scrollable list
                 ft.ListView(
                     controls=nav_items,
@@ -208,7 +215,7 @@ class EmployeeScreen(ft.Container):
                     expand=True,
                 ),
             ], spacing=0),
-            visible=self._nav_rail_visible,
+            visible=self._nav_rail_visible and sidebar_width > 0,
         )
 
         # Build the main content based on selected index

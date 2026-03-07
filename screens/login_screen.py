@@ -11,6 +11,12 @@ from database.session_manager import get_session, get_db_session, check_db_conne
 from database.operations import authenticate_user
 
 
+def get_logo_src() -> str:
+    """Get logo source path that works in both desktop and web"""
+    # For web deployment, use absolute path from root
+    return "/assets/logo/Vernikalogo.png"
+
+
 class LoginScreen(ft.Container):
 
     def __init__(self, page: ft.Page):
@@ -19,76 +25,115 @@ class LoginScreen(ft.Container):
         self.expand = True
         self.alignment = ft.alignment.Alignment(0, 0)
 
+        # Store responsive values
+        self._is_mobile = self._check_mobile()
+        self._is_tablet = self._check_tablet()
+
         # Check theme
         self.is_dark = False  # Use light theme by default
         self._init_components()
         self.content = self.build_ui()
         print("✓ LoginScreen initialized")
 
+    def _check_mobile(self) -> bool:
+        """Check if running on mobile"""
+        try:
+            width = getattr(self._page, 'window_width', 1200)
+            return width < 600
+        except:
+            return False
+
+    def _check_tablet(self) -> bool:
+        """Check if running on tablet"""
+        try:
+            width = getattr(self._page, 'window_width', 1200)
+            return 600 <= width < 900
+        except:
+            return False
+
+    def _get_window_width(self) -> float:
+        """Get window width safely"""
+        try:
+            return getattr(self._page, 'window_width', 1200)
+        except:
+            return 1200
+
+    def _get_window_height(self) -> float:
+        """Get window height safely"""
+        try:
+            return getattr(self._page, 'window_height', 800)
+        except:
+            return 800
+
     def _init_components(self):
-        """Initialize UI components"""
+        """Initialize UI components - responsive sizing"""
 
-        # Logo - BIG size as requested - use absolute path for reliability
-        import os
+        window_width = self._get_window_width()
 
-        # Try multiple path options to find the logo
-        base_path = os.path.dirname(os.path.abspath(__file__))
-        project_root = os.path.dirname(base_path)
+        # Responsive sizing
+        if window_width < 600:  # Mobile
+            logo_size = 120
+            title_size = 28
+            welcome_size = 22
+            form_width = 280
+            field_height = 48
+            btn_height = 45
+            icon_size = 20
+        elif window_width < 900:  # Tablet
+            logo_size = 160
+            title_size = 32
+            welcome_size = 24
+            form_width = 320
+            field_height = 50
+            btn_height = 48
+            icon_size = 22
+        else:  # Desktop
+            logo_size = 250
+            title_size = 36
+            welcome_size = 28
+            form_width = 320
+            field_height = 52
+            btn_height = 50
+            icon_size = 24
 
-        possible_paths = [
-            os.path.join(project_root, "assets", "logo", "Vernikalogo.png"),
-            os.path.join(os.path.dirname(os.path.abspath(__file__)),
-                         "..", "assets", "logo", "Vernikalogo.png"),
-            "assets/logo/Vernikalogo.png",
-        ]
+        self._logo_size = logo_size
+        self._form_width = form_width
+        self._field_height = field_height
+        self._btn_height = btn_height
+        self._icon_size = icon_size
 
-        logo_content = None
-        for logo_path in possible_paths:
-            if os.path.exists(logo_path):
-                # Use forward slashes for Flet
-                flet_path = logo_path.replace("\\", "/")
-                if not flet_path.startswith("/"):
-                    flet_path = "/" + flet_path
-                logo_content = ft.Image(
-                    src=flet_path,
-                    width=250,
-                    height=250,
-                )
-                print(f"Logo found at: {logo_path}")
-                break
-
-        if logo_content is None:
-            # Fallback - show big V letter
-            logo_content = ft.Text(
-                "V", size=100, color="white", weight=ft.FontWeight.BOLD)
-
+        # Logo - responsive size
         self.logo = ft.Container(
-            width=250,
-            height=250,
-            content=logo_content,
+            width=logo_size,
+            height=logo_size,
+            content=ft.Image(
+                src=get_logo_src(),
+                width=logo_size,
+                height=logo_size,
+            ),
             border_radius=30,
             bgcolor=ft.Colors.with_opacity(0.15, ft.Colors.WHITE),
             alignment=ft.alignment.Alignment(0, 0),
             margin=0,
         )
 
-        # App title - VERNIKASTORE
+        # App title - VERNIKASTORE - responsive size
         self.app_title = ft.Text(
             "VERNIKASTORE",
-            size=36,
+            size=title_size,
             weight=ft.FontWeight.W_900,
             color=ft.Colors.WHITE,
         )
 
-        # Welcome text - WELCOME BACK
+        # Welcome text - WELCOME BACK - responsive size
         self.welcome_title = ft.Text(
             "WELCOME BACK",
-            size=28,
+            size=welcome_size,
             weight=ft.FontWeight.W_600,
             color=ft.Colors.WHITE,
         )
 
-        # Welcome subtitle - simplified
+        # Welcome subtitle - simplified - responsive size
         self.welcome_subtitle = ft.Text(
             "Sign in to continue",
             size=14,
@@ -98,7 +143,7 @@ class LoginScreen(ft.Container):
         # Username field - responsive (expand instead of fixed width)
         self.username = ft.TextField(
             label="Username or Email",
-            height=52,
+            height=field_height,
             prefix_icon=ft.Icons.PERSON_OUTLINE,
             border_radius=10,
             border_color=ft.Colors.with_opacity(0.3, ft.Colors.GREY_500),
@@ -114,7 +159,7 @@ class LoginScreen(ft.Container):
         # Password field - responsive
         self.password = ft.TextField(
             label="Password",
-            height=52,
+            height=field_height,
             password=True,
             can_reveal_password=True,
             prefix_icon=ft.Icons.LOCK_OUTLINE,
@@ -148,7 +193,7 @@ class LoginScreen(ft.Container):
         self.sign_in_btn = ft.Container(
             content=ft.Text("Sign In", size=15,
                             weight=ft.FontWeight.W_500, color=ft.Colors.WHITE),
-            height=50,
+            height=btn_height,
             bgcolor=PRIMARY,
             border_radius=10,
             alignment=ft.alignment.Alignment(0, 0),
@@ -458,6 +503,27 @@ class LoginScreen(ft.Container):
     def build_ui(self):
         """Build the complete UI with everything perfectly centered and responsive"""
 
+        window_width = self._get_window_width()
+        is_mobile = window_width < 600
+        is_tablet = window_width < 900
+
+        # Responsive padding and sizing
+        if is_mobile:
+            horiz_padding = 15
+            form_width = window_width - 30
+            left_panel_visible = True  # Show logo on mobile too
+            panel_ratio = 0.35  # Left panel takes 35% on mobile
+        elif is_tablet:
+            horiz_padding = 20
+            form_width = 300
+            left_panel_visible = True
+            panel_ratio = 0.4
+        else:
+            horiz_padding = 30
+            form_width = 320
+            left_panel_visible = True
+            panel_ratio = 0.5
+
         # Left panel - clean centered design with proper logo centering
         left_panel = ft.Container(
             expand=True,
@@ -473,21 +539,25 @@ class LoginScreen(ft.Container):
                     content=ft.Column(
                         controls=[
                             # Top spacing for vertical centering - adjusted for better centering
-                            ft.Container(height=60),
+                            ft.Container(height=60) if not is_mobile else ft.Container(
+                                height=30),
                             # Logo container - perfectly centered
                             ft.Container(
                                 content=self.logo,
                                 alignment=ft.alignment.Alignment(0, 0),
                             ),
-                            ft.Container(height=25),
+                            ft.Container(height=25) if not is_mobile else ft.Container(
+                                height=15),
                             # App title - centered below logo
-                            self.app_title,
-                            ft.Container(height=15),
+                            self.app_title if left_panel_visible else ft.Container(),
+                            ft.Container(height=15) if not is_mobile else ft.Container(
+                                height=8),
                             # Welcome title - centered
-                            self.welcome_title,
-                            ft.Container(height=8),
+                            self.welcome_title if left_panel_visible else ft.Container(),
+                            ft.Container(height=8) if not is_mobile else ft.Container(
+                                height=5),
                             # Welcome subtitle - centered
-                            self.welcome_subtitle,
+                            self.welcome_subtitle if left_panel_visible else ft.Container(),
                         ],
                         horizontal_alignment=ft.CrossAxisAlignment.CENTER,
                         spacing=0,
@@ -506,13 +576,15 @@ class LoginScreen(ft.Container):
                 content=ft.Column(
                     controls=[
                         # Spacer to push content to center vertically
-                        ft.Container(expand=True),
+                        ft.Container(expand=True) if not is_mobile else ft.Container(
+                            height=20),
                         # Form header - centered
-                        ft.Text("Sign In", size=28,
+                        ft.Text("Sign In", size=28 if not is_mobile else 24,
                                 weight=ft.FontWeight.BOLD, color="#1A1C1E"),
-                        ft.Text("Enter your credentials", size=14,
+                        ft.Text("Enter your credentials", size=14 if not is_mobile else 12,
                                 color=ft.Colors.GREY_500),
-                        ft.Container(height=25),
+                        ft.Container(height=25) if not is_mobile else ft.Container(
+                            height=20),
                         # Form fields - centered with responsive width
                         ft.Container(
                             content=ft.Column([
@@ -530,28 +602,48 @@ class LoginScreen(ft.Container):
                                 # Sign in button
                                 self.sign_in_btn,
                             ], spacing=0),
-                            width=320,
+                            width=form_width,
                         ),
-                        ft.Container(height=18),
+                        ft.Container(height=18) if not is_mobile else ft.Container(
+                            height=15),
                         # Footer
-                        ft.Container(height=25),
+                        ft.Container(height=25) if not is_mobile else ft.Container(
+                            height=15),
                         self.footer,
                         # Spacer to push content to center vertically
-                        ft.Container(expand=True),
+                        ft.Container(
+                            expand=True) if not is_mobile else ft.Container(),
                     ],
                     horizontal_alignment=ft.CrossAxisAlignment.CENTER,
                 ),
-                padding=ft.padding.symmetric(horizontal=30),
+                padding=ft.padding.symmetric(horizontal=horiz_padding),
             ),
         )
 
-        # Main layout
-        return ft.Row([
-            left_panel,
-            ft.VerticalDivider(width=1, color=ft.Colors.with_opacity(
-                0.1, ft.Colors.GREY_300)),
-            right_panel,
-        ], expand=True)
+        # Main layout - responsive: combine panels on mobile
+        if is_mobile:
+            # On mobile: Stack panels vertically - logo on top, form below
+            return ft.Column([
+                # Left panel (logo) on top
+                ft.Container(
+                    height=window_width * 0.5,  # Square aspect ratio
+                    expand=False,
+                    content=left_panel.content,
+                ),
+                # Right panel (form) below
+                ft.Container(
+                    expand=True,
+                    content=right_panel.content,
+                ),
+            ], spacing=0, expand=True)
+        else:
+            # Desktop/Tablet: Side by side panels
+            return ft.Row([
+                left_panel,
+                ft.VerticalDivider(width=1, color=ft.Colors.with_opacity(
+                    0.1, ft.Colors.GREY_300)),
+                right_panel,
+            ], expand=True)
 
     def login(self, e):
         """Handle login button click using unified SQLAlchemy auth (supports cloud DB)"""

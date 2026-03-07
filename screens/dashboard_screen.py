@@ -121,7 +121,7 @@ class DashboardScreen(ft.Container):
                 # Logo
                 ft.Container(
                     content=ft.Image(
-                        src="assets/logo/Vernikalogo.png",
+                        src="/assets/logo/Vernikalogo.png",
                         width=100,
                         height=60,
                     ),

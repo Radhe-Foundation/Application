@@ -125,6 +125,24 @@ class AdminScreen(ft.Container):
     def _build_content(self):
         """Build the main content with tabs"""
 
+        # Get window width for responsive design
+        try:
+            window_width = getattr(self._page, 'window_width', 1200)
+        except:
+            window_width = 1200
+
+        # Determine responsive values
+        is_mobile = window_width < 600
+        is_tablet = window_width < 900
+
+        # Responsive sidebar width
+        if is_mobile:
+            sidebar_width = 0  # Hidden on mobile
+        elif is_tablet:
+            sidebar_width = 70  # Icon only on tablet
+        else:
+            sidebar_width = 160
+
         # Create toggle button for navigation rail
         def toggle_nav_rail(e):
             self._nav_rail_visible = not self._nav_rail_visible
@@ -213,16 +231,16 @@ class AdminScreen(ft.Container):
         for idx, label, sel_icon, unsel_icon in nav_data:
             nav_items.append(create_nav_item(idx, label, sel_icon, unsel_icon))
 
-        # Build sidebar with scroll
+        # Build sidebar with scroll - responsive width
         sidebar = ft.Container(
-            width=160,
+            width=sidebar_width,
             bgcolor=SURFACE,
             content=ft.ListView(
                 controls=nav_items,
                 spacing=2,
                 padding=10,
             ),
-            visible=self._nav_rail_visible,
+            visible=self._nav_rail_visible and sidebar_width > 0,
         )
 
         # Create tabs with custom sidebar navigation

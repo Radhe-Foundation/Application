@@ -26,6 +26,9 @@ python-dateutil>=2.8.2
 pydantic>=2.0.0
 email-validator>=2.0.0
 
+# HTTP Requests (required for Supabase Storage)
+requests>=2.31.0
+
 # Optional: For Excel export
 openpyxl>=3.1.0
 
