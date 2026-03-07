@@ -190,17 +190,20 @@ class EmployeeScreen(ft.Container):
         logo_width = 50 if is_mobile else (60 if is_tablet else 80)
         logo_height = 40 if is_mobile else (45 if is_tablet else 50)
 
+        # Supabase bucket URL for logo
+        logo_url = "https://tbofjzzufxqbwfmfapxh.supabase.co/storage/v1/object/public/vernika-files/logo/Vernikalogo.png"
+
         sidebar = ft.Container(
             width=sidebar_width,
             bgcolor=SURFACE,
             content=ft.Column([
-                # Logo at top center - hide on mobile, use text on tablet/desktop
+                # Logo at top center - hide on mobile, use image on tablet/desktop
                 ft.Container(
-                    content=ft.Text(
-                        "V",
-                        size=int(logo_width * 0.6),
-                        color=PRIMARY,
-                        weight=ft.FontWeight.BOLD,
+                    content=ft.Image(
+                        src=logo_url,
+                        fit=ft.ImageFit.FIT,
+                        width=logo_width,
+                        height=logo_height,
                     ) if not is_mobile else ft.Container(),
                     alignment=ft.alignment.Alignment(0, 0),
                     padding=ft.padding.only(top=15, bottom=10),

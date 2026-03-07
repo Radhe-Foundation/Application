@@ -113,19 +113,18 @@ class LoginScreen(ft.Container):
         self._btn_height = btn_height
         self._icon_size = icon_size
 
-        # Logo - use big "V" letter that always works without static file serving
+        # Logo - use Supabase bucket URL with proper ImageFit for full fit
         self.logo = ft.Container(
             width=logo_size,
             height=logo_size,
             border_radius=30,
             bgcolor=ft.Colors.with_opacity(0.15, ft.Colors.WHITE),
-            alignment=ft.alignment.Alignment(0, 0),
             margin=0,
-            content=ft.Text(
-                "V",
-                size=int(logo_size * 0.5),
-                color="white",
-                weight=ft.FontWeight.BOLD,
+            content=ft.Image(
+                src="https://tbofjzzufxqbwfmfapxh.supabase.co/storage/v1/object/public/vernika-files/logo/Vernikalogo.png",
+                fit=ft.ImageFit.FIT,
+                width=logo_size,
+                height=logo_size,
             ),
         )
 
