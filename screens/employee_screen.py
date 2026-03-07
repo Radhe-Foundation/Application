@@ -201,7 +201,7 @@ class EmployeeScreen(ft.Container):
                 ft.Container(
                     content=ft.Image(
                         src=logo_url,
-                        fit=ft.ImageFit.FIT,
+                        fit="contain",
                         width=logo_width,
                         height=logo_height,
                     ) if not is_mobile else ft.Container(),
