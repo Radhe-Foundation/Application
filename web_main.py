@@ -44,6 +44,14 @@ def main(page: ft.Page):
             "Roboto": "https://fonts.googleapis.com/css2?family=Roboto:wght@400;500;700&display=swap"
         }
 
+        # Set up assets for web - list of asset paths
+        # These will be served from the web_assets folder when deployed
+        page.assets = [
+            "/assets/logo/Vernikalogo.png",
+            "/assets/profile_photos/",
+            "/assets/documents/",
+        ]
+
         # Check database health
         try:
             from database.session_manager import check_db_connection, get_db_health

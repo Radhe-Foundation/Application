@@ -8,6 +8,8 @@ import flet as ft
 from database.session_manager import get_session, get_db_session
 from database.operations import get_dashboard_stats as get_db_stats
 from auth.role_check import check_admin_access
+# Import web helpers for responsive design
+from utils.web_helpers import adaptive_value, Breakpoints
 
 # Color constants
 PRIMARY = "#2E86AB"
@@ -557,17 +559,34 @@ class AdminScreen(ft.Container):
         stats = self._get_dashboard_stats()
         detailed_stats = self._get_detailed_stats()
 
+        # Get screen width for responsive spacing
+        try:
+            window_width = getattr(self._page, 'window_width', 1200)
+        except:
+            window_width = 1200
+
+        # Responsive spacing
+        if window_width < 600:
+            card_spacing = 10
+            title_size = 20
+        elif window_width < 900:
+            card_spacing = 15
+            title_size = 24
+        else:
+            card_spacing = 20
+            title_size = 28
+
         return ft.Container(
             content=ft.Column([
                 ft.Text(
                     "Admin Dashboard",
-                    size=28,
+                    size=title_size,
                     weight=ft.FontWeight.BOLD,
                     color=PRIMARY
                 ),
                 ft.Container(height=20),
 
-                # Stats Cards Row 1 - Overview
+                # Stats Cards Row 1 - Overview - with wrap for responsiveness
                 ft.Text(
                     "Overview Statistics",
                     size=18,
@@ -584,10 +603,10 @@ class AdminScreen(ft.Container):
                         "Total Employees", str(stats.get('total_employees', 0)), ft.Icons.BADGE, ORANGE_500),
                     self._create_stat_card(
                         "Departments", str(stats.get('departments', 0)), ft.Icons.BUSINESS, TEAL_500),
-                ], spacing=20),
+                ], spacing=card_spacing, wrap=True),
                 ft.Container(height=15),
 
-                # Stats Cards Row 2 - Today's Status
+                # Stats Cards Row 2 - Today's Status - with wrap for responsiveness
                 ft.Row([
                     self._create_stat_card(
                         "Present Today", str(stats.get('present_today', 0)), ft.Icons.CHECK_CIRCLE, SUCCESS),
@@ -597,7 +616,7 @@ class AdminScreen(ft.Container):
                         "Pending Tasks", str(stats.get('pending_tasks', 0)), ft.Icons.PENDING, ORANGE_500),
                     self._create_stat_card(
                         "Positions", str(stats.get('positions', 0)), ft.Icons.WORK, INDIGO_500),
-                ], spacing=20),
+                ], spacing=card_spacing, wrap=True),
 
                 ft.Container(height=30),
                 ft.Divider(),
@@ -656,7 +675,7 @@ class AdminScreen(ft.Container):
                 ft.Divider(),
                 ft.Container(height=20),
 
-                # Quick Actions
+                # Quick Actions - with wrap for responsiveness
                 ft.Text(
                     "Quick Actions",
                     size=20,
@@ -693,7 +712,7 @@ class AdminScreen(ft.Container):
                             15),
                         style=ft.ButtonStyle(bgcolor=TEAL_500, color="white")
                     ),
-                ], spacing=10),
+                ], spacing=10, wrap=True),
 
                 ft.Container(height=30),
                 ft.Divider(),
@@ -708,7 +727,7 @@ class AdminScreen(ft.Container):
                 ),
                 ft.Container(height=15),
 
-                # Row 1: Tasks, Todo, Departments, Attendance
+                # Row 1: Tasks, Todo, Departments, Attendance - with wrap for responsiveness
                 ft.Text("Core Management", size=14,
                         color=TEXT_SECONDARY, weight=ft.FontWeight.W_500),
                 ft.Container(height=8),
@@ -721,10 +740,10 @@ class AdminScreen(ft.Container):
                         "Departments", ft.Icons.BUSINESS, "Departments", 6, GREEN_500),
                     self._create_module_card(
                         "Attendance", ft.Icons.EVENT, "Attendance", 8, BLUE_500),
-                ], spacing=15),
+                ], spacing=15, wrap=True),
 
                 ft.Container(height=15),
-                # Row 2: Leave, Announcements, Teams, Positions
+                # Row 2: Leave, Announcements, Teams, Positions - with wrap for responsiveness
                 ft.Text("HR Management", size=14, color=TEXT_SECONDARY,
                         weight=ft.FontWeight.W_500),
                 ft.Container(height=8),
@@ -737,10 +756,10 @@ class AdminScreen(ft.Container):
                         "Teams", ft.Icons.GROUP, "Team Management", 10, TEAL_500),
                     self._create_module_card(
                         "Positions", ft.Icons.WORK, "Job Positions", 7, INDIGO_500),
-                ], spacing=15),
+                ], spacing=15, wrap=True),
 
                 ft.Container(height=15),
-                # Row 3: Projects, Holidays, Meetings, Settings
+                # Row 3: Projects, Holidays, Meetings, Settings - with wrap for responsiveness
                 ft.Text("Projects & Operations", size=14, color=TEXT_SECONDARY,
                         weight=ft.FontWeight.W_500),
                 ft.Container(height=8),
@@ -753,13 +772,13 @@ class AdminScreen(ft.Container):
                         "Meetings", ft.Icons.VIDEO_CALL, "Schedule Meetings", 13, ORANGE_500),
                     self._create_module_card(
                         "Settings", ft.Icons.SETTINGS, "System Settings", 15, TEAL_500),
-                ], spacing=15),
+                ], spacing=15, wrap=True),
 
                 ft.Container(height=30),
                 ft.Divider(),
                 ft.Container(height=20),
 
-                # Additional Management
+                # Additional Management - with wrap for responsiveness
                 ft.Text(
                     "User Management",
                     size=20,
@@ -772,7 +791,7 @@ class AdminScreen(ft.Container):
                         "Employees", ft.Icons.BADGE, "Employee Mgmt", 5, SUCCESS),
                     self._create_module_card(
                         "Org Tree", ft.Icons.ACCOUNT_TREE, "Organization Tree", 16, INDIGO_500),
-                ], spacing=15),
+                ], spacing=15, wrap=True),
 
             ], scroll=ft.ScrollMode.AUTO),
             padding=ft.padding.all(20)
@@ -905,40 +924,96 @@ class AdminScreen(ft.Container):
         return ft.Column(controls=rows, spacing=8)
 
     def _create_stat_card(self, title: str, value: str, icon_name, color):
-        """Create a statistics card"""
+        """Create a statistics card - responsive based on screen size"""
+        # Get screen width for responsive sizing
+        try:
+            window_width = getattr(self._page, 'window_width', 1200)
+        except:
+            window_width = 1200
+
+        # Responsive sizes
+        if window_width < 600:  # Mobile
+            card_width = None  # Full width
+            icon_size = 28
+            value_size = 24
+            title_size = 12
+            padding = 12
+        elif window_width < 900:  # Tablet
+            card_width = 150
+            icon_size = 32
+            value_size = 26
+            title_size = 13
+            padding = 15
+        else:  # Desktop
+            card_width = 180
+            icon_size = 40
+            value_size = 32
+            title_size = 14
+            padding = 20
+
         return ft.Card(
             content=ft.Container(
                 content=ft.Column([
-                    ft.Icon(icon=icon_name, size=40, color=color),
-                    ft.Text(value, size=32, weight=ft.FontWeight.BOLD),
-                    ft.Text(title, size=14, color=TEXT_SECONDARY),
+                    ft.Icon(icon=icon_name, size=icon_size, color=color),
+                    ft.Text(value, size=value_size, weight=ft.FontWeight.BOLD),
+                    ft.Text(title, size=title_size, color=TEXT_SECONDARY),
                 ], horizontal_alignment=ft.CrossAxisAlignment.CENTER, spacing=5),
-                padding=ft.padding.all(20),
-                width=180,
+                padding=ft.padding.all(padding),
+                width=card_width,
                 alignment=ft.alignment.Alignment(0, 0)
             ),
             elevation=3
         )
 
     def _create_module_card(self, title: str, icon_name, subtitle: str, tab_index: int, color: str):
-        """Create a module shortcut card"""
+        """Create a module shortcut card - responsive based on screen size"""
+        # Get screen width for responsive sizing
+        try:
+            window_width = getattr(self._page, 'window_width', 1200)
+        except:
+            window_width = 1200
+
+        # Responsive sizes
+        if window_width < 600:  # Mobile
+            card_width = None  # Full width
+            icon_size = 28
+            title_size = 14
+            subtitle_size = 10
+            padding = 10
+            btn_height = 28
+        elif window_width < 900:  # Tablet
+            card_width = 130
+            icon_size = 32
+            title_size = 15
+            subtitle_size = 10
+            padding = 12
+            btn_height = 30
+        else:  # Desktop
+            card_width = 150
+            icon_size = 36
+            title_size = 16
+            subtitle_size = 11
+            padding = 15
+            btn_height = 32
+
         return ft.Card(
             content=ft.Container(
                 content=ft.Column([
-                    ft.Icon(icon=icon_name, size=36, color=color),
-                    ft.Text(title, size=16, weight=ft.FontWeight.BOLD),
-                    ft.Text(subtitle, size=11, color=TEXT_SECONDARY),
+                    ft.Icon(icon=icon_name, size=icon_size, color=color),
+                    ft.Text(title, size=title_size, weight=ft.FontWeight.BOLD),
+                    ft.Text(subtitle, size=subtitle_size,
+                            color=TEXT_SECONDARY),
                     ft.Container(height=10),
                     ft.ElevatedButton(
                         "Open",
                         icon=ft.Icons.ARROW_FORWARD,
                         on_click=lambda _: self._navigate_to_tab(tab_index),
                         style=ft.ButtonStyle(bgcolor=color, color="white"),
-                        height=32,
+                        height=btn_height,
                     )
                 ], horizontal_alignment=ft.CrossAxisAlignment.CENTER, spacing=5),
-                padding=ft.padding.all(15),
-                width=150,
+                padding=ft.padding.all(padding),
+                width=card_width,
                 alignment=ft.alignment.Alignment(0, 0)
             ),
             elevation=2

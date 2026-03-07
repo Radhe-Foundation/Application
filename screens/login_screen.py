@@ -13,8 +13,19 @@ from database.operations import authenticate_user
 
 def get_logo_src() -> str:
     """Get logo source path that works in both desktop and web"""
-    # For web deployment, use absolute path from root
-    return "/assets/logo/Vernikalogo.png"
+    import os
+    # Check if running in web mode by checking environment
+    is_web = os.getenv('FLET_WEB', '').lower(
+    ) == 'true' or os.getenv('MODE', '') == 'web'
+
+    # For web deployment, use absolute path from root with web_assets prefix
+    # Flet web serves assets from web_assets folder at root
+    if is_web or os.name == 'nt' == False:
+        # Web mode - use web_assets path
+        return "/web_assets/assets/logo/Vernikalogo.png"
+    else:
+        # Desktop mode - use relative path
+        return "assets/logo/Vernikalogo.png"
 
 
 class LoginScreen(ft.Container):

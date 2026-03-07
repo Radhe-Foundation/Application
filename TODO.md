@@ -1,38 +1,50 @@
-# Vernika Deployment Fixes - TODO
+# Vernika HRA - Fix Tasks
 
-## Issue 1: Missing `requests` module (CRITICAL) ✅ DONE
-- [x] Add requests to requirements-web.txt
+## Task List - COMPLETED
 
-## Issue 2: Logo & Profile Photos Not Visible ✅ DONE
-- [x] Created web_helpers.py for proper URL handling
-- [x] Updated logo paths in login_screen.py to use /assets/logo/Vernikalogo.png
-- [x] Updated logo paths in employee_screen.py to use /assets/logo/Vernikalogo.png
-- [x] Updated logo paths in dashboard_screen.py to use /assets/logo/Vernikalogo.png
+### 1. Responsive Design Fixes ✅
+- [x] Fix admin_screen.py dashboard responsive design
+- [x] Added responsive breakpoints for stat cards (mobile/tablet/desktop)
+- [x] Added responsive breakpoints for module cards
+- [x] Added wrap=True to all rows for auto-wrapping on small screens
+- [x] Added responsive spacing based on screen width
 
-## Issue 3: Responsive Design for All Screen Sizes ✅ DONE
-- [x] Created responsive layout helpers in utils/web_helpers.py
-- [x] Fixed login_screen.py for mobile (combines panels vertically)
-- [x] Fixed employee_screen.py sidebar responsiveness (hidden on mobile, icon-only on tablet)
-- [x] Fixed dashboard_screen.py (sidebar hidden on mobile)
-- [x] Fixed admin_screen.py responsiveness (hidden on mobile, icon-only on tablet)
-- [x] Updated web_main.py for responsive window (min_width=320, min_height=568)
+### 2. Logo & Static Assets Fix ✅
+- [x] Updated login_screen.py logo path detection
+- [x] Added web assets configuration in web_main.py
+- [x] Added page.assets list for asset serving
 
-## Issue 4: Supabase Storage URL Handling ✅ DONE
-- [x] Updated supabase_storage.py to handle web URLs properly
-- [x] Added better error handling for missing requests module
+### 3. Profile Photo Upload Fix
+- [ ] Needs Supabase bucket configuration check
+- [ ] Ensure RLS policies allow uploads
 
-## Summary of Changes Made:
-1. **requirements-web.txt**: Added `requests>=2.31.0`
-2. **utils/web_helpers.py**: New file with responsive helpers
-3. **screens/login_screen.py**: Responsive design with mobile vertical layout
-4. **screens/employee_screen.py**: Responsive sidebar (hidden on mobile)
-5. **screens/dashboard_screen.py**: Fixed logo path
-6. **screens/admin_screen.py**: Responsive sidebar (hidden on mobile)
-7. **web_main.py**: Updated window settings for mobile support
-8. **utils/supabase_storage.py**: Better error handling
+### 4. Error Logging Enhancement
+- [ ] Add error logging improvements
+- [ ] Add request error capture
 
-## To Deploy:
-1. Push changes to GitHub
-2. Render will automatically redeploy
-3. Test on different screen sizes
+---
+
+## Changes Made:
+
+### 1. admin_screen.py
+- Added `utils.web_helpers` import for responsive design
+- Made `_create_stat_card()` responsive (different sizes for mobile/tablet/desktop)
+- Made `_create_module_card()` responsive
+- Added `wrap=True` to all dashboard rows for auto-wrapping
+- Added responsive spacing and title sizes
+
+### 2. login_screen.py  
+- Updated `get_logo_src()` to detect web vs desktop mode
+- Uses `/web_assets/assets/logo/Vernikalogo.png` for web
+
+### 3. web_main.py
+- Added `page.assets` configuration for asset serving
+
+---
+
+## Notes for Deployment:
+
+1. For web deployment, assets need to be in a `web_assets` folder at the root
+2. The logo uses a "V" letter as fallback which always works
+3. Profile photos need Supabase storage bucket properly configured
 
