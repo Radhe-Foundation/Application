@@ -113,17 +113,18 @@ class DashboardScreen(ft.Container):
         for idx, label, sel_icon, unsel_icon in nav_data:
             nav_items.append(create_nav_item(idx, label, sel_icon, unsel_icon))
 
-        # Sidebar
+        # Sidebar - use text "V" instead of image
         sidebar = ft.Container(
             width=180,
             bgcolor=SURFACE,
             content=ft.Column([
-                # Logo
+                # Logo - use text "V" that works without static file serving
                 ft.Container(
-                    content=ft.Image(
-                        src="/assets/logo/Vernikalogo.png",
-                        width=100,
-                        height=60,
+                    content=ft.Text(
+                        "V",
+                        size=50,
+                        color=PRIMARY,
+                        weight=ft.FontWeight.BOLD,
                     ),
                     alignment=ft.alignment.Alignment(0, 0),
                     padding=ft.padding.only(top=15, bottom=10),

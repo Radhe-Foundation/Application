@@ -187,23 +187,24 @@ class EmployeeScreen(ft.Container):
 
         # Build sidebar with logo at top and scrollable nav items - responsive
         # Hide sidebar on mobile, show icon-only on tablet, full on desktop
-        logo_width = 80 if is_mobile else (90 if is_tablet else 100)
-        logo_height = 50 if is_mobile else (55 if is_tablet else 60)
+        logo_width = 50 if is_mobile else (60 if is_tablet else 80)
+        logo_height = 40 if is_mobile else (45 if is_tablet else 50)
 
         sidebar = ft.Container(
             width=sidebar_width,
             bgcolor=SURFACE,
             content=ft.Column([
-                # Logo at top center - hide on mobile
+                # Logo at top center - hide on mobile, use text on tablet/desktop
                 ft.Container(
-                    content=ft.Image(
-                        src=get_logo_path(),
-                        width=logo_width,
-                        height=logo_height,
-                    ),
+                    content=ft.Text(
+                        "V",
+                        size=int(logo_width * 0.6),
+                        color=PRIMARY,
+                        weight=ft.FontWeight.BOLD,
+                    ) if not is_mobile else ft.Container(),
                     alignment=ft.alignment.Alignment(0, 0),
                     padding=ft.padding.only(top=15, bottom=10),
-                    visible=not is_mobile,  # Hide logo on mobile
+                    visible=not is_mobile,
                 ),
                 # Divider below logo - hide on mobile
                 ft.Divider(height=1, visible=not is_mobile),
