@@ -9,6 +9,7 @@ import os
 from core.theme import PRIMARY
 from database.session_manager import get_session, get_db_session, check_db_connection
 from database.operations import authenticate_user
+from config import SUPABASE_URL, SUPABASE_STORAGE_BUCKET
 
 
 def get_logo_src() -> str:
@@ -114,6 +115,12 @@ class LoginScreen(ft.Container):
         self._icon_size = icon_size
 
         # Logo - use Supabase bucket URL with proper fit for full fit
+        # Use config values instead of hardcoded URL
+        if SUPABASE_URL and SUPABASE_STORAGE_BUCKET:
+            logo_src = f"{SUPABASE_URL}/storage/v1/object/public/{SUPABASE_STORAGE_BUCKET}/logo/Vernikalogo.png"
+        else:
+            logo_src = "assets/logo/Vernikalogo.png"  # Fallback to local
+
         self.logo = ft.Container(
             width=logo_size,
             height=logo_size,
@@ -121,7 +128,7 @@ class LoginScreen(ft.Container):
             bgcolor=ft.Colors.with_opacity(0.15, ft.Colors.WHITE),
             margin=0,
             content=ft.Image(
-                src="https://tbofjzzufxqbwfmfapxh.supabase.co/storage/v1/object/public/vernika-files/logo/Vernikalogo.png",
+                src=logo_src,
                 fit="contain",
                 width=logo_size,
                 height=logo_size,

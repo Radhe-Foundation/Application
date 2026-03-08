@@ -799,6 +799,12 @@ class EmployeesScreen(ft.Container):
             """Pick profile photo using file picker and upload to Supabase"""
             self._init_file_picker()
 
+            # Show loading indicator
+            upload_status_text = ft.Text("Uploading...", size=12, color=INFO)
+            profile_photo.disabled = True
+            profile_pick_btn.disabled = True
+            self._page.update()
+
             async def pick_and_set():
                 try:
                     files = await self._file_picker.pick_files(
@@ -811,32 +817,60 @@ class EmployeesScreen(ft.Container):
 
                         # Upload to Supabase Storage for multi-device access
                         try:
-                            success, file_url, bucket_path = upload_to_supabase(
-                                file_path=path,
-                                folder="profiles",
-                                custom_filename=os.path.basename(path)
-                            )
-                            if success and file_url:
-                                # Save the Supabase URL instead of local path
-                                profile_photo.value = file_url
-                                print(f"Profile photo uploaded: {file_url}")
-                            else:
-                                # Fallback to local path if upload fails
+                            # First check if storage is available
+                            from utils.supabase_storage import get_storage
+                            storage = get_storage()
+
+                            if not storage.available:
+                                error_msg = storage.get_last_error() or "Storage not available"
+                                # Fallback to local path
                                 profile_photo.value = path
+                                upload_status_text.value = f"Storage not available: {error_msg}. Using local path."
+                                upload_status_text.color = WARNING
                                 print(
-                                    f"Profile photo upload failed, using local path: {path}")
+                                    f"Profile photo storage not available: {error_msg}")
+                            else:
+                                success, file_url, bucket_path = upload_to_supabase(
+                                    file_path=path,
+                                    folder="profiles",
+                                    custom_filename=os.path.basename(path)
+                                )
+                                if success and file_url:
+                                    # Save the Supabase URL instead of local path
+                                    profile_photo.value = file_url
+                                    upload_status_text.value = f"Uploaded successfully!"
+                                    upload_status_text.color = SUCCESS
+                                    print(
+                                        f"Profile photo uploaded: {file_url}")
+                                else:
+                                    # Fallback to local path if upload fails
+                                    error_msg = file_url or "Unknown error"
+                                    profile_photo.value = path
+                                    upload_status_text.value = f"Upload failed: {error_msg}. Using local path."
+                                    upload_status_text.color = WARNING
+                                    print(
+                                        f"Profile photo upload failed: {error_msg}")
                         except Exception as upload_err:
-                            print(
-                                f"Error uploading profile photo: {upload_err}")
+                            error_msg = str(upload_err)
                             # Fallback to local path
                             profile_photo.value = path
-                            self._show_error(
-                                f"Upload failed: {str(upload_err)}")
+                            upload_status_text.value = f"Upload error: {error_msg}. Using local path."
+                            upload_status_text.color = WARNING
+                            print(
+                                f"Error uploading profile photo: {upload_err}")
+                            self._show_error(f"Upload error: {error_msg}")
 
+                        # Re-enable controls
+                        profile_photo.disabled = False
+                        profile_pick_btn.disabled = False
                         self._page.update()
                 except Exception as ex:
                     print(f"Error picking file: {ex}")
+                    profile_photo.disabled = False
+                    profile_pick_btn.disabled = False
+                    upload_status_text.value = ""
                     self._show_error(f"Error selecting file: {str(ex)}")
+                    self._page.update()
 
             self._page.run_task(pick_and_set)
 
@@ -1008,6 +1042,7 @@ class EmployeesScreen(ft.Container):
             email, phone,
             # Add profile photo field with picker in edit dialog
             ft.Row([profile_photo, profile_pick_btn], spacing=5),
+            upload_status_text,  # Show upload status
             ft.Row([dob_picker, gender], spacing=10),
             address,
             ft.Row([city, state, pincode], spacing=10),

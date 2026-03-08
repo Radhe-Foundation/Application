@@ -12,6 +12,7 @@ from database.operations import (
     get_user_by_id,
     get_employee_by_user_id,
 )
+from config import SUPABASE_URL, SUPABASE_STORAGE_BUCKET
 
 
 def get_logo_path():
@@ -190,8 +191,11 @@ class EmployeeScreen(ft.Container):
         logo_width = 50 if is_mobile else (60 if is_tablet else 80)
         logo_height = 40 if is_mobile else (45 if is_tablet else 50)
 
-        # Supabase bucket URL for logo
-        logo_url = "https://tbofjzzufxqbwfmfapxh.supabase.co/storage/v1/object/public/vernika-files/logo/Vernikalogo.png"
+        # Supabase bucket URL for logo - use config values
+        if SUPABASE_URL and SUPABASE_STORAGE_BUCKET:
+            logo_url = f"{SUPABASE_URL}/storage/v1/object/public/{SUPABASE_STORAGE_BUCKET}/logo/Vernikalogo.png"
+        else:
+            logo_url = "/assets/logo/Vernikalogo.png"  # Fallback to local
 
         sidebar = ft.Container(
             width=sidebar_width,
