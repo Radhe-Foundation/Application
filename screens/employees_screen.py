@@ -795,14 +795,20 @@ class EmployeesScreen(ft.Container):
         profile_photo_path = [
             emp.profile_photo] if emp.profile_photo else [None]
 
+        # Initialize upload status text at the right scope
+        upload_status_text = ft.Text("", size=12, visible=False)
+
         def pick_profile_photo_edit(e):
             """Pick profile photo using file picker and upload to Supabase"""
             self._init_file_picker()
 
-            # Show loading indicator
-            upload_status_text = ft.Text("Uploading...", size=12, color=INFO)
+            # Show loading indicator - modify the existing text widget
+            upload_status_text.value = "Uploading..."
+            upload_status_text.visible = True
+            upload_status_text.color = INFO
             profile_photo.disabled = True
-            profile_pick_btn.disabled = True
+            if profile_pick_btn:
+                profile_pick_btn.disabled = True
             self._page.update()
 
             async def pick_and_set():
