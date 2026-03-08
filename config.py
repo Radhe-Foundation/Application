@@ -211,6 +211,9 @@ SUPABASE_REALTIME_URL = f"{SUPABASE_URL}/realtime/v1" if SUPABASE_URL else ""
 SUPABASE_STORAGE_URL = f"{SUPABASE_URL}/storage/v1" if SUPABASE_URL else ""
 SUPABASE_STORAGE_BUCKET = os.getenv("SUPABASE_STORAGE_BUCKET", "vernika-files")
 
+# Service role key - used for bucket creation and management (keep secret!)
+SUPABASE_SERVICE_KEY = os.getenv("SUPABASE_SERVICE_KEY", "")
+
 # ==================== HELPERS ====================
 
 

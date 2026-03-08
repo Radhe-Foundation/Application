@@ -10,6 +10,9 @@ import io
 from datetime import datetime, date
 from database.session_manager import get_session, get_db_session, check_db_connection
 from database.models import Transaction, TransactionAttachment, BillingRequest, BillingRequestAttachment
+
+# Import Supabase storage for cloud file uploads
+from utils.supabase_storage import upload_to_supabase, get_storage
 from config import MAX_UPLOAD_SIZE_MB
 
 
@@ -862,7 +865,7 @@ class TransactionsScreen(ft.Container):
         self._page.update()
 
     def _preview_attachment(self, attachment):
-        """Preview an attachment file - supports both file path and database binary data"""
+        """Preview an attachment file - supports Supabase URLs, file path, and database binary data"""
         if not attachment:
             self._show_error("Attachment not found")
             return
@@ -877,20 +880,26 @@ class TransactionsScreen(ft.Container):
         image_extensions = ['jpg', 'jpeg', 'png', 'gif', 'webp']
 
         if file_ext in image_extensions:
-            # Show image preview - try database first, then file path
+            # Show image preview - try Supabase URL first, then database, then file path
+            img_src = None
             try:
+                # Check if file_path is a Supabase URL
+                if attachment.file_path and attachment.file_path.startswith('http'):
+                    # Use Supabase URL directly
+                    img_src = attachment.file_path
                 # Check if we have binary data in database
-                if hasattr(attachment, 'file_data') and attachment.file_data:
+                elif hasattr(attachment, 'file_data') and attachment.file_data:
                     # Use base64 encoded data from database
                     import base64
                     img_bytes = attachment.file_data
                     b64_str = base64.b64encode(img_bytes).decode()
                     img_src = f"data:image/{file_ext};base64,{b64_str}"
                 elif attachment.file_path and os.path.exists(attachment.file_path):
-                    # Fall back to file path
+                    # Fall back to local file path
                     img_src = attachment.file_path
-                else:
-                    self._show_error("File not found in database or disk")
+
+                if not img_src:
+                    self._show_error("File not found")
                     return
 
                 dialog = ft.AlertDialog(
@@ -927,6 +936,11 @@ class TransactionsScreen(ft.Container):
         else:
             # For non-image files, just show info and offer download
             size_kb = attachment.file_size / 1024 if attachment.file_size else 0
+            # Check if it's a cloud file
+            is_cloud = attachment.file_path and attachment.file_path.startswith(
+                'http')
+            source_text = "Cloud Storage" if is_cloud else "Local"
+
             dialog = ft.AlertDialog(
                 modal=True,
                 title=ft.Text(f"File Info: {attachment.file_name}"),
@@ -940,6 +954,8 @@ class TransactionsScreen(ft.Container):
                                 size=12, color=TEXT_SECONDARY),
                         ft.Text(f"Type: {file_ext.upper()}",
                                 size=12, color=TEXT_SECONDARY),
+                        ft.Text(f"Source: {source_text}",
+                                size=11, color=SUCCESS if is_cloud else TEXT_SECONDARY),
                         ft.Container(height=10),
                         ft.Text("Preview not available for this file type.",
                                 size=11, color=TEXT_SECONDARY),
@@ -999,7 +1015,7 @@ class TransactionsScreen(ft.Container):
         self._page.update()
 
     def _show_add_attachment_dialog(self, trans_id):
-        """Show add attachment dialog with file picker"""
+        """Show add attachment dialog with file picker - uploads to Supabase Cloud Storage"""
         self._init_file_picker()
 
         file_path = [None]
@@ -1032,6 +1048,9 @@ class TransactionsScreen(ft.Container):
             style=ft.ButtonStyle(bgcolor=PRIMARY, color="WHITE")
         )
 
+        # Status indicator
+        upload_status = ft.Text("", size=11, color=TEXT_SECONDARY)
+
         def save_attachment(e):
             if not path_input.value:
                 self._show_error("File path required")
@@ -1047,29 +1066,78 @@ class TransactionsScreen(ft.Container):
                     f"File too large! Max {MAX_UPLOAD_SIZE_MB}MB allowed (yours: {file_size/1024/1024:.1f}MB)")
                 return
 
-            # Read file content for database storage
             file_name = os.path.basename(path_input.value)
+
+            # Show uploading status
+            upload_status.value = "Uploading to cloud..."
+            upload_status.color = INFO
+            self._page.update()
+
+            # Try to upload to Supabase Cloud Storage
+            file_url = None
+            upload_success = False
+            upload_error = None
+            local_file_data = None
+
             try:
-                with open(path_input.value, 'rb') as f:
-                    file_data = f.read()
-            except Exception as e:
-                self._show_error(f"Error reading file: {str(e)}")
-                return
+                storage = get_storage()
+                if storage.available:
+                    # Upload to Supabase Storage
+                    success, url_or_error, bucket_path = upload_to_supabase(
+                        path_input.value,
+                        folder="transaction_attachments",
+                        custom_filename=f"trans_{trans_id}_{int(datetime.now().timestamp())}_{file_name}"
+                    )
+
+                    if success and url_or_error:
+                        file_url = url_or_error
+                        upload_success = True
+                        print(
+                            f"[Transactions] File uploaded to Supabase: {file_url}")
+                    else:
+                        upload_error = url_or_error
+                        print(
+                            f"[Transactions] Supabase upload failed: {url_or_error}")
+                else:
+                    upload_error = "Cloud storage not configured"
+                    print("[Transactions] Supabase storage not available")
+            except Exception as upload_err:
+                upload_error = str(upload_err)
+                print(f"[Transactions] Upload error: {upload_err}")
+
+            # If Supabase upload failed or not available, fall back to local storage
+            if not upload_success:
+                if upload_error:
+                    upload_status.value = f"Cloud upload failed: {upload_error}. Saving locally."
+                    upload_status.color = WARNING
+                    self._page.update()
+
+                try:
+                    with open(path_input.value, 'rb') as f:
+                        local_file_data = f.read()
+                    file_url = path_input.value  # Store local path as fallback
+                except Exception as e:
+                    self._show_error(f"Error reading file: {str(e)}")
+                    return
+            else:
+                upload_status.value = "Uploaded to cloud!"
+                upload_status.color = SUCCESS
 
             db = get_db_session()
             try:
                 att = TransactionAttachment(
                     transaction_id=trans_id,
-                    file_path=path_input.value,
+                    file_path=file_url,  # Store Supabase URL or local path
                     file_name=file_name,
                     file_size=file_size,
-                    file_data=file_data,  # Store binary data in database
+                    file_data=local_file_data,  # Keep local backup if available
                     uploaded_by_id=self._get_user_id()
                 )
                 db.add(att)
                 db.commit()
 
-                self._show_success("Attachment added!")
+                self._show_success(
+                    "Attachment added to cloud!" if upload_success else "Attachment added!")
                 self._close_dialog()
             except Exception as ex:
                 self._show_error(f"Error: {str(ex)}")
@@ -1082,12 +1150,15 @@ class TransactionsScreen(ft.Container):
             content=ft.Column([
                 ft.Text(
                     f"Max file size: {MAX_UPLOAD_SIZE_MB}MB", size=11, color=TEXT_SECONDARY),
+                ft.Text(
+                    "Files are uploaded to cloud storage for easy access", size=10, color=SUCCESS),
                 ft.Row([path_input, browse_btn], spacing=10),
+                upload_status,
             ], spacing=10),
             actions=[
                 ft.TextButton(
                     "Cancel", on_click=lambda e: self._close_dialog()),
-                ft.ElevatedButton("Add", on_click=save_attachment, style=ft.ButtonStyle(
+                ft.ElevatedButton("Upload", on_click=save_attachment, style=ft.ButtonStyle(
                     bgcolor=SUCCESS, color="WHITE")),
             ]
         )
@@ -2303,7 +2374,7 @@ class TransactionsScreen(ft.Container):
         )
 
     def _download_attachment(self, file_path, file_name, file_data=None):
-        """Download attachment file - supports both file path and database binary data"""
+        """Download attachment file - supports Supabase URLs, file path, and database binary data"""
         # First try to use binary data from database if available
         if file_data:
             try:
@@ -2317,9 +2388,31 @@ class TransactionsScreen(ft.Container):
                 return
             except Exception as e:
                 self._show_error(f"Download from database failed: {str(e)}")
+                # Continue to try other methods
+
+        # Check if file_path is a Supabase URL
+        if file_path and file_path.startswith('http'):
+            try:
+                import requests
+                download_dir = os.path.expanduser("~/Downloads")
+                os.makedirs(download_dir, exist_ok=True)
+                dest_path = os.path.join(download_dir, file_name)
+
+                # Download from Supabase URL
+                response = requests.get(file_path, timeout=30)
+                if response.status_code == 200:
+                    with open(dest_path, 'wb') as f:
+                        f.write(response.content)
+                    self._show_success(f"Downloaded from cloud: {dest_path}")
+                else:
+                    self._show_error(
+                        f"Download failed: HTTP {response.status_code}")
+                return
+            except Exception as e:
+                self._show_error(f"Cloud download failed: {str(e)}")
                 return
 
-        # Fall back to file path
+        # Fall back to local file path
         if not file_path:
             self._show_error("File path not found")
             return
@@ -2340,7 +2433,7 @@ class TransactionsScreen(ft.Container):
             self._show_error(f"Download failed: {str(e)}")
 
     def _show_add_billing_attachment_dialog(self, request_id, attachment_type="receipt"):
-        """Show dialog to add receipt or QR code attachment"""
+        """Show dialog to add receipt or QR code attachment - uploads to Supabase Cloud Storage"""
         self._init_file_picker()
 
         type_label = "Receipt" if attachment_type == "receipt" else "QR Code"
@@ -2376,6 +2469,9 @@ class TransactionsScreen(ft.Container):
             style=ft.ButtonStyle(bgcolor=PRIMARY, color="WHITE")
         )
 
+        # Status indicator
+        upload_status = ft.Text("", size=11, color=TEXT_SECONDARY)
+
         def save_attachment(e):
             if not path_input.value:
                 self._show_error("File path required")
@@ -2394,30 +2490,79 @@ class TransactionsScreen(ft.Container):
             file_name = os.path.basename(path_input.value)
             file_ext = os.path.splitext(file_name)[1].lower().replace('.', '')
 
-            # Read file content for database storage
+            # Show uploading status
+            upload_status.value = "Uploading to cloud..."
+            upload_status.color = INFO
+            self._page.update()
+
+            # Try to upload to Supabase Cloud Storage
+            file_url = None
+            upload_success = False
+            upload_error = None
+            local_file_data = None
+
             try:
-                with open(path_input.value, 'rb') as f:
-                    file_data = f.read()
-            except Exception as e:
-                self._show_error(f"Error reading file: {str(e)}")
-                return
+                storage = get_storage()
+                if storage.available:
+                    # Upload to Supabase Storage
+                    folder = "billing_receipts" if attachment_type == "receipt" else "billing_qr_codes"
+                    success, url_or_error, bucket_path = upload_to_supabase(
+                        path_input.value,
+                        folder=folder,
+                        custom_filename=f"bill_{request_id}_{attachment_type}_{int(datetime.now().timestamp())}_{file_name}"
+                    )
+
+                    if success and url_or_error:
+                        file_url = url_or_error
+                        upload_success = True
+                        print(
+                            f"[Billing] {type_label} uploaded to Supabase: {file_url}")
+                    else:
+                        upload_error = url_or_error
+                        print(
+                            f"[Billing] Supabase upload failed: {url_or_error}")
+                else:
+                    upload_error = "Cloud storage not configured"
+                    print("[Billing] Supabase storage not available")
+            except Exception as upload_err:
+                upload_error = str(upload_err)
+                print(f"[Billing] Upload error: {upload_err}")
+
+            # If Supabase upload failed or not available, fall back to local storage
+            if not upload_success:
+                if upload_error:
+                    upload_status.value = f"Cloud upload failed: {upload_error}. Saving locally."
+                    upload_status.color = WARNING
+                    self._page.update()
+
+                try:
+                    with open(path_input.value, 'rb') as f:
+                        local_file_data = f.read()
+                    file_url = path_input.value  # Store local path as fallback
+                except Exception as e:
+                    self._show_error(f"Error reading file: {str(e)}")
+                    return
+            else:
+                upload_status.value = "Uploaded to cloud!"
+                upload_status.color = SUCCESS
 
             db = get_db_session()
             try:
                 att = BillingRequestAttachment(
                     billing_request_id=request_id,
-                    file_path=path_input.value,
+                    file_path=file_url,  # Store Supabase URL or local path
                     file_name=file_name,
                     file_size=file_size,
                     file_type=file_ext,
-                    file_data=file_data,  # Store binary data in database
+                    file_data=local_file_data,  # Keep local backup if available
                     attachment_type=attachment_type,
                     uploaded_by_id=self._get_user_id()
                 )
                 db.add(att)
                 db.commit()
 
-                self._show_success(f"{type_label} uploaded successfully!")
+                self._show_success(
+                    f"{type_label} uploaded to cloud!" if upload_success else f"{type_label} uploaded successfully!")
                 self._close_dialog()
                 # Refresh to show new attachment
                 self._refresh()
@@ -2440,13 +2585,16 @@ class TransactionsScreen(ft.Container):
                 ),
                 ft.Text(f"Max file size: {MAX_UPLOAD_SIZE_MB}MB",
                         size=11, color=TEXT_SECONDARY),
+                ft.Text(
+                    "Files are uploaded to cloud storage for easy access", size=10, color=SUCCESS),
                 ft.Row([path_input, browse_btn], spacing=10),
+                upload_status,
             ], spacing=10),
             actions=[
                 ft.TextButton(
                     "Cancel", on_click=lambda e: self._close_dialog()),
                 ft.ElevatedButton("Upload", on_click=save_attachment, style=ft.ButtonStyle(
-                    bgcolor=PRIMARY, color="WHITE")),
+                    bgcolor=SUCCESS, color="WHITE")),
             ]
         )
 
@@ -2562,7 +2710,7 @@ class TransactionsScreen(ft.Container):
         self._show_billing_details(request_id)
 
     def _preview_billing_attachment(self, attachment):
-        """Preview a billing request attachment file - supports both file path and database binary data"""
+        """Preview a billing request attachment file - supports Supabase URLs, file path, and database binary data"""
         if not attachment:
             self._show_error("Attachment not found")
             return
@@ -2577,20 +2725,26 @@ class TransactionsScreen(ft.Container):
         image_extensions = ['jpg', 'jpeg', 'png', 'gif', 'webp']
 
         if file_ext in image_extensions:
-            # Show image preview - try database first, then file path
+            # Show image preview - try Supabase URL first, then database, then file path
+            img_src = None
             try:
+                # Check if file_path is a Supabase URL
+                if attachment.file_path and attachment.file_path.startswith('http'):
+                    # Use Supabase URL directly
+                    img_src = attachment.file_path
                 # Check if we have binary data in database
-                if hasattr(attachment, 'file_data') and attachment.file_data:
+                elif hasattr(attachment, 'file_data') and attachment.file_data:
                     # Use base64 encoded data from database
                     import base64
                     img_bytes = attachment.file_data
                     b64_str = base64.b64encode(img_bytes).decode()
                     img_src = f"data:image/{file_ext};base64,{b64_str}"
                 elif attachment.file_path and os.path.exists(attachment.file_path):
-                    # Fall back to file path
+                    # Fall back to local file path
                     img_src = attachment.file_path
-                else:
-                    self._show_error("File not found in database or disk")
+
+                if not img_src:
+                    self._show_error("File not found")
                     return
 
                 dialog = ft.AlertDialog(
@@ -2627,6 +2781,11 @@ class TransactionsScreen(ft.Container):
         else:
             # For non-image files, just show info and offer download
             size_kb = attachment.file_size / 1024 if attachment.file_size else 0
+            # Check if it's a cloud file
+            is_cloud = attachment.file_path and attachment.file_path.startswith(
+                'http')
+            source_text = "Cloud Storage" if is_cloud else "Local"
+
             dialog = ft.AlertDialog(
                 modal=True,
                 title=ft.Text(f"File Info: {attachment.file_name}"),
@@ -2640,6 +2799,8 @@ class TransactionsScreen(ft.Container):
                                 size=12, color=TEXT_SECONDARY),
                         ft.Text(f"Type: {file_ext.upper()}",
                                 size=12, color=TEXT_SECONDARY),
+                        ft.Text(f"Source: {source_text}",
+                                size=11, color=SUCCESS if is_cloud else TEXT_SECONDARY),
                         ft.Container(height=10),
                         ft.Text("Preview not available for this file type.",
                                 size=11, color=TEXT_SECONDARY),

@@ -3,12 +3,23 @@ Vernika - Supabase Storage Setup
 Creates the storage bucket for file uploads
 """
 
-from config import SUPABASE_URL, SUPABASE_KEY, SUPABASE_STORAGE_BUCKET
+import importlib.util
 import os
 import sys
 
-# Add parent directory to path
-sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+# Add parent directory to path FIRST
+script_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+sys.path.insert(0, script_dir)
+
+# Import config with explicit path to avoid package conflict
+spec = importlib.util.spec_from_file_location(
+    "vernika_config", os.path.join(script_dir, "config.py"))
+config = importlib.util.module_from_spec(spec)
+spec.loader.exec_module(config)
+
+SUPABASE_URL = config.SUPABASE_URL
+SUPABASE_KEY = config.SUPABASE_KEY
+SUPABASE_STORAGE_BUCKET = config.SUPABASE_STORAGE_BUCKET
 
 
 def setup_storage():
