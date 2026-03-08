@@ -63,14 +63,20 @@ class SupabaseStorage:
             print("[Storage] Install with: pip install requests")
             return
 
-        # Check if bucket exists by testing with a simple request
+        # Initialize storage - be more permissive for uploads to work
+        self._initialize_storage()
+
+    def _initialize_storage(self):
+        """Initialize storage connection with more permissive settings"""
         try:
-            # Use REST API to check if bucket is accessible
+            # Check if bucket exists - but don't fail if it doesn't exist yet
+            # We'll try to create uploads even if bucket check fails
             headers = {
                 'Authorization': f'Bearer {SUPABASE_KEY}',
                 'apikey': SUPABASE_KEY
             }
-            # Try to access the bucket
+
+            # Try to check bucket
             test_url = f"{SUPABASE_URL}/storage/v1/bucket/{self.bucket_name}"
             response = requests.get(test_url, headers=headers, timeout=10)
 
@@ -79,16 +85,16 @@ class SupabaseStorage:
                 print(f"[Storage] Connected to bucket: {self.bucket_name}")
             elif response.status_code == 404:
                 self._last_error = f"Bucket '{self.bucket_name}' not found"
-                print(f"[Storage] ERROR: {self._last_error}")
-                print(f"[Storage] Run: python scripts/setup_supabase_storage.py")
-                # Try anyway - uploads might still work if bucket needs to be created
-                self.available = False
-            else:
-                self._last_error = f"Bucket check failed with status {response.status_code}"
                 print(f"[Storage] WARNING: {self._last_error}")
-                # Try anyway - uploads might still work
+                print(
+                    f"[Storage] Will attempt uploads anyway - bucket may need to be created")
+                # Set available to try uploads anyway
                 self.available = True
-                print(f"[Storage] Will attempt uploads anyway")
+            else:
+                # Other error - try anyway
+                print(
+                    f"[Storage] Bucket check returned {response.status_code}, will attempt uploads")
+                self.available = True
 
         except requests.exceptions.Timeout:
             self._last_error = "Connection timeout when checking bucket"
@@ -101,7 +107,8 @@ class SupabaseStorage:
         except Exception as e:
             self._last_error = f"Failed to connect: {str(e)}"
             print(f"[Storage] ERROR: {self._last_error}")
-            self.available = False
+            # Set available to try anyway - might work
+            self.available = True
 
     def get_last_error(self) -> Optional[str]:
         """Get the last error message for debugging"""
@@ -161,10 +168,8 @@ class SupabaseStorage:
         Returns:
             Tuple of (success, file_url or error_message, file_path_in_bucket)
         """
-        if not self.available:
-            error_msg = f"Supabase storage not available: {self._last_error or 'Unknown error'}"
-            logger.error(f"[Storage] {error_msg}")
-            return False, error_msg, None
+        # Always try to upload regardless of availability check
+        # The check might fail but upload might still work
 
         if not REQUESTS_AVAILABLE or requests is None:
             error_msg = "requests module not installed"
@@ -191,20 +196,29 @@ class SupabaseStorage:
 
             logger.info(
                 f"[Storage] Uploading file to {self.bucket_name}/{bucket_path}")
+            print(
+                f"[Storage] Uploading file: {original_filename} to {folder}/")
 
             # Upload via REST API
             upload_url = f"{self.supabase_url}/storage/v1/object/{self.bucket_name}/{bucket_path}"
             headers = self._get_headers()
             headers['Content-Type'] = self._get_mime_type(file_ext)
 
+            print(f"[Storage] Upload URL: {upload_url}")
+
             response = requests.post(
                 upload_url, headers=headers, data=file_content, timeout=60)  # Increased timeout
+
+            print(f"[Storage] Response status: {response.status_code}")
+            print(
+                f"[Storage] Response text: {response.text[:500] if response.text else 'Empty'}")
 
             if response.status_code in [200, 201]:
                 # Get public URL
                 file_url = f"{self.supabase_url}/storage/v1/object/public/{self.bucket_name}/{bucket_path}"
                 logger.info(f"[Storage] Successfully uploaded: {bucket_path}")
                 logger.info(f"[Storage] File URL: {file_url}")
+                print(f"[Storage] Upload successful: {file_url}")
                 return True, file_url, bucket_path
             else:
                 error_msg = f"Upload failed: HTTP {response.status_code}"
@@ -214,19 +228,25 @@ class SupabaseStorage:
                 except:
                     error_msg += f" - {response.text[:200]}"
                 logger.error(f"[Storage] {error_msg}")
+                print(f"[Storage] ERROR: {error_msg}")
                 return False, error_msg, None
 
         except requests.exceptions.Timeout:
             error_msg = "Upload failed: Connection timeout"
             logger.error(f"[Storage] {error_msg}")
+            print(f"[Storage] ERROR: {error_msg}")
             return False, error_msg, None
         except requests.exceptions.ConnectionError as e:
             error_msg = f"Upload failed: Connection error - {str(e)[:100]}"
             logger.error(f"[Storage] {error_msg}")
+            print(f"[Storage] ERROR: {error_msg}")
             return False, error_msg, None
         except Exception as e:
             error_msg = f"Upload failed: {str(e)}"
             logger.error(f"[Storage] {error_msg}")
+            print(f"[Storage] ERROR: {error_msg}")
+            import traceback
+            traceback.print_exc()
             return False, error_msg, None
 
     def upload_file_from_bytes(

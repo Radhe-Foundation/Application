@@ -341,29 +341,46 @@ class EmployeesScreen(ft.Container):
                         path = files[0].path
                         profile_photo_path[0] = path
 
+                        # Show uploading status
+                        profile_photo.value = "Uploading..."
+                        self._page.update()
+
                         # Upload to Supabase Storage for multi-device access
                         try:
+                            # First check storage status
+                            from utils.supabase_storage import get_storage
+                            storage = get_storage()
+
+                            print(
+                                f"[Profile] Storage available: {storage.available}")
+                            print(
+                                f"[Profile] Storage error: {storage.get_last_error()}")
+
                             success, file_url, bucket_path = upload_to_supabase(
                                 file_path=path,
                                 folder="profiles",
                                 custom_filename=os.path.basename(path)
                             )
+
                             if success and file_url:
                                 # Save the Supabase URL instead of local path
                                 profile_photo.value = file_url
                                 print(f"Profile photo uploaded: {file_url}")
                             else:
                                 # Fallback to local path if upload fails
+                                error_msg = file_url or "Unknown error"
                                 profile_photo.value = path
                                 print(
-                                    f"Profile photo upload failed, using local path: {path}")
+                                    f"Profile photo upload failed: {error_msg}")
+                                self._show_error(
+                                    f"Upload failed: {error_msg}. Using local path.")
                         except Exception as upload_err:
                             print(
                                 f"Error uploading profile photo: {upload_err}")
                             # Fallback to local path
                             profile_photo.value = path
                             self._show_error(
-                                f"Upload failed: {str(upload_err)}")
+                                f"Upload error: {str(upload_err)}")
 
                         self._page.update()
                 except Exception as ex:
@@ -821,11 +838,18 @@ class EmployeesScreen(ft.Container):
                         path = files[0].path
                         profile_photo_path[0] = path
 
+                        print(f"[Profile Edit] File selected: {path}")
+
                         # Upload to Supabase Storage for multi-device access
                         try:
                             # First check if storage is available
                             from utils.supabase_storage import get_storage
                             storage = get_storage()
+
+                            print(
+                                f"[Profile Edit] Storage available: {storage.available}")
+                            print(
+                                f"[Profile Edit] Storage error: {storage.get_last_error()}")
 
                             if not storage.available:
                                 error_msg = storage.get_last_error() or "Storage not available"

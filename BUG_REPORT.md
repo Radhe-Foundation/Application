@@ -5,7 +5,7 @@ This document outlines bugs found in the Vernika HRA application. The primary us
 
 ---
 
-## Bug #1: Employee Profile Photo Upload Failure (USER-REPORTED) - FIXED
+## Bug #1: Employee Profile Photo Upload Failure - FIXED
 
 ### Severity: HIGH
 ### Status: FIXED
@@ -18,24 +18,22 @@ When updating an employee's profile photo through the Employee Management button
 - **Function**: `_show_edit_dialog()` - `pick_profile_photo_edit()` function
 
 ### Root Cause
-The upload function had silent failures without user notification. The Supabase storage class also had limited error reporting.
+The upload function had silent failures without user notification. The Supabase storage class also had limited error reporting and was too strict in checking bucket availability.
 
 ### Fixes Applied
 
 1. **Updated `utils/supabase_storage.py`**:
-   - Added `_last_error` attribute to store error messages for debugging
-   - Added `get_last_error()` method to retrieve last error
-   - Added `test_connection()` method to test storage connectivity
-   - Enhanced error handling with specific error messages for different failure modes
-   - Added detailed logging for upload operations
-   - Increased timeout from 30s to 60s for large files
+   - Made storage initialization more permissive - now attempts uploads even if bucket check fails
+   - Added detailed logging for all upload operations
+   - Added print statements to help debug upload issues in production
+   - Improved error handling with specific error messages
 
 2. **Updated `screens/employees_screen.py`**:
-   - Added loading indicator during upload
-   - Added upload status text showing upload progress/success/failure
-   - Added check for storage availability before attempting upload
+   - Added upload status text showing "Uploading..." during upload
+   - Added storage availability check before attempting upload
+   - Added detailed logging for debugging
    - Now shows user-friendly error messages when upload fails
-   - Disabled controls during upload to prevent race conditions
+   - Improved both add employee and edit employee dialogs
 
 ---
 
@@ -164,5 +162,5 @@ DATABASE_URL=your-postgres-connection-string
 ---
 
 *Generated: Bug Report for Vernika HRA*
-*Last Updated: 2024*
+*Last Updated: 2026*
 
