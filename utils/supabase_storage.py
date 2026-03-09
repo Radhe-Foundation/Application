@@ -207,7 +207,7 @@ class SupabaseStorage:
             print(f"[Storage] Upload URL: {upload_url}")
 
             response = requests.post(
-                upload_url, headers=headers, data=file_content, timeout=60)  # Increased timeout
+                upload_url, headers=headers, data=file_content, timeout=60)
 
             print(f"[Storage] Response status: {response.status_code}")
             print(
@@ -221,10 +221,24 @@ class SupabaseStorage:
                 print(f"[Storage] Upload successful: {file_url}")
                 return True, file_url, bucket_path
             else:
+                # Provide more specific error messages
                 error_msg = f"Upload failed: HTTP {response.status_code}"
                 try:
                     error_details = response.json()
-                    error_msg += f" - {error_details.get('message', response.text[:200])}"
+                    error_message = error_details.get(
+                        'message', response.text[:200])
+
+                    # Add specific guidance based on error type
+                    if 'row-level-security' in error_message.lower() or 'rls' in error_message.lower():
+                        error_msg = f"Permission denied (RLS). Contact admin to set storage policies."
+                    elif 'bucket' in error_message.lower() and 'not found' in error_message.lower():
+                        error_msg = f"Storage bucket not found. Run: python scripts/create_bucket.py"
+                    elif 'quota' in error_message.lower() or 'limit' in error_message.lower():
+                        error_msg = f"Storage quota exceeded. Check Supabase plan limits."
+                    elif 'duplicate' in error_message.lower():
+                        error_msg = f"File already exists. Try with a different filename."
+                    else:
+                        error_msg = f"Upload failed: {error_message}"
                 except:
                     error_msg += f" - {response.text[:200]}"
                 logger.error(f"[Storage] {error_msg}")
@@ -232,12 +246,12 @@ class SupabaseStorage:
                 return False, error_msg, None
 
         except requests.exceptions.Timeout:
-            error_msg = "Upload failed: Connection timeout"
+            error_msg = "Upload failed: Connection timeout. Check your internet connection."
             logger.error(f"[Storage] {error_msg}")
             print(f"[Storage] ERROR: {error_msg}")
             return False, error_msg, None
         except requests.exceptions.ConnectionError as e:
-            error_msg = f"Upload failed: Connection error - {str(e)[:100]}"
+            error_msg = f"Upload failed: Connection error - {str(e)[:100]}. Check internet and Supabase config."
             logger.error(f"[Storage] {error_msg}")
             print(f"[Storage] ERROR: {error_msg}")
             return False, error_msg, None
