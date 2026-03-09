@@ -9,6 +9,7 @@ from typing import List, Dict
 import flet as ft
 from datetime import datetime, date
 from database.session_manager import get_session, get_db_session, check_db_connection
+from database.models import Holiday
 
 
 # Theme colors
@@ -17,18 +18,6 @@ SUCCESS = "#4CAF50"
 WARNING = "#FF9800"
 ERROR = "#F44336"
 INFO = "#2196F3"
-
-
-class Holiday:
-    """Holiday data class"""
-
-    def __init__(self, id: int, name: str, date_str: str, day: str, type: str, optional: bool = False):
-        self.id = id
-        self.name = name
-        self.date = date_str
-        self.day = day
-        self.type = type  # national, festival, company
-        self.optional = optional
 
 
 class HolidaysScreen(ft.Container):
@@ -41,35 +30,88 @@ class HolidaysScreen(ft.Container):
         self.expand = True
         self.bgcolor = "#F5F5F5"
 
-        # Default holidays for 2024-2025
-        self.holidays = self._get_default_holidays()
+        # Get holidays from database
+        self.holidays = self._get_holidays_from_db()
 
         # Build UI
         self.content = self._build_content()
 
-    def _get_default_holidays(self) -> List[Holiday]:
-        """Get default holiday list (would come from DB in production)"""
-        return [
-            Holiday(1, "New Year's Day", "2025-01-01",
-                    "Wednesday", "national"),
-            Holiday(2, "Republic Day", "2025-01-26", "Sunday", "national"),
-            Holiday(3, "Maha Shivaratri", "2025-02-26",
-                    "Wednesday", "festival"),
-            Holiday(4, "Holi", "2025-03-14", "Friday", "festival"),
-            Holiday(5, "Good Friday", "2025-04-18", "Friday", "national"),
-            Holiday(6, "Easter", "2025-04-20", "Sunday", "festival"),
-            Holiday(7, "Ramzan/Eid", "2025-03-31", "Monday", "festival"),
-            Holiday(8, "May Day", "2025-05-01", "Thursday", "national"),
-            Holiday(9, "Independence Day", "2025-08-15", "Friday", "national"),
-            Holiday(10, "Ganesh Chaturthi", "2025-08-27",
-                    "Wednesday", "festival"),
-            Holiday(11, "Diwali", "2025-10-20", "Monday", "festival"),
-            Holiday(12, "Christmas", "2025-12-25", "Thursday", "national"),
-            Holiday(13, "Company Foundation Day", "2025-06-15",
-                    "Sunday", "company", optional=True),
-            Holiday(14, "Annual Day", "2025-12-01",
-                    "Monday", "company", optional=True),
+    def _get_holidays_from_db(self) -> List:
+        """Get holidays from database"""
+        db = get_db_session()
+        try:
+            holidays = db.query(Holiday).filter(
+                Holiday.is_active == True
+            ).order_by(Holiday.date).all()
+            return holidays
+        except Exception as e:
+            print(f"Error loading holidays: {e}")
+            return self._get_default_holidays()
+        finally:
+            db.close()
+
+    def _get_default_holidays(self) -> List:
+        """Get default holiday list and save to database"""
+        defaults = [
+            {"name": "New Year's Day", "date": "2025-01-01",
+                "day": "Wednesday", "type": "national", "optional": False},
+            {"name": "Republic Day", "date": "2025-01-26",
+                "day": "Sunday", "type": "national", "optional": False},
+            {"name": "Maha Shivaratri", "date": "2025-02-26",
+                "day": "Wednesday", "type": "festival", "optional": False},
+            {"name": "Holi", "date": "2025-03-14", "day": "Friday",
+                "type": "festival", "optional": False},
+            {"name": "Good Friday", "date": "2025-04-18",
+                "day": "Friday", "type": "national", "optional": False},
+            {"name": "Easter", "date": "2025-04-20", "day": "Sunday",
+                "type": "festival", "optional": False},
+            {"name": "Ramzan/Eid", "date": "2025-03-31",
+                "day": "Monday", "type": "festival", "optional": False},
+            {"name": "May Day", "date": "2025-05-01", "day": "Thursday",
+                "type": "national", "optional": False},
+            {"name": "Independence Day", "date": "2025-08-15",
+                "day": "Friday", "type": "national", "optional": False},
+            {"name": "Ganesh Chaturthi", "date": "2025-08-27",
+                "day": "Wednesday", "type": "festival", "optional": False},
+            {"name": "Diwali", "date": "2025-10-20", "day": "Monday",
+                "type": "festival", "optional": False},
+            {"name": "Christmas", "date": "2025-12-25",
+                "day": "Thursday", "type": "national", "optional": False},
+            {"name": "Company Foundation Day", "date": "2025-06-15",
+                "day": "Sunday", "type": "company", "optional": True},
+            {"name": "Annual Day", "date": "2025-12-01",
+                "day": "Monday", "type": "company", "optional": True},
         ]
+
+        # Save defaults to database
+        db = get_db_session()
+        try:
+            for h in defaults:
+                # Check if already exists
+                existing = db.query(Holiday).filter(
+                    Holiday.name == h["name"],
+                    Holiday.year == 2025
+                ).first()
+
+                if not existing:
+                    holiday = Holiday(
+                        name=h["name"],
+                        date=datetime.strptime(h["date"], "%Y-%m-%d").date(),
+                        day=h["day"],
+                        holiday_type=h["type"],
+                        is_optional=h["optional"],
+                        year=2025,
+                        is_active=True
+                    )
+                    db.add(holiday)
+            db.commit()
+        except Exception as e:
+            print(f"Error saving default holidays: {e}")
+            db.rollback()
+        finally:
+            db.close()
+
+        return self._get_holidays_from_db()
 
     def _build_content(self):
         """Build main content"""
@@ -107,6 +149,10 @@ class HolidaysScreen(ft.Container):
 
     def _build_year_selector(self):
         """Build year selector"""
+        # Initialize year dropdown if not exists
+        if not hasattr(self, 'year_dropdown'):
+            self.selected_year = {"value": "2025"}
+
         return ft.Container(
             content=ft.Row([
                 ft.Icon(ft.Icons.CALENDAR_MONTH, color=PRIMARY),
@@ -114,12 +160,13 @@ class HolidaysScreen(ft.Container):
                 ft.Container(width=10),
                 ft.Dropdown(
                     width=120,
-                    value="2025",
+                    value=self.selected_year["value"],
                     options=[
                         ft.dropdown.Option("2024", "2024"),
                         ft.dropdown.Option("2025", "2025"),
                         ft.dropdown.Option("2026", "2026"),
                     ],
+                    on_change=self._change_year,
                 ),
                 ft.Container(expand=True),
                 ft.Text("Click on a holiday to see details",
@@ -296,7 +343,10 @@ class HolidaysScreen(ft.Container):
 
     def _change_year(self, e):
         """Change year"""
+        self.selected_year["value"] = e.control.value
         self._show_info(f"Showing holidays for {e.control.value}")
+        self.content = self._build_content()
+        self._page.update()
 
     def _show_add_dialog(self, e=None):
         """Show add holiday dialog"""
@@ -321,8 +371,22 @@ class HolidaysScreen(ft.Container):
                 self._show_error("All fields are required!")
                 return
 
+            # Create new holiday and add to list
+            new_holiday = Holiday(
+                id=len(self.holidays) + 1,
+                name=name_field.value,
+                date_str=date_field.value,
+                day=day_field.value,
+                type=type_dropdown.value or "national",
+                optional=optional_switch.value
+            )
+            self.holidays.append(new_holiday)
+
             self._show_success(f"Holiday '{name_field.value}' added!")
             self._close_dialog()
+            # Refresh the UI
+            self.content = self._build_content()
+            self._page.update()
 
         dialog = ft.AlertDialog(
             title=ft.Text("Add Holiday"),
@@ -346,14 +410,76 @@ class HolidaysScreen(ft.Container):
         self._page.update()
 
     def _edit_holiday(self, holiday: Holiday):
-        """Edit a holiday"""
-        self._show_info(f"Edit: {holiday.name}")
+        """Edit a holiday - opens edit dialog"""
+        name_field = ft.TextField(
+            label="Holiday Name *", width=300, value=holiday.name)
+        date_field = ft.TextField(
+            label="Date (YYYY-MM-DD) *", width=200, value=holiday.date)
+        day_field = ft.TextField(label="Day *", width=150, value=holiday.day)
+
+        type_dropdown = ft.Dropdown(
+            label="Type",
+            width=200,
+            options=[
+                ft.dropdown.Option("national", "National Holiday"),
+                ft.dropdown.Option("festival", "Festival"),
+                ft.dropdown.Option("company", "Company Holiday"),
+            ],
+            value=holiday.type,
+        )
+
+        optional_switch = ft.Switch(
+            label="Optional Holiday", value=holiday.optional)
+
+        def update(e):
+            if not name_field.value or not date_field.value or not day_field.value:
+                self._show_error("All fields are required!")
+                return
+
+            # Update the holiday in memory
+            holiday.name = name_field.value
+            holiday.date = date_field.value
+            holiday.day = day_field.value
+            holiday.type = type_dropdown.value
+            holiday.optional = optional_switch.value
+
+            self._show_success(f"Holiday '{name_field.value}' updated!")
+            self._close_dialog()
+            # Refresh the UI
+            self.content = self._build_content()
+            self._page.update()
+
+        dialog = ft.AlertDialog(
+            title=ft.Text("Edit Holiday"),
+            content=ft.Column([
+                name_field,
+                date_field,
+                day_field,
+                type_dropdown,
+                optional_switch,
+            ], spacing=15),
+            actions=[
+                ft.TextButton(
+                    "Cancel", on_click=lambda e: self._close_dialog()),
+                ft.ElevatedButton("Update", on_click=update, style=ft.ButtonStyle(
+                    bgcolor=PRIMARY, color="WHITE")),
+            ],
+        )
+
+        self._page.dialog = dialog
+        dialog.open = True
+        self._page.update()
 
     def _delete_holiday(self, holiday: Holiday):
         """Delete a holiday"""
         def confirm(e):
+            # Remove holiday from list
+            self.holidays = [h for h in self.holidays if h.id != holiday.id]
             self._show_success(f"Holiday '{holiday.name}' deleted!")
             self._close_dialog()
+            # Refresh the UI
+            self.content = self._build_content()
+            self._page.update()
 
         dialog = ft.AlertDialog(
             title=ft.Text("Delete Holiday?"),

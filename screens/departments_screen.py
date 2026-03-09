@@ -119,14 +119,17 @@ class DepartmentsScreen(ft.Container):
         self._page.clean()
         self._page.add(LoginScreen(self._page))
 
-    def _get_departments(self):
-        """Get all departments from PostgreSQL with head names"""
+    def _get_departments(self, limit: int = 50):
+        """Get departments from PostgreSQL with head names and pagination"""
         db = get_db_session()
         try:
-            # Get all employees first for head lookup
-            all_employees = {e.id: e for e in db.query(Employee).all()}
+            # Get all employees first for head lookup (with limit)
+            all_employees = {e.id: e for e in db.query(
+                Employee).limit(100).all()}
 
-            departments = db.query(Department).order_by(Department.id).all()
+            # Get departments with limit for performance
+            departments = db.query(Department).order_by(
+                Department.id).limit(limit).all()
 
             # Attach head names to departments
             result = []
@@ -290,6 +293,13 @@ class DepartmentsScreen(ft.Container):
                 db.add(new_dept)
                 db.commit()
 
+                # Invalidate dashboard stats cache
+                try:
+                    from database.operations import _invalidate_cache
+                    _invalidate_cache("dashboard_")
+                except Exception as cache_err:
+                    print(f"Cache invalidation error: {cache_err}")
+
                 self._close_dialog()
                 self._show_success("Department added successfully!")
                 self._refresh()
@@ -449,6 +459,13 @@ class DepartmentsScreen(ft.Container):
 
                 db.query(Department).filter(Department.id == dept_id).delete()
                 db.commit()
+
+                # Invalidate dashboard stats cache
+                try:
+                    from database.operations import _invalidate_cache
+                    _invalidate_cache("dashboard_")
+                except Exception as cache_err:
+                    print(f"Cache invalidation error: {cache_err}")
 
                 self._close_dialog()
                 self._show_success("Deleted!")

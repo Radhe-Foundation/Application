@@ -303,8 +303,14 @@ class ProfileScreen(ft.Container):
         self._page.update()
 
     def _view_profile(self, e):
-        """View profile (current screen)"""
-        pass
+        """View profile (current screen) - refresh the profile data"""
+        # Refresh employee data from database
+        self._get_employee_data()
+        # Rebuild UI with fresh data
+        self.content = self.build_ui()
+        self._page.update()
+        # Show info message
+        self._show_snackbar("Profile refreshed", bgcolor="#17A2B8")
 
     def _view_tasks(self, e):
         """View tasks"""

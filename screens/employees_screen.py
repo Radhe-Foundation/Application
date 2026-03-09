@@ -163,20 +163,40 @@ class EmployeesScreen(ft.Container):
         """Build employee list with PostgreSQL"""
         from sqlalchemy.orm import joinedload
 
-        db = None
-        try:
-            db = get_db_session()
-            # Query employees with eager loading of relationships using SQLAlchemy
-            employees = db.query(Employee).options(
-                joinedload(Employee.department),
-                joinedload(Employee.position)
-            ).all()
-        except Exception as e:
-            print(f"Error loading employees: {e}")
-            employees = []
-        finally:
-            if db:
-                db.close()
+        # Debounce timer for search
+        self._search_debounce_timer = None
+
+        def load_employees(search_term: str = None):
+            """Load employees with optional search filter"""
+            db = None
+            try:
+                db = get_db_session()
+                query = db.query(Employee).options(
+                    joinedload(Employee.department),
+                    joinedload(Employee.position)
+                )
+
+                # Apply search filter if provided
+                if search_term and search_term.strip():
+                    search = search_term.strip().lower()
+                    query = query.filter(
+                        (Employee.first_name.ilike(f"%{search}%")) |
+                        (Employee.last_name.ilike(f"%{search}%")) |
+                        (Employee.email.ilike(f"%{search}%")) |
+                        (Employee.employee_code.ilike(f"%{search}%"))
+                    )
+
+                # Added limit for performance
+                return query.order_by(Employee.id.desc()).limit(100).all()
+            except Exception as e:
+                print(f"Error loading employees: {e}")
+                return []
+            finally:
+                if db:
+                    db.close()
+
+        # Initial load of employees
+        employees = load_employees()
 
         if not employees:
             return ft.Container(
@@ -673,6 +693,13 @@ class EmployeesScreen(ft.Container):
                 )
                 db.add(new_employee)
                 db.commit()
+
+                # Invalidate dashboard stats cache after adding new employee
+                try:
+                    from database.operations import _invalidate_cache
+                    _invalidate_cache("dashboard_")
+                except Exception as cache_err:
+                    print(f"Cache invalidation error: {cache_err}")
 
                 self._close_dialog()
                 self._show_success(
@@ -2850,6 +2877,14 @@ class EmployeesScreen(ft.Container):
                             db.delete(user_to_delete)
 
                 db.commit()
+
+                # Invalidate dashboard stats cache after deleting employee
+                try:
+                    from database.operations import _invalidate_cache
+                    _invalidate_cache("dashboard_")
+                except Exception as cache_err:
+                    print(f"Cache invalidation error: {cache_err}")
+
                 self._close_dialog()
                 self._show_success("Employee deleted successfully!")
                 self._refresh()

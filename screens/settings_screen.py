@@ -10,7 +10,7 @@ from flet import AlertDialog, dropdown
 from datetime import datetime
 
 from database.session_manager import get_session, get_db_session, check_db_connection
-from database.models import Company, Role, User, Employee
+from database.models import Company, Role, User, Employee, AppSettings
 from database.operations import get_all_users, get_all_roles, get_all_departments
 
 
@@ -174,26 +174,29 @@ class SettingsScreen(Column):
         ], scroll=ScrollMode.AUTO, spacing=15)
 
     def build_preferences_settings(self):
-        """Build system preferences"""
+        """Build system preferences - load from database"""
+        # Load saved preferences
+        prefs = self._load_preferences()
+
         self.notifications_switch = Switch(
             label="Email Notifications",
-            value=True
+            value=prefs.get('notifications_enabled', True)
         )
 
         self.attendance_reminder_switch = Switch(
             label="Daily Attendance Reminder",
-            value=True
+            value=prefs.get('attendance_reminder', True)
         )
 
         self.leave_approval_switch = Switch(
             label="Auto-approve Leave Requests",
-            value=False
+            value=prefs.get('auto_approve_leave', False)
         )
 
         self.session_timeout = TextField(
             label="Session Timeout (minutes)",
             width=200,
-            value="60"
+            value=str(prefs.get('session_timeout', 60))
         )
 
         return Column([
@@ -208,6 +211,44 @@ class SettingsScreen(Column):
             Button("Save Preferences", on_click=self.save_preferences,
                    bgcolor=Colors.PRIMARY, color=Colors.WHITE),
         ], scroll=ScrollMode.AUTO, spacing=15)
+
+    def _load_preferences(self):
+        """Load preferences from database"""
+        prefs = {
+            'notifications_enabled': True,
+            'attendance_reminder': True,
+            'auto_approve_leave': False,
+            'session_timeout': 60
+        }
+
+        db = get_db_session()
+        try:
+            notif = db.query(AppSettings).filter(
+                AppSettings.key == 'notifications_enabled').first()
+            if notif and notif.value:
+                prefs['notifications_enabled'] = notif.value.lower() == 'true'
+
+            att_rem = db.query(AppSettings).filter(
+                AppSettings.key == 'attendance_reminder').first()
+            if att_rem and att_rem.value:
+                prefs['attendance_reminder'] = att_rem.value.lower() == 'true'
+
+            auto_leave = db.query(AppSettings).filter(
+                AppSettings.key == 'auto_approve_leave').first()
+            if auto_leave and auto_leave.value:
+                prefs['auto_approve_leave'] = auto_leave.value.lower() == 'true'
+
+            timeout = db.query(AppSettings).filter(
+                AppSettings.key == 'session_timeout').first()
+            if timeout and timeout.value:
+                prefs['session_timeout'] = int(
+                    timeout.value) if timeout.value.isdigit() else 60
+        except Exception as e:
+            print(f"Error loading preferences: {e}")
+        finally:
+            db.close()
+
+        return prefs
 
     def load_settings(self):
         """Load current settings"""
@@ -568,8 +609,10 @@ class SettingsScreen(Column):
             self.show_snackbar(
                 f"Error saving preferences: {str(ex)}", Colors.RED)
 
-    def close_dialog(self, dialog):
-        dialog.open = False
+    def close_dialog(self, dialog, e=None):
+        """Close dialog"""
+        if dialog:
+            dialog.open = False
         self._page.update()
 
     def show_snackbar(self, message: str, color):

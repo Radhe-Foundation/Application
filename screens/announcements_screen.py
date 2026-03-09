@@ -88,6 +88,16 @@ class AnnouncementsScreen(ft.Container):
             self._show_error("No announcements to export!")
             return
 
+        import os
+
+        # Create reports directory if not exists
+        export_dir = "reports"
+        if not os.path.exists(export_dir):
+            os.makedirs(export_dir)
+
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        filename = f"{export_dir}/announcements_{timestamp}.csv"
+
         csv_lines = [
             "ID,Title,Type,Priority,Author,Views,Target Audience,Created Date"]
         for ann in self.announcements:
@@ -99,11 +109,13 @@ class AnnouncementsScreen(ft.Container):
 
         csv_content = "\n".join(csv_lines)
 
-        self._show_success(
-            f"Export ready! {len(self.announcements)} announcements exported.")
-
-        print("Announcements CSV Export:")
-        print(csv_content)
+        # Save to file
+        try:
+            with open(filename, 'w', encoding='utf-8') as f:
+                f.write(csv_content)
+            self._show_success(f"Exported {len(self.announcements)} announcements to {filename}")
+        except Exception as ex:
+            self._show_error(f"Export failed: {str(ex)}")
 
     def _build_announcements_list(self):
         """Build announcements list"""

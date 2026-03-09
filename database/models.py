@@ -1835,3 +1835,59 @@ class CompanyDocument(Base):
                         onupdate=datetime.utcnow)
 
     uploaded_by = relationship("User", foreign_keys=[uploaded_by_id])
+
+
+# ==================== HOLIDAY MODEL ====================
+
+class Holiday(Base):
+    """Company holidays"""
+    __tablename__ = "holidays"
+
+    id = Column(Integer, primary_key=True, index=True)
+    name = Column(String(200), nullable=False)
+    date = Column(Date, nullable=False)
+    day = Column(String(20), nullable=False)
+    # national, festival, company
+    holiday_type = Column(String(50), default="national")
+    is_optional = Column(Boolean, default=False)
+    year = Column(Integer, nullable=False)
+    is_active = Column(Boolean, default=True)
+    created_at = Column(DateTime, default=datetime.utcnow)
+    created_by = Column(Integer, ForeignKey("users.id"), nullable=True)
+
+
+# ==================== TODO ITEM MODEL ====================
+
+class TodoItem(Base):
+    """Personal todo items"""
+    __tablename__ = "todo_items"
+
+    id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=False)
+    name = Column(String(500), nullable=False)
+    completed = Column(Boolean, default=False)
+    # all, active, completed
+    filter_type = Column(String(20), default="all")
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow,
+                        onupdate=datetime.utcnow)
+
+    user = relationship("User", backref="todo_items")
+
+
+# ==================== APP SETTINGS MODEL ====================
+
+class AppSettings(Base):
+    """Application settings stored in database"""
+    __tablename__ = "app_settings"
+
+    id = Column(Integer, primary_key=True, index=True)
+    key = Column(String(100), unique=True, nullable=False)
+    value = Column(Text)
+    description = Column(String(500))
+    # general, notifications, appearance
+    category = Column(String(50), default="general")
+    is_active = Column(Boolean, default=True)
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow,
+                        onupdate=datetime.utcnow)

@@ -451,8 +451,14 @@ class DashboardScreen(ft.Container):
     # Navigation methods
     def _go_to_profile(self, e):
         self._selected_nav_index = 1
-        content_area = self.content.content.controls[1]
-        content_area.content.controls[1].content = self._create_profile_tab()
+        # Update sidebar navigation visual state
+        for item in self.content.content.controls[0].content.controls[2].controls:
+            item.bgcolor = "transparent"
+        if len(self.content.content.controls[0].content.controls[2].controls) > 1:
+            self.content.content.controls[0].content.controls[2].controls[1].bgcolor = PRIMARY + "15"
+        # Update content area to show profile tab
+        content_area = self.content.content.controls[1].content.controls[1]
+        content_area.content = self._create_profile_tab()
         self._page.update()
 
     def _go_to_tasks(self, e):

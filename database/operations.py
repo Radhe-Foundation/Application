@@ -718,10 +718,15 @@ def delete_task(db: Session, task_id: int):
 
 
 def get_tasks_for_user(db: Session, user_id: int):
-    """Get all tasks assigned to a user"""
+    """Get all tasks assigned to a user with eager loading"""
+    from sqlalchemy.orm import joinedload
+
     employee = get_employee_by_user_id(db, user_id)
     if employee:
-        return db.query(Task).filter(
+        return db.query(Task).options(
+            joinedload(Task.assigned_to),
+            joinedload(Task.created_by)
+        ).filter(
             Task.assigned_to_id == employee.id
         ).order_by(Task.created_at.desc()).all()
     return []
@@ -1197,22 +1202,33 @@ def get_user_emails(db: Session, user_id: int, folder: str = "inbox", limit: int
     from sqlalchemy.orm import joinedload
 
     if folder == "inbox":
-        return db.query(EmailMessage).options(joinedload(EmailMessage.sender)).join(EmailRecipient).filter(
+        return db.query(EmailMessage).options(
+            joinedload(EmailMessage.sender),
+            joinedload(EmailMessage.recipients)
+        ).join(EmailRecipient).filter(
             EmailRecipient.recipient_id == user_id,
             EmailMessage.is_draft == False
         ).order_by(EmailMessage.created_at.desc()).limit(limit).all()
     elif folder == "sent":
-        return db.query(EmailMessage).options(joinedload(EmailMessage.sender)).filter(
+        return db.query(EmailMessage).options(
+            joinedload(EmailMessage.sender),
+            joinedload(EmailMessage.recipients)
+        ).filter(
             EmailMessage.sender_id == user_id,
             EmailMessage.is_draft == False
         ).order_by(EmailMessage.created_at.desc()).limit(limit).all()
     elif folder == "drafts":
-        return db.query(EmailMessage).options(joinedload(EmailMessage.sender)).filter(
+        return db.query(EmailMessage).options(
+            joinedload(EmailMessage.sender),
+            joinedload(EmailMessage.recipients)
+        ).filter(
             EmailMessage.sender_id == user_id,
             EmailMessage.is_draft == True
         ).order_by(EmailMessage.created_at.desc()).limit(limit).all()
     elif folder == "announcements":
-        return db.query(EmailMessage).options(joinedload(EmailMessage.sender)).filter(
+        return db.query(EmailMessage).options(
+            joinedload(EmailMessage.sender)
+        ).filter(
             EmailMessage.sender_id == user_id,
             EmailMessage.category == EmailCategory.ANNOUNCEMENT
         ).order_by(EmailMessage.created_at.desc()).limit(limit).all()

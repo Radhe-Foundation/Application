@@ -21,7 +21,7 @@ def get_logo_src() -> str:
 
     # For web deployment, use absolute path from root with web_assets prefix
     # Flet web serves assets from web_assets folder at root
-    if is_web or os.name == 'nt' == False:
+    if is_web or os.name != 'nt':
         # Web mode - use web_assets path
         return "/web_assets/assets/logo/Vernikalogo.png"
     else:

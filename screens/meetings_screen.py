@@ -414,7 +414,7 @@ class MeetingsScreen(ft.Container):
             self._show_meeting_details(meeting)
 
         def handle_close(e=None):
-            pass
+            self._close_all_dialogs()
 
         show_date_meetings(
             page=self._page,
@@ -500,7 +500,7 @@ class MeetingsScreen(ft.Container):
             self._cancel_meeting(meeting)
 
         def handle_close(e):
-            pass  # Dialog handles its own closing
+            self._close_all_dialogs()
 
         show_meeting_details(
             page=self._page,

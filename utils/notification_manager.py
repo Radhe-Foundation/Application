@@ -11,6 +11,7 @@ from dataclasses import dataclass, field
 from datetime import datetime
 import threading
 import time
+from sqlalchemy import text  # Add text import for DB operations
 
 
 # Global notification overlay container
@@ -94,6 +95,15 @@ class GlobalNotificationBanner:
 
         # Determine text color based on background
         text_color = ft.Colors.WHITE
+
+        # Adjust duration based on priority (high/urgent notifications stay longer)
+        if priority == "urgent":
+            duration = 10  # 10 seconds for urgent
+        elif priority == "high":
+            duration = 8   # 8 seconds for high priority
+        elif priority == "low":
+            duration = 3   # 3 seconds for low priority
+        # medium uses the passed duration (default 5)
 
         # Create banner container
         self._banner = ft.Container(
@@ -562,11 +572,18 @@ def ensure_notification_manager(page: ft.Page) -> NotificationManager:
     else:
         # Re-initialize the global banner with the current page
         try:
+            # Update page reference
             _notification_manager._page = page
+            # Recreate global banner with new page
             _notification_manager._global_banner = GlobalNotificationBanner(
                 page)
+            # Clear old notifications to prevent duplicates on navigation
+            _notification_manager._notifications.clear()
+            _notification_manager._unread_count = 0
         except Exception as e:
             print(f"[Notification] Re-init error: {e}")
+            # If re-init fails, create fresh manager
+            _notification_manager = NotificationManager(page)
     return _notification_manager
 
 
@@ -633,3 +650,143 @@ def notify_warning(page: ft.Page, message: str, title: str = "Warning"):
 def notify_info(page: ft.Page, message: str, title: str = "Info"):
     """Show info toast notification"""
     show_toast(page, title, message, "info")
+
+
+# ==================== DATABASE PERSISTENCE FUNCTIONS ====================
+
+def save_notification_to_db(
+    user_id: int,
+    title: str,
+    message: str,
+    notification_type: str = "info",
+    priority: str = "medium",
+    related_entity_type: str = None,
+    related_entity_id: int = None
+) -> Optional[int]:
+    """
+    Save a notification to the database for persistence.
+
+    Returns:
+        Notification ID if saved successfully, None otherwise
+    """
+    try:
+        from database.session_manager import get_db_session
+        db = get_db_session()
+
+        # Try to call the stored function
+        result = db.execute(
+            text("SELECT save_notification(:user_id, :title, :message, :type, :priority, :entity_type, :entity_id)"),
+            {
+                "user_id": user_id,
+                "title": title,
+                "message": message,
+                "type": notification_type,
+                "priority": priority,
+                "entity_type": related_entity_type,
+                "entity_id": related_entity_id
+            }
+        )
+        notification_id = result.scalar()
+        db.commit()
+        db.close()
+        return notification_id
+    except Exception as e:
+        print(f"[Notification] Error saving to DB: {e}")
+        return None
+
+
+def load_notifications_from_db(user_id: int, limit: int = 50) -> List[dict]:
+    """
+    Load notifications from the database.
+
+    Returns:
+        List of notification dictionaries
+    """
+    try:
+        from database.session_manager import get_db_session
+        from sqlalchemy import text
+
+        db = get_db_session()
+        result = db.execute(
+            text("SELECT * FROM get_user_notifications(:user_id, :limit, 0, TRUE)"),
+            {"user_id": user_id, "limit": limit}
+        )
+
+        notifications = []
+        for row in result:
+            notifications.append({
+                'id': row[0],
+                'title': row[1],
+                'message': row[2],
+                'type': row[3],
+                'priority': row[4],
+                'is_read': row[5],
+                'related_entity_type': row[6],
+                'related_entity_id': row[7],
+                'created_at': row[8],
+                'read_at': row[9]
+            })
+
+        db.close()
+        return notifications
+    except Exception as e:
+        print(f"[Notification] Error loading from DB: {e}")
+        return []
+
+
+def mark_notification_read_in_db(notification_id: int, user_id: int) -> bool:
+    """Mark a notification as read in the database"""
+    try:
+        from database.session_manager import get_db_session
+        from sqlalchemy import text
+
+        db = get_db_session()
+        db.execute(
+            text("SELECT mark_notification_read(:notification_id, :user_id)"),
+            {"notification_id": notification_id, "user_id": user_id}
+        )
+        db.commit()
+        db.close()
+        return True
+    except Exception as e:
+        print(f"[Notification] Error marking read in DB: {e}")
+        return False
+
+
+def mark_all_notifications_read_in_db(user_id: int) -> int:
+    """Mark all notifications as read for a user"""
+    try:
+        from database.session_manager import get_db_session
+        from sqlalchemy import text
+
+        db = get_db_session()
+        result = db.execute(
+            text("SELECT mark_all_notifications_read(:user_id)"),
+            {"user_id": user_id}
+        )
+        count = result.scalar() or 0
+        db.commit()
+        db.close()
+        return count
+    except Exception as e:
+        print(f"[Notification] Error marking all read in DB: {e}")
+        return 0
+
+
+def get_unread_notification_count_from_db(user_id: int) -> int:
+    """Get unread notification count from database"""
+    try:
+        from database.session_manager import get_db_session
+        from sqlalchemy import text
+
+        db = get_db_session()
+        result = db.execute(
+            text("SELECT get_unread_notification_count(:user_id)"),
+            {"user_id": user_id}
+        )
+        count = result.scalar() or 0
+        db.close()
+        return count
+    except Exception as e:
+        print(f"[Notification] Error getting count from DB: {e}")
+        return 0
