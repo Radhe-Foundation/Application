@@ -86,7 +86,7 @@ class TransactionsScreen(ft.Container):
             except AttributeError:
                 # Fallback for older Flet versions or if services does not exist
                 if self._file_picker not in self._page.overlay:
-                self._page.overlay.append(self._file_picker)
+                    self._page.overlay.append(self._file_picker)
 
     def _build_content(self):
         header = ft.Container(
