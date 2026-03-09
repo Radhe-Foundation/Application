@@ -19,7 +19,7 @@ except ImportError:
     requests = None
     print("WARNING: 'requests' module not installed. File uploads to Supabase will not work.")
 
-from config import SUPABASE_URL, SUPABASE_KEY, SUPABASE_STORAGE_URL, SUPABASE_STORAGE_BUCKET
+from config import SUPABASE_URL, SUPABASE_KEY, SUPABASE_STORAGE_URL, SUPABASE_STORAGE_BUCKET, SUPABASE_SERVICE_KEY
 
 logger = logging.getLogger(__name__)
 
@@ -49,6 +49,8 @@ class SupabaseStorage:
         self.bucket_name = SUPABASE_STORAGE_BUCKET
         self.supabase_url = SUPABASE_URL
         self.supabase_key = SUPABASE_KEY
+        # Use service key if available for better permissions
+        self.service_key = SUPABASE_SERVICE_KEY if SUPABASE_SERVICE_KEY else SUPABASE_KEY
         self._last_error = None
 
         if not SUPABASE_URL or not SUPABASE_KEY:
@@ -69,31 +71,34 @@ class SupabaseStorage:
     def _initialize_storage(self):
         """Initialize storage connection with more permissive settings"""
         try:
-            # Check if bucket exists - but don't fail if it doesn't exist yet
-            # We'll try to create uploads even if bucket check fails
+            # Use service key for bucket checks (has better permissions)
             headers = {
-                'Authorization': f'Bearer {SUPABASE_KEY}',
-                'apikey': SUPABASE_KEY
+                'Authorization': f'Bearer {self.service_key}',
+                'apikey': self.service_key
             }
 
-            # Try to check bucket
-            test_url = f"{SUPABASE_URL}/storage/v1/bucket/{self.bucket_name}"
+            # Try to list buckets to verify connection - more reliable than checking specific bucket
+            test_url = f"{SUPABASE_URL}/storage/v1/bucket"
             response = requests.get(test_url, headers=headers, timeout=10)
 
             if response.status_code == 200:
-                self.available = True
-                print(f"[Storage] Connected to bucket: {self.bucket_name}")
-            elif response.status_code == 404:
-                self._last_error = f"Bucket '{self.bucket_name}' not found"
-                print(f"[Storage] WARNING: {self._last_error}")
-                print(
-                    f"[Storage] Will attempt uploads anyway - bucket may need to be created")
-                # Set available to try uploads anyway
-                self.available = True
+                buckets = response.json()
+                bucket_exists = any(
+                    b.get('id') == self.bucket_name for b in buckets)
+                if bucket_exists:
+                    self.available = True
+                    print(f"[Storage] Connected to bucket: {self.bucket_name}")
+                else:
+                    self._last_error = f"Bucket '{self.bucket_name}' not found"
+                    print(f"[Storage] WARNING: {self._last_error}")
+                    print(
+                        f"[Storage] Available buckets: {[b.get('id') for b in buckets]}")
+                    # Try anyway - uploads might work
+                    self.available = True
             else:
-                # Other error - try anyway
+                # Try anyway - uploads might work
                 print(
-                    f"[Storage] Bucket check returned {response.status_code}, will attempt uploads")
+                    f"[Storage] Bucket list returned {response.status_code}, will attempt uploads")
                 self.available = True
 
         except requests.exceptions.Timeout:
@@ -122,19 +127,24 @@ class SupabaseStorage:
         if not self.available:
             return False, self._last_error or "Storage not available"
 
-        # Try a simple test - list files in root
+        # Try a simple test - list buckets (use service key for better permissions)
         try:
             headers = {
-                'Authorization': f'Bearer {self.supabase_key}',
-                'apikey': self.supabase_key
+                'Authorization': f'Bearer {self.service_key}',
+                'apikey': self.service_key
             }
-            test_url = f"{self.supabase_url}/storage/v1/object/{self.bucket_name}/"
+            # Use bucket list endpoint instead of object list
+            test_url = f"{self.supabase_url}/storage/v1/bucket"
             response = requests.get(test_url, headers=headers, timeout=10)
 
-            if response.status_code in [200, 201]:
-                return True, "Storage connection successful"
-            elif response.status_code == 404:
-                return False, f"Bucket '{self.bucket_name}' not found - run setup script"
+            if response.status_code == 200:
+                buckets = response.json()
+                bucket_exists = any(
+                    b.get('id') == self.bucket_name for b in buckets)
+                if bucket_exists:
+                    return True, f"Storage connected - bucket '{self.bucket_name}' exists"
+                else:
+                    return False, f"Bucket '{self.bucket_name}' not found - run create_bucket script"
             elif response.status_code == 401:
                 return False, "Authentication failed - check SUPABASE_KEY"
             else:
