@@ -1559,7 +1559,7 @@ class MailScreen(ft.Container):
         self._page.update()
 
     def _attach_file_in_compose(self, e=None):
-        """Attach file in compose mail - uploads to Supabase for cloud access"""
+        """Attach file in compose mail - uploads to Supabase with local fallback"""
         # Initialize file picker - don't add to overlay, just create it
         if not hasattr(self, '_file_picker') or not self._file_picker:
             self._file_picker = ft.FilePicker()
@@ -1569,7 +1569,7 @@ class MailScreen(ft.Container):
         self._attached_file_path = {"path": None, "name": None, "url": None}
 
         def handle_picked_files(files):
-            """Process picked files after selection - with Supabase upload"""
+            """Process picked files after selection - with Supabase upload + local fallback"""
             try:
                 if not files:
                     return
@@ -1582,12 +1582,12 @@ class MailScreen(ft.Container):
 
                 # Show uploading message
                 snack = ft.SnackBar(content=ft.Text(
-                    f"Uploading {file_name} to cloud..."), bgcolor=TEAMS_BLUE)
+                    f"Uploading {file_name}..."), bgcolor=TEAMS_BLUE)
                 self._page.overlay.append(snack)
                 snack.open = True
                 self._page.update()
 
-                # Try to upload to Supabase Storage
+                # Try to upload to Supabase Storage first
                 file_url = None
                 upload_success = False
                 upload_error = None
@@ -1612,23 +1612,21 @@ class MailScreen(ft.Container):
                             print(
                                 f"[Mail] Supabase upload failed: {url_or_error}")
                     else:
-                        upload_error = "Cloud storage not configured"
-                        print("[Mail] Supabase storage not available")
+                        upload_error = "Cloud storage not available"
+                        print(
+                            "[Mail] Supabase storage not available - using local path")
                 except Exception as upload_err:
                     upload_error = str(upload_err)
                     print(f"[Mail] Upload error: {upload_err}")
 
-                # If upload failed, show error
+                # If Supabase upload failed, use local file path as fallback
                 if not upload_success:
-                    error_msg = upload_error or "Upload failed"
-                    snack = ft.SnackBar(content=ft.Text(
-                        f"Cloud upload failed: {error_msg}. File not attached."), bgcolor=ERROR)
-                    self._page.overlay.append(snack)
-                    snack.open = True
-                    self._page.update()
-                    return
+                    print(
+                        f"[Mail] Using local file path as fallback: {file_path}")
+                    # Use local file path as fallback
+                    file_url = file_path
 
-                # Store the Supabase URL (cloud accessible)
+                # Store the file URL (Supabase URL or local path)
                 self._attached_file_path["path"] = file_url
                 self._attached_file_path["name"] = file_name
                 self._attached_file_path["url"] = file_url
@@ -1639,7 +1637,7 @@ class MailScreen(ft.Container):
 
                 # Show success message with filename
                 snack = ft.SnackBar(content=ft.Text(
-                    f"Attached (cloud): {file_name}"), bgcolor=SUCCESS)
+                    f"Attached: {file_name}"), bgcolor=SUCCESS)
                 self._page.overlay.append(snack)
                 snack.open = True
                 self._page.update()

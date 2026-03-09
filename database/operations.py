@@ -13,15 +13,56 @@ from database.models import (
     EmailCategory, MeetingStatus, MessageType, CallLog, CallType, CallStatus
 )
 from utils.cache import get_global_cache, cache_screen_data, get_cached_screen_data
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, joinedload
 from sqlalchemy import func, or_
 from datetime import datetime, date
 import bcrypt
 import secrets
 import logging
+import threading
+import time
 
 # Configure logging
 logger = logging.getLogger(__name__)
+
+# In-memory cache for frequently accessed data
+_query_cache = {}
+_cache_lock = threading.RLock()
+_CACHE_TTL = 30  # 30 seconds default TTL
+
+
+# ==================== CACHE HELPERS ====================
+
+def _get_cached(key: str):
+    """Get value from cache if not expired"""
+    with _cache_lock:
+        entry = _query_cache.get(key)
+        if entry:
+            value, timestamp = entry
+            if time.time() - timestamp < _CACHE_TTL:
+                return value
+            else:
+                # Remove expired entry
+                del _query_cache[key]
+    return None
+
+
+def _set_cached(key: str, value):
+    """Set value in cache with current timestamp"""
+    with _cache_lock:
+        _query_cache[key] = (value, time.time())
+
+
+def _invalidate_cache(prefix: str = None):
+    """Invalidate cache entries"""
+    with _cache_lock:
+        if prefix:
+            keys_to_delete = [
+                k for k in _query_cache.keys() if k.startswith(prefix)]
+            for key in keys_to_delete:
+                del _query_cache[key]
+        else:
+            _query_cache.clear()
 
 
 # ==================== USER OPERATIONS ====================
@@ -57,8 +98,11 @@ def create_user(db: Session, username: str, email: str, password: str, role_id: 
 
 
 def get_all_users(db: Session, skip: int = 0, limit: int = 100):
-    """Get all users with pagination"""
-    return db.query(User).offset(skip).limit(limit).all()
+    """Get all users with pagination and eager loading for better performance"""
+    # Use eager loading to avoid N+1 query problem
+    return db.query(User).options(
+        joinedload(User.role)
+    ).offset(skip).limit(limit).all()
 
 
 def update_user_status(db: Session, user_id: int, status: UserStatus):
@@ -1047,16 +1091,22 @@ def send_chat_message(db: Session, sender_id: int, content: str,
     return message
 
 
-def get_group_messages(db: Session, group_id: int, limit: int = 100):
-    """Get messages for a group"""
-    return db.query(ChatMessage).filter(
+def get_group_messages(db: Session, group_id: int, limit: int = 50):
+    """Get messages for a group with optimized query"""
+    from sqlalchemy.orm import joinedload
+    return db.query(ChatMessage).options(
+        joinedload(ChatMessage.sender)
+    ).filter(
         ChatMessage.group_id == group_id
     ).order_by(ChatMessage.created_at.desc()).limit(limit).all()
 
 
-def get_direct_messages(db: Session, user1_id: int, user2_id: int, limit: int = 100):
-    """Get direct messages between two users"""
-    return db.query(ChatMessage).filter(
+def get_direct_messages(db: Session, user1_id: int, user2_id: int, limit: int = 50):
+    """Get direct messages between two users with optimized query"""
+    from sqlalchemy.orm import joinedload
+    return db.query(ChatMessage).options(
+        joinedload(ChatMessage.sender)
+    ).filter(
         or_(
             (ChatMessage.sender_id == user1_id) & (
                 ChatMessage.receiver_id == user2_id),
@@ -1142,8 +1192,8 @@ def send_email(db: Session, sender_id: int, subject: str, body: str,
     return email
 
 
-def get_user_emails(db: Session, user_id: int, folder: str = "inbox", limit: int = 50):
-    """Get emails for a user by folder"""
+def get_user_emails(db: Session, user_id: int, folder: str = "inbox", limit: int = 20):
+    """Get emails for a user by folder with optimized query"""
     from sqlalchemy.orm import joinedload
 
     if folder == "inbox":

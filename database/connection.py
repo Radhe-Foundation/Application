@@ -19,6 +19,7 @@ from config import (
     DB_ECHO,
 )
 import logging
+import time
 from contextlib import contextmanager
 from typing import Optional, Generator
 
@@ -71,6 +72,8 @@ def get_engine() -> Engine:
                 pool_recycle=DB_POOL_RECYCLE,
                 pool_timeout=DB_POOL_TIMEOUT,
                 pool_pre_ping=True,
+                # Performance optimizations
+                pool_use_lifo=True,  # Use LIFO for better connection reuse
                 connect_args=connect_args
             )
 
