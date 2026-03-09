@@ -51,7 +51,7 @@ class LoginScreen(ft.Container):
         """Check if running on mobile"""
         try:
             width = getattr(self._page, 'window_width', 1200)
-            return width < 600
+            return width < 768
         except:
             return False
 
@@ -59,7 +59,7 @@ class LoginScreen(ft.Container):
         """Check if running on tablet"""
         try:
             width = getattr(self._page, 'window_width', 1200)
-            return 600 <= width < 900
+            return 768 <= width < 1024
         except:
             return False
 
@@ -82,27 +82,27 @@ class LoginScreen(ft.Container):
 
         window_width = self._get_window_width()
 
-        # Responsive sizing
-        if window_width < 600:  # Mobile
-            logo_size = 120
-            title_size = 28
-            welcome_size = 22
-            form_width = 280
+        # Responsive sizing - use 768px for mobile breakpoint
+        if window_width < 768:  # Mobile
+            logo_size = 100
+            title_size = 24
+            welcome_size = 18
+            form_width = window_width - 50
             field_height = 48
             btn_height = 45
             icon_size = 20
-        elif window_width < 900:  # Tablet
-            logo_size = 160
-            title_size = 32
-            welcome_size = 24
-            form_width = 320
+        elif window_width < 1024:  # Tablet
+            logo_size = 140
+            title_size = 28
+            welcome_size = 20
+            form_width = 300
             field_height = 50
             btn_height = 48
             icon_size = 22
         else:  # Desktop
-            logo_size = 250
-            title_size = 36
-            welcome_size = 28
+            logo_size = 200
+            title_size = 32
+            welcome_size = 24
             form_width = 320
             field_height = 52
             btn_height = 50
@@ -522,15 +522,16 @@ class LoginScreen(ft.Container):
         """Build the complete UI with everything perfectly centered and responsive"""
 
         window_width = self._get_window_width()
-        is_mobile = window_width < 600
-        is_tablet = window_width < 900
+        # Use 768px as mobile breakpoint for better mobile detection
+        is_mobile = window_width < 768
+        is_tablet = window_width < 1024
 
         # Responsive padding and sizing
         if is_mobile:
             horiz_padding = 15
-            form_width = window_width - 30
-            left_panel_visible = True  # Show logo on mobile too
-            panel_ratio = 0.35  # Left panel takes 35% on mobile
+            form_width = window_width - 40  # More margin on mobile
+            left_panel_visible = True
+            panel_ratio = 0.35
         elif is_tablet:
             horiz_padding = 20
             form_width = 300

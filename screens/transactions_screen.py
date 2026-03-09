@@ -141,9 +141,7 @@ class TransactionsScreen(ft.Container):
         """Initialize file picker for attachments"""
         if not self._file_picker:
             self._file_picker = ft.FilePicker()
-            # Add to overlay for proper file picker functionality
-            if self._file_picker not in self._page.overlay:
-                self._page.overlay.append(self._file_picker)
+            # FilePicker is automatically handled by Flet - no need to add to any collection
 
     def _build_content(self):
         header = ft.Container(
