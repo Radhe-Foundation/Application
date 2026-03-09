@@ -73,7 +73,69 @@ class TransactionsScreen(ft.Container):
         self.bgcolor = BACKGROUND
         self._file_picker = None
         self._view_mode = "transactions"  # Default view mode: transactions or billing
+
+        # Responsive sizing
+        self._is_mobile = self._check_mobile()
+        self._is_tablet = self._check_tablet()
+        self._window_width = self._get_window_width()
+
         self.content = self._build_content()
+
+    def _check_mobile(self) -> bool:
+        """Check if running on mobile"""
+        try:
+            width = getattr(self._page, 'window_width', 1200)
+            return width < 600
+        except:
+            return False
+
+    def _check_tablet(self) -> bool:
+        """Check if running on tablet"""
+        try:
+            width = getattr(self._page, 'window_width', 1200)
+            return 600 <= width < 900
+        except:
+            return False
+
+    def _get_window_width(self) -> float:
+        """Get window width safely"""
+        try:
+            return getattr(self._page, 'window_width', 1200)
+        except:
+            return 1200
+
+    def _get_responsive_sizes(self):
+        """Get responsive sizes based on screen width"""
+        if self._window_width < 600:  # Mobile
+            return {
+                'summary_card_width': None,  # Expand to fit
+                'dialog_width': self._window_width - 40,
+                'button_height': 36,
+                'icon_size': 20,
+                'text_size': 12,
+                'padding': 10,
+                'spacing': 10,
+            }
+        elif self._window_width < 900:  # Tablet
+            return {
+                'summary_card_width': 140,
+                'dialog_width': 450,
+                'button_height': 40,
+                'icon_size': 24,
+                'text_size': 13,
+                'padding': 12,
+                'spacing': 15,
+            }
+        else:  # Desktop
+            return {
+                'summary_card_width': 160,
+                'dialog_width': 520,
+                'button_height': 45,
+                'icon_size': 28,
+                'text_size': 14,
+                'padding': 15,
+                'spacing': 20,
+            }
 
     def _init_file_picker(self):
         """Initialize file picker for attachments"""
@@ -234,49 +296,98 @@ class TransactionsScreen(ft.Container):
     def _build_summary(self):
         """Build summary cards"""
         summary = self._get_summary()
+        sizes = self._get_responsive_sizes()
 
-        return ft.Container(
-            padding=15,
-            content=ft.Row([
-                self._create_summary_card(
-                    "Total Income",
-                    f"₹{summary['total_income']:,.2f}",
-                    ft.Icons.TRENDING_UP,
-                    GREEN
-                ),
-                self._create_summary_card(
-                    "Total Expenses",
-                    f"₹{summary['total_expense']:,.2f}",
-                    ft.Icons.TRENDING_DOWN,
-                    RED
-                ),
-                self._create_summary_card(
-                    "Net Balance",
-                    f"₹{summary['balance']:,.2f}",
-                    ft.Icons.ACCOUNT_BALANCE,
-                    PRIMARY
-                ),
-                self._create_summary_card(
-                    "Pending",
-                    f"₹{summary['pending']:,.2f}",
-                    ft.Icons.PENDING,
-                    WARNING
-                ),
-            ], spacing=20),
-            bgcolor=SURFACE
-        )
+        # For mobile, use Column instead of Row
+        if self._is_mobile:
+            return ft.Container(
+                padding=sizes['padding'],
+                content=ft.Column([
+                    ft.Row([
+                        self._create_summary_card(
+                            "Total Income",
+                            f"₹{summary['total_income']:,.2f}",
+                            ft.Icons.TRENDING_UP,
+                            GREEN,
+                            sizes
+                        ),
+                        self._create_summary_card(
+                            "Total Expenses",
+                            f"₹{summary['total_expense']:,.2f}",
+                            ft.Icons.TRENDING_DOWN,
+                            RED,
+                            sizes
+                        ),
+                    ], spacing=sizes['spacing']),
+                    ft.Row([
+                        self._create_summary_card(
+                            "Net Balance",
+                            f"₹{summary['balance']:,.2f}",
+                            ft.Icons.ACCOUNT_BALANCE,
+                            PRIMARY,
+                            sizes
+                        ),
+                        self._create_summary_card(
+                            "Pending",
+                            f"₹{summary['pending']:,.2f}",
+                            ft.Icons.PENDING,
+                            WARNING,
+                            sizes
+                        ),
+                    ], spacing=sizes['spacing']),
+                ], spacing=sizes['spacing']),
+                bgcolor=SURFACE
+            )
+        else:
+            return ft.Container(
+                padding=sizes['padding'],
+                content=ft.Row([
+                    self._create_summary_card(
+                        "Total Income",
+                        f"₹{summary['total_income']:,.2f}",
+                        ft.Icons.TRENDING_UP,
+                        GREEN,
+                        sizes
+                    ),
+                    self._create_summary_card(
+                        "Total Expenses",
+                        f"₹{summary['total_expense']:,.2f}",
+                        ft.Icons.TRENDING_DOWN,
+                        RED,
+                        sizes
+                    ),
+                    self._create_summary_card(
+                        "Net Balance",
+                        f"₹{summary['balance']:,.2f}",
+                        ft.Icons.ACCOUNT_BALANCE,
+                        PRIMARY,
+                        sizes
+                    ),
+                    self._create_summary_card(
+                        "Pending",
+                        f"₹{summary['pending']:,.2f}",
+                        ft.Icons.PENDING,
+                        WARNING,
+                        sizes
+                    ),
+                ], spacing=sizes['spacing']),
+                bgcolor=SURFACE
+            )
 
-    def _create_summary_card(self, title, value, icon, color):
+    def _create_summary_card(self, title, value, icon, color, sizes):
         """Create a summary card"""
+        card_width = sizes.get('summary_card_width', 160)
         return ft.Card(
             content=ft.Container(
                 content=ft.Column([
-                    ft.Icon(icon, size=28, color=color),
-                    ft.Text(value, size=20, weight=ft.FontWeight.BOLD),
-                    ft.Text(title, size=12, color=TEXT_SECONDARY),
+                    ft.Icon(icon, size=sizes['icon_size'], color=color),
+                    ft.Text(
+                        value, size=sizes['text_size'] + 6, weight=ft.FontWeight.BOLD),
+                    ft.Text(
+                        title, size=sizes['text_size'] - 2, color=TEXT_SECONDARY),
                 ], horizontal_alignment=ft.CrossAxisAlignment.CENTER, spacing=5),
-                padding=15,
-                width=160,
+                padding=sizes['padding'],
+                width=card_width,
                 alignment=ft.alignment.Alignment(0, 0)
             ),
             elevation=2
@@ -1370,37 +1481,83 @@ class TransactionsScreen(ft.Container):
         """Build billing requests view"""
         # Summary cards
         summary = self._get_billing_request_summary()
+        sizes = self._get_responsive_sizes()
 
-        summary_cards = ft.Container(
-            padding=15,
-            content=ft.Row([
-                self._create_summary_card(
-                    "Pending",
-                    str(summary['pending']),
-                    ft.Icons.PENDING,
-                    WARNING
-                ),
-                self._create_summary_card(
-                    "Approved",
-                    str(summary['approved']),
-                    ft.Icons.CHECK_CIRCLE,
-                    GREEN
-                ),
-                self._create_summary_card(
-                    "Rejected",
-                    str(summary['rejected']),
-                    ft.Icons.CANCEL,
-                    ERROR
-                ),
-                self._create_summary_card(
-                    "Total Approved",
-                    f"₹{summary['total_amount']:,.2f}",
-                    ft.Icons.ATTACH_MONEY,
-                    PRIMARY
-                ),
-            ], spacing=20),
-            bgcolor=SURFACE
-        )
+        # For mobile, use Column instead of Row
+        if self._is_mobile:
+            summary_cards = ft.Container(
+                padding=sizes['padding'],
+                content=ft.Column([
+                    ft.Row([
+                        self._create_summary_card(
+                            "Pending",
+                            str(summary['pending']),
+                            ft.Icons.PENDING,
+                            WARNING,
+                            sizes
+                        ),
+                        self._create_summary_card(
+                            "Approved",
+                            str(summary['approved']),
+                            ft.Icons.CHECK_CIRCLE,
+                            GREEN,
+                            sizes
+                        ),
+                    ], spacing=sizes['spacing']),
+                    ft.Row([
+                        self._create_summary_card(
+                            "Rejected",
+                            str(summary['rejected']),
+                            ft.Icons.CANCEL,
+                            ERROR,
+                            sizes
+                        ),
+                        self._create_summary_card(
+                            "Total Approved",
+                            f"₹{summary['total_amount']:,.2f}",
+                            ft.Icons.ATTACH_MONEY,
+                            PRIMARY,
+                            sizes
+                        ),
+                    ], spacing=sizes['spacing']),
+                ], spacing=sizes['spacing']),
+                bgcolor=SURFACE
+            )
+        else:
+            summary_cards = ft.Container(
+                padding=sizes['padding'],
+                content=ft.Row([
+                    self._create_summary_card(
+                        "Pending",
+                        str(summary['pending']),
+                        ft.Icons.PENDING,
+                        WARNING,
+                        sizes
+                    ),
+                    self._create_summary_card(
+                        "Approved",
+                        str(summary['approved']),
+                        ft.Icons.CHECK_CIRCLE,
+                        GREEN,
+                        sizes
+                    ),
+                    self._create_summary_card(
+                        "Rejected",
+                        str(summary['rejected']),
+                        ft.Icons.CANCEL,
+                        ERROR,
+                        sizes
+                    ),
+                    self._create_summary_card(
+                        "Total Approved",
+                        f"₹{summary['total_amount']:,.2f}",
+                        ft.Icons.ATTACH_MONEY,
+                        PRIMARY,
+                        sizes
+                    ),
+                ], spacing=sizes['spacing']),
+                bgcolor=SURFACE
+            )
 
         # Get requests
         requests = self._get_all_billing_requests()

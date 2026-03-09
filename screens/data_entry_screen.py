@@ -47,7 +47,71 @@ class DataEntryScreen(ft.Container):
         self.total_rows = 0
         self.search_query = ""
 
+        # Responsive sizing
+        self._is_mobile = self._check_mobile()
+        self._is_tablet = self._check_tablet()
+        self._window_width = self._get_window_width()
+
         self.content = self._build_content()
+
+    def _check_mobile(self) -> bool:
+        """Check if running on mobile"""
+        try:
+            width = getattr(self._page, 'window_width', 1200)
+            return width < 600
+        except:
+            return False
+
+    def _check_tablet(self) -> bool:
+        """Check if running on tablet"""
+        try:
+            width = getattr(self._page, 'window_width', 1200)
+            return 600 <= width < 900
+        except:
+            return False
+
+    def _get_window_width(self) -> float:
+        """Get window width safely"""
+        try:
+            return getattr(self._page, 'window_width', 1200)
+        except:
+            return 1200
+
+    def _get_responsive_sizes(self):
+        """Get responsive sizes based on screen width"""
+        if self._window_width < 600:  # Mobile
+            return {
+                'sheet_card_width': self._window_width - 60,
+                'dialog_width': self._window_width - 40,
+                'button_height': 40,
+                'icon_size': 20,
+                'text_size': 12,
+                'padding': 10,
+                'spacing': 10,
+                'table_height': 350,
+            }
+        elif self._window_width < 900:  # Tablet
+            return {
+                'sheet_card_width': 250,
+                'dialog_width': 400,
+                'button_height': 44,
+                'icon_size': 22,
+                'text_size': 13,
+                'padding': 12,
+                'spacing': 15,
+                'table_height': 450,
+            }
+        else:  # Desktop
+            return {
+                'sheet_card_width': 280,
+                'dialog_width': 450,
+                'button_height': 48,
+                'icon_size': 24,
+                'text_size': 14,
+                'padding': 15,
+                'spacing': 20,
+                'table_height': 500,
+            }
 
     def _build_content(self):
         return ft.Column([
@@ -162,10 +226,11 @@ class DataEntryScreen(ft.Container):
     def _sheet_card(self, sheet):
         cols = self._get_col_count(sheet.id)
         rows = self._get_row_count(sheet.id)
+        sizes = self._get_responsive_sizes()
 
         return ft.Container(
-            width=280,
-            padding=20,
+            width=sizes['sheet_card_width'],
+            padding=sizes['padding'],
             border_radius=12,
             bgcolor=SURFACE_COLOR,
             on_click=lambda e, sid=sheet.id: self._open_sheet(sid),
@@ -176,19 +241,19 @@ class DataEntryScreen(ft.Container):
                         bgcolor="#E3F2FD",
                         border_radius=10,
                         content=ft.Icon(ft.Icons.TABLE_CHART,
-                                        color=PRIMARY_COLOR, size=24),
+                                        color=PRIMARY_COLOR, size=sizes['icon_size']),
                     ),
                     ft.Column([
                         ft.Text(str(sheet.name) if sheet.name else "Untitled",
-                                size=16, weight=ft.FontWeight.BOLD, color=TEXT_COLOR),
+                                size=sizes['text_size'] + 2, weight=ft.FontWeight.BOLD, color=TEXT_COLOR),
                         ft.Text(f"Updated {sheet.updated_at.strftime('%d %b %Y') if sheet.updated_at else 'Never'}",
-                                size=11, color=TEXT_SECONDARY),
+                                size=sizes['text_size'] - 1, color=TEXT_SECONDARY),
                     ], spacing=2, expand=True),
                 ], alignment=ft.MainAxisAlignment.START),
-                ft.Container(height=15),
+                ft.Container(height=sizes['spacing']),
                 ft.Text(str(sheet.description) if sheet.description else "No description",
-                        size=12, color=TEXT_SECONDARY, max_lines=2),
-                ft.Container(height=15),
+                        size=sizes['text_size'] - 2, color=TEXT_SECONDARY, max_lines=2),
+                ft.Container(height=sizes['spacing']),
                 ft.Row([
                     ft.Container(
                         padding=ft.padding.symmetric(
@@ -196,7 +261,7 @@ class DataEntryScreen(ft.Container):
                         bgcolor="#E8F5E9",
                         border_radius=20,
                         content=ft.Text(
-                            f"{cols} cols", size=11, color=SUCCESS_COLOR, weight=ft.FontWeight.W_500),
+                            f"{cols} cols", size=sizes['text_size'] - 1, color=SUCCESS_COLOR, weight=ft.FontWeight.W_500),
                     ),
                     ft.Container(
                         padding=ft.padding.symmetric(
@@ -204,10 +269,10 @@ class DataEntryScreen(ft.Container):
                         bgcolor="#E3F2FD",
                         border_radius=20,
                         content=ft.Text(
-                            f"{rows} rows", size=11, color=PRIMARY_COLOR, weight=ft.FontWeight.W_500),
+                            f"{rows} rows", size=sizes['text_size'] - 1, color=PRIMARY_COLOR, weight=ft.FontWeight.W_500),
                     ),
                 ], spacing=10),
-                ft.Container(height=15),
+                ft.Container(height=sizes['spacing']),
                 ft.Row([
                     ft.TextButton("Open", on_click=lambda e, sid=sheet.id: self._open_sheet(sid),
                                   style=ft.ButtonStyle(color=PRIMARY_COLOR)),
@@ -446,8 +511,9 @@ class DataEntryScreen(ft.Container):
         table_content = ft.Column([table_header, table_data], spacing=0)
 
         # Return with horizontal scrolling
+        sizes = self._get_responsive_sizes()
         return ft.Container(
-            height=500,
+            height=sizes['table_height'],
             expand=True,
             content=ft.ListView(
                 controls=[
