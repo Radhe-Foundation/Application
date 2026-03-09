@@ -79,8 +79,13 @@ class TransactionsScreen(ft.Container):
         """Initialize file picker for attachments"""
         if not self._file_picker:
             self._file_picker = ft.FilePicker()
-            # Use overlay instead of deprecated services (Flet 0.80+)
-            if self._file_picker not in self._page.overlay:
+            # Use page.services for Service objects (Flet 0.80+)
+            try:
+                if self._file_picker not in self._page.services:
+                    self._page.services.append(self._file_picker)
+            except AttributeError:
+                # Fallback for older Flet versions or if services does not exist
+                if self._file_picker not in self._page.overlay:
                 self._page.overlay.append(self._file_picker)
 
     def _build_content(self):
