@@ -86,18 +86,12 @@ class EmployeesScreen(ft.Container):
         return get_db_session()
 
     def _init_file_picker(self):
-        """Initialize file picker for profile photos - using page.services (Flet 0.80+)"""
+        """Initialize file picker for profile photos"""
         if not self._file_picker:
             self._file_picker = ft.FilePicker()
-            # Use page.services for Service objects (Flet 0.80+)
-            # FilePicker is a Service, not a Control
-            try:
-                if self._file_picker not in self._page.services:
-                    self._page.services.append(self._file_picker)
-            except AttributeError:
-                # Fallback for older Flet versions or if services doesn't exist
-                if self._file_picker not in self._page.overlay:
-                    self._page.overlay.append(self._file_picker)
+            # Add to overlay for proper file picker functionality
+            if self._file_picker not in self._page.overlay:
+                self._page.overlay.append(self._file_picker)
 
     def _build_content(self):
         """Build the full content with header"""

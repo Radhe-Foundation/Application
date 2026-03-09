@@ -1560,10 +1560,12 @@ class MailScreen(ft.Container):
 
     def _attach_file_in_compose(self, e=None):
         """Attach file in compose mail - uploads to Supabase for cloud access"""
-        # Initialize file picker if not already done
+        # Initialize file picker if not already done - add to page.overlay, not page.services
         if not hasattr(self, '_file_picker') or not self._file_picker:
             self._file_picker = ft.FilePicker()
-            self._page.services.append(self._file_picker)
+            # Add to overlay for proper file picker functionality
+            if self._file_picker not in self._page.overlay:
+                self._page.overlay.append(self._file_picker)
 
         # Store selected file info (will store Supabase URL after upload)
         self._attached_file_path = {"path": None, "name": None, "url": None}

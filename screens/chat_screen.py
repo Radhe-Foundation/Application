@@ -174,17 +174,18 @@ class ChatScreen(ft.Container):
         self._presence_thread = None
         self._stop_threads = False
 
-# File picker for attachments - created once and reused
+# File picker for attachments - use page.overlay (not page.services)
         self._file_picker: Optional[ft.FilePicker] = None
 
         # Polling thread for presence
         self._presence_poll_thread = None
 
-        # Initialize FilePicker properly (Flet 0.80+ uses async pick_files)
-        # Note: FilePicker is a Service, not a Control, so we add it to page.services
+        # Initialize FilePicker properly - add to page.overlay, not page.services
         try:
             self._file_picker = ft.FilePicker()
-            self._page.services.append(self._file_picker)
+            # Add to overlay for proper file picker functionality
+            if self._file_picker not in self._page.overlay:
+                self._page.overlay.append(self._file_picker)
         except Exception as e:
             print(f"[Chat] FilePicker init error: {e}")
 
