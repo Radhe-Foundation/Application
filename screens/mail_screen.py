@@ -872,10 +872,15 @@ class MailScreen(ft.Container):
 
             if hasattr(self, '_attached_file_path') and self._attached_file_path:
                 attached = self._attached_file_path
-                if attached.get('url') and attached.get('name'):
+                # Check if URL exists and is not None/empty
+                attached_url = attached.get('url')
+                attached_name = attached.get('name')
+                if attached_url and attached_name and str(attached_url).strip():
                     has_attachment = True
-                    attachment_path_value = str(attached.get('url', ''))
-                    attachment_name_value = str(attached.get('name', ''))
+                    attachment_path_value = str(
+                        attached_url).strip() if attached_url else None
+                    attachment_name_value = str(
+                        attached_name).strip() if attached_name else None
 
             # Get db session and send email
             db = None
@@ -885,9 +890,13 @@ class MailScreen(ft.Container):
                 if category_dropdown.value:
                     cat = EmailCategory(category_dropdown.value)
 
-                recipient_ids = self._get_recipient_ids(self._to_recipients)
-                cc_ids = self._get_recipient_ids(self._cc_recipients)
-                bcc_ids = self._get_recipient_ids(self._bcc_recipients)
+                # Ensure recipient lists are never None - convert to empty list if needed
+                recipient_ids = self._get_recipient_ids(
+                    self._to_recipients) if self._to_recipients else []
+                cc_ids = self._get_recipient_ids(
+                    self._cc_recipients) if self._cc_recipients else []
+                bcc_ids = self._get_recipient_ids(
+                    self._bcc_recipients) if self._bcc_recipients else []
 
                 send_email(db, self.current_user_id, subject_field.value, body_field.value,
                            recipient_ids, cat, cc_ids=cc_ids, bcc_ids=bcc_ids,
@@ -1979,6 +1988,12 @@ class MailScreen(ft.Container):
 
     def _show_success(self, msg):
         snack = ft.SnackBar(content=ft.Text(msg), bgcolor=SUCCESS)
+        self._page.overlay.append(snack)
+        snack.open = True
+
+    def _show_error(self, msg):
+        """Show error message"""
+        snack = ft.SnackBar(content=ft.Text(msg), bgcolor=ERROR)
         self._page.overlay.append(snack)
         snack.open = True
 
