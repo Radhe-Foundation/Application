@@ -225,7 +225,7 @@ class ChatScreen(ft.Container):
         def poll_presence():
             while not self._stop_threads:
                 try:
-                    time.sleep(30)
+                    time.sleep(10)
                     if self._stop_threads:
                         break
                     self._update_online_statuses()
@@ -346,8 +346,8 @@ class ChatScreen(ft.Container):
             last_message_count = 0
             while not self._stop_threads:
                 try:
-                    # Reduced polling to every 30 seconds for better performance
-                    time.sleep(30)
+                    # Reduced polling to every 5 seconds for better responsiveness
+                    time.sleep(5)
                     if self.selected_contact and not self._stop_threads:
                         # Load messages and check for new ones
                         old_count = len(self.messages)
