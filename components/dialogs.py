@@ -801,8 +801,13 @@ class MeetingDetailsDialog(ft.AlertDialog):
                 "tentative": "#2196F3",
             }.get(p.status, "#999")
 
-            username = getattr(p.user, 'username',
-                               'Unknown') if p.user else "Unknown"
+            username = 'Unknown'
+            try:
+                # Try to get username, handle detached instance error
+                if p.user:
+                    username = getattr(p.user, 'username', 'Unknown')
+            except Exception:
+                pass
             participant_widgets.append(
                 ft.Container(
                     content=ft.Row([

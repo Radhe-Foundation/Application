@@ -8,6 +8,7 @@ This module provides centralized database session management with:
 - Query performance tracking
 """
 
+from database.connection import Base
 import logging
 import threading
 import time
@@ -34,9 +35,10 @@ from config import (
 
 logger = logging.getLogger(__name__)
 
-# Create the declarative base class for models
-Base = declarative_base()
-Base.__table_args__ = {'extend_existing': True}
+# Import Base from connection module to ensure all models are registered
+# Create the declarative base class for models (imported from connection)
+# Base = declarative_base()  # Commented out - using Base from connection.py
+# Base.__table_args__ = {'extend_existing': True}
 
 # Global engine and session factory
 _engine: Optional[Engine] = None

@@ -38,15 +38,17 @@ class HolidaysScreen(ft.Container):
 
     def _get_holidays_from_db(self) -> List:
         """Get holidays from database"""
+        current_year = datetime.now().year
         db = get_db_session()
         try:
             holidays = db.query(Holiday).filter(
-                Holiday.is_active == True
+                Holiday.is_active == True,
+                Holiday.year == current_year
             ).order_by(Holiday.date).all()
             return holidays
         except Exception as e:
             print(f"Error loading holidays: {e}")
-            return self._get_default_holidays()
+            return []
         finally:
             db.close()
 
@@ -149,25 +151,35 @@ class HolidaysScreen(ft.Container):
 
     def _build_year_selector(self):
         """Build year selector"""
-        # Initialize year dropdown if not exists
-        if not hasattr(self, 'year_dropdown'):
-            self.selected_year = {"value": "2025"}
+        # Initialize year to current year if not exists
+        current_year = datetime.now().year
+        if not hasattr(self, 'selected_year'):
+            self.selected_year = {"value": str(current_year)}
+
+        def create_year_button(year):
+            is_selected = self.selected_year["value"] == year
+            return ft.Container(
+                content=ft.ElevatedButton(
+                    year,
+                    on_click=lambda e, y=year: self._change_year(y),
+                    style=ft.ButtonStyle(
+                        bgcolor=PRIMARY if is_selected else "#E0E0E0",
+                        color="WHITE" if is_selected else "#333",
+                    ),
+                ),
+                padding=5,
+            )
+
+        # Generate years dynamically
+        years = [str(current_year - 1), str(current_year),
+                 str(current_year + 1)]
 
         return ft.Container(
             content=ft.Row([
                 ft.Icon(ft.Icons.CALENDAR_MONTH, color=PRIMARY),
                 ft.Text("Year:", size=14),
                 ft.Container(width=10),
-                ft.Dropdown(
-                    width=120,
-                    value=self.selected_year["value"],
-                    options=[
-                        ft.dropdown.Option("2024", "2024"),
-                        ft.dropdown.Option("2025", "2025"),
-                        ft.dropdown.Option("2026", "2026"),
-                    ],
-                    on_change=self._change_year,
-                ),
+            ] + [create_year_button(y) for y in years] + [
                 ft.Container(expand=True),
                 ft.Text("Click on a holiday to see details",
                         size=12, color="#999"),
@@ -175,12 +187,36 @@ class HolidaysScreen(ft.Container):
             padding=ft.padding.only(bottom=15),
         )
 
+    def _change_year(self, year):
+        """Change year"""
+        self.selected_year["value"] = year
+        self._show_info(f"Showing holidays for {year}")
+        self.content = self._build_content()
+        self._page.update()
+
     def _build_stats(self):
         """Build statistics cards"""
-        total = len(self.holidays)
-        national = sum(1 for h in self.holidays if h.type == "national")
-        festival = sum(1 for h in self.holidays if h.type == "festival")
-        company = sum(1 for h in self.holidays if h.type == "company")
+        # Filter holidays by selected year
+        current_year = int(self.selected_year.get(
+            "value", datetime.now().year))
+        year_holidays = []
+        for holiday in self.holidays:
+            try:
+                if isinstance(holiday.date, str):
+                    dt = datetime.strptime(holiday.date, "%Y-%m-%d")
+                else:
+                    dt = holiday.date
+                if dt.year == current_year:
+                    year_holidays.append(holiday)
+            except Exception:
+                pass
+
+        total = len(year_holidays)
+        national = sum(
+            1 for h in year_holidays if h.holiday_type == "national")
+        festival = sum(
+            1 for h in year_holidays if h.holiday_type == "festival")
+        company = sum(1 for h in year_holidays if h.holiday_type == "company")
 
         return ft.Container(
             content=ft.Row([
@@ -214,12 +250,31 @@ class HolidaysScreen(ft.Container):
 
     def _build_holidays_list(self):
         """Build holidays list"""
-        if not self.holidays:
+        # Get current year and filter holidays
+        current_year = int(self.selected_year.get(
+            "value", datetime.now().year))
+
+        # Filter holidays by selected year
+        filtered_holidays = []
+        for holiday in self.holidays:
+            try:
+                if isinstance(holiday.date, str):
+                    dt = datetime.strptime(holiday.date, "%Y-%m-%d")
+                else:
+                    dt = holiday.date
+                if dt.year == current_year:
+                    filtered_holidays.append(holiday)
+            except Exception:
+                pass
+
+        if not filtered_holidays:
             return ft.Container(
                 content=ft.Column([
                     ft.Icon(ft.Icons.CALENDAR_TODAY, size=64, color="#BDBDBD"),
-                    ft.Text("No holidays configured",
+                    ft.Text(f"No holidays configured for {current_year}",
                             size=16, color="#757575"),
+                    ft.Text("Click 'Add Holiday' to add holidays",
+                            size=12, color="#999"),
                 ], horizontal_alignment=ft.CrossAxisAlignment.CENTER),
                 alignment=ft.alignment.Alignment(0, 0),
                 padding=50,
@@ -230,9 +285,12 @@ class HolidaysScreen(ft.Container):
         month_names = ["", "January", "February", "March", "April", "May", "June",
                        "July", "August", "September", "October", "November", "December"]
 
-        for holiday in self.holidays:
+        for holiday in filtered_holidays:
             try:
-                dt = datetime.strptime(holiday.date, "%Y-%m-%d")
+                if isinstance(holiday.date, str):
+                    dt = datetime.strptime(holiday.date, "%Y-%m-%d")
+                else:
+                    dt = holiday.date
                 month = dt.month
                 if month not in months:
                     months[month] = []
@@ -253,7 +311,7 @@ class HolidaysScreen(ft.Container):
 
             month_sections.append(
                 ft.Column([
-                    ft.Text(f"{month_name} 2025", size=16,
+                    ft.Text(f"{month_name} {current_year}", size=16,
                             weight=ft.FontWeight.BOLD, color=PRIMARY),
                     ft.Container(height=8),
                     ft.Column(holiday_rows, spacing=8),
@@ -271,7 +329,10 @@ class HolidaysScreen(ft.Container):
             "festival": WARNING,
             "company": INFO,
         }
-        color = type_colors.get(holiday.type, PRIMARY)
+        # Handle both holiday_type and type fields
+        holiday_type = getattr(holiday, 'holiday_type', None) or getattr(
+            holiday, 'type', 'national') or 'national'
+        color = type_colors.get(holiday_type, PRIMARY)
 
         # Type icons
         type_icons = {
@@ -279,7 +340,20 @@ class HolidaysScreen(ft.Container):
             "festival": ft.Icons.CELEBRATION,
             "company": ft.Icons.BUSINESS,
         }
-        icon = type_icons.get(holiday.type, ft.Icons.EVENT)
+        icon = type_icons.get(holiday_type, ft.Icons.EVENT)
+
+        # Handle date - can be string or date object
+        try:
+            if isinstance(holiday.date, str):
+                date_parts = holiday.date.split("-")
+                day_str = date_parts[2] if len(date_parts) >= 3 else "??"
+                date_str = holiday.date
+            else:
+                day_str = str(holiday.date.day).zfill(2)
+                date_str = str(holiday.date)
+        except:
+            day_str = "??"
+            date_str = str(holiday.date)
 
         return ft.Card(
             content=ft.Container(
@@ -287,9 +361,10 @@ class HolidaysScreen(ft.Container):
                     # Date box
                     ft.Container(
                         content=ft.Column([
-                            ft.Text(holiday.date.split(
-                                "-")[2], size=20, weight=ft.FontWeight.BOLD, color=color),
-                            ft.Text(holiday.day[:3], size=11, color="#666"),
+                            ft.Text(day_str, size=20,
+                                    weight=ft.FontWeight.BOLD, color=color),
+                            ft.Text((holiday.day or "")[
+                                    :3], size=11, color="#666"),
                         ], horizontal_alignment=ft.CrossAxisAlignment.CENTER),
                         width=50,
                         padding=10,
@@ -298,22 +373,23 @@ class HolidaysScreen(ft.Container):
                     ),
                     # Holiday info
                     ft.Column([
-                        ft.Text(holiday.name, size=15,
+                        ft.Text(holiday.name or "Unnamed Holiday", size=15,
                                 weight=ft.FontWeight.BOLD),
                         ft.Row([
                             ft.Icon(icon, size=14, color=color),
-                            ft.Text(holiday.type.title(),
+                            ft.Text(holiday_type.title(),
                                     size=12, color=color),
                             ft.Container(width=15),
                             ft.Icon(ft.Icons.CALENDAR_TODAY,
                                     size=14, color="#666"),
-                            ft.Text(holiday.date, size=12, color="#666"),
+                            ft.Text(date_str, size=12, color="#666"),
                         ], spacing=5),
                     ], expand=True),
                     # Optional badge
                     ft.Container(
                         content=ft.Text("Optional", size=10, color="#666"),
-                        visible=holiday.optional,
+                        visible=bool(getattr(holiday, 'is_optional', False) or getattr(
+                            holiday, 'optional', False)),
                         bgcolor="#FFF3E0",
                         padding=ft.padding.symmetric(horizontal=8, vertical=4),
                         border_radius=10,
@@ -341,27 +417,20 @@ class HolidaysScreen(ft.Container):
             elevation=1,
         )
 
-    def _change_year(self, e):
-        """Change year"""
-        self.selected_year["value"] = e.control.value
-        self._show_info(f"Showing holidays for {e.control.value}")
-        self.content = self._build_content()
-        self._page.update()
-
     def _show_add_dialog(self, e=None):
         """Show add holiday dialog"""
         name_field = ft.TextField(label="Holiday Name *", width=300)
         date_field = ft.TextField(label="Date (YYYY-MM-DD) *", width=200)
         day_field = ft.TextField(label="Day *", width=150)
 
-        type_dropdown = ft.Dropdown(
-            label="Type",
-            width=200,
-            options=[
-                ft.dropdown.Option("national", "National Holiday"),
-                ft.dropdown.Option("festival", "Festival"),
-                ft.dropdown.Option("company", "Company Holiday"),
-            ],
+        # Use RadioGroup for holiday type selection
+        type_group = ft.RadioGroup(
+            value="national",
+            content=ft.Column([
+                ft.Radio(value="national", label="National Holiday"),
+                ft.Radio(value="festival", label="Festival"),
+                ft.Radio(value="company", label="Company Holiday"),
+            ], spacing=5)
         )
 
         optional_switch = ft.Switch(label="Optional Holiday", value=False)
@@ -371,22 +440,45 @@ class HolidaysScreen(ft.Container):
                 self._show_error("All fields are required!")
                 return
 
-            # Create new holiday and add to list
-            new_holiday = Holiday(
-                id=len(self.holidays) + 1,
-                name=name_field.value,
-                date_str=date_field.value,
-                day=day_field.value,
-                type=type_dropdown.value or "national",
-                optional=optional_switch.value
-            )
-            self.holidays.append(new_holiday)
+            # Validate and parse date
+            try:
+                holiday_date = datetime.strptime(
+                    date_field.value, "%Y-%m-%d").date()
+            except ValueError:
+                self._show_error("Invalid date format! Use YYYY-MM-DD")
+                return
 
-            self._show_success(f"Holiday '{name_field.value}' added!")
-            self._close_dialog()
-            # Refresh the UI
-            self.content = self._build_content()
-            self._page.update()
+            # Get current year
+            current_year = datetime.now().year
+
+            # Save to database
+            db = get_db_session()
+            try:
+                new_holiday = Holiday(
+                    name=name_field.value,
+                    date=holiday_date,
+                    day=day_field.value,
+                    holiday_type=type_group.value or "national",
+                    is_optional=optional_switch.value,
+                    year=current_year,
+                    is_active=True
+                )
+                db.add(new_holiday)
+                db.commit()
+
+                # Refresh holidays list
+                self.holidays = self._get_holidays_from_db()
+
+                self._show_success(f"Holiday '{name_field.value}' added!")
+                self._close_dialog()
+                # Refresh the UI
+                self.content = self._build_content()
+                self._page.update()
+            except Exception as ex:
+                self._show_error(f"Error saving holiday: {str(ex)}")
+                db.rollback()
+            finally:
+                db.close()
 
         dialog = ft.AlertDialog(
             title=ft.Text("Add Holiday"),
@@ -394,7 +486,8 @@ class HolidaysScreen(ft.Container):
                 name_field,
                 date_field,
                 day_field,
-                type_dropdown,
+                ft.Text("Type", size=12, weight=ft.FontWeight.W_500),
+                type_group,
                 optional_switch,
             ], spacing=15),
             actions=[
@@ -405,7 +498,7 @@ class HolidaysScreen(ft.Container):
             ],
         )
 
-        self._page.dialog = dialog
+        self._page.overlay.append(dialog)
         dialog.open = True
         self._page.update()
 
@@ -414,40 +507,61 @@ class HolidaysScreen(ft.Container):
         name_field = ft.TextField(
             label="Holiday Name *", width=300, value=holiday.name)
         date_field = ft.TextField(
-            label="Date (YYYY-MM-DD) *", width=200, value=holiday.date)
+            label="Date (YYYY-MM-DD) *", width=200, value=str(holiday.date))
         day_field = ft.TextField(label="Day *", width=150, value=holiday.day)
 
-        type_dropdown = ft.Dropdown(
-            label="Type",
-            width=200,
-            options=[
-                ft.dropdown.Option("national", "National Holiday"),
-                ft.dropdown.Option("festival", "Festival"),
-                ft.dropdown.Option("company", "Company Holiday"),
-            ],
-            value=holiday.type,
+        # Use RadioGroup for holiday type selection
+        type_group = ft.RadioGroup(
+            value=holiday.holiday_type or "national",
+            content=ft.Column([
+                ft.Radio(value="national", label="National Holiday"),
+                ft.Radio(value="festival", label="Festival"),
+                ft.Radio(value="company", label="Company Holiday"),
+            ], spacing=5)
         )
 
         optional_switch = ft.Switch(
-            label="Optional Holiday", value=holiday.optional)
+            label="Optional Holiday", value=holiday.is_optional or False)
 
         def update(e):
             if not name_field.value or not date_field.value or not day_field.value:
                 self._show_error("All fields are required!")
                 return
 
-            # Update the holiday in memory
-            holiday.name = name_field.value
-            holiday.date = date_field.value
-            holiday.day = day_field.value
-            holiday.type = type_dropdown.value
-            holiday.optional = optional_switch.value
+            # Validate and parse date
+            try:
+                holiday_date = datetime.strptime(
+                    date_field.value, "%Y-%m-%d").date()
+            except ValueError:
+                self._show_error("Invalid date format! Use YYYY-MM-DD")
+                return
 
-            self._show_success(f"Holiday '{name_field.value}' updated!")
-            self._close_dialog()
-            # Refresh the UI
-            self.content = self._build_content()
-            self._page.update()
+            # Update in database
+            db = get_db_session()
+            try:
+                db_holiday = db.query(Holiday).filter(
+                    Holiday.id == holiday.id).first()
+                if db_holiday:
+                    db_holiday.name = name_field.value
+                    db_holiday.date = holiday_date
+                    db_holiday.day = day_field.value
+                    db_holiday.holiday_type = type_group.value
+                    db_holiday.is_optional = optional_switch.value
+                    db.commit()
+
+                    # Refresh holidays list
+                    self.holidays = self._get_holidays_from_db()
+
+                self._show_success(f"Holiday '{name_field.value}' updated!")
+                self._close_dialog()
+                # Refresh the UI
+                self.content = self._build_content()
+                self._page.update()
+            except Exception as ex:
+                self._show_error(f"Error updating holiday: {str(ex)}")
+                db.rollback()
+            finally:
+                db.close()
 
         dialog = ft.AlertDialog(
             title=ft.Text("Edit Holiday"),
@@ -455,7 +569,8 @@ class HolidaysScreen(ft.Container):
                 name_field,
                 date_field,
                 day_field,
-                type_dropdown,
+                ft.Text("Type", size=12, weight=ft.FontWeight.W_500),
+                type_group,
                 optional_switch,
             ], spacing=15),
             actions=[
@@ -466,20 +581,35 @@ class HolidaysScreen(ft.Container):
             ],
         )
 
-        self._page.dialog = dialog
+        self._page.overlay.append(dialog)
         dialog.open = True
         self._page.update()
 
     def _delete_holiday(self, holiday: Holiday):
         """Delete a holiday"""
         def confirm(e):
-            # Remove holiday from list
-            self.holidays = [h for h in self.holidays if h.id != holiday.id]
-            self._show_success(f"Holiday '{holiday.name}' deleted!")
-            self._close_dialog()
-            # Refresh the UI
-            self.content = self._build_content()
-            self._page.update()
+            # Delete from database
+            db = get_db_session()
+            try:
+                db_holiday = db.query(Holiday).filter(
+                    Holiday.id == holiday.id).first()
+                if db_holiday:
+                    db.delete(db_holiday)
+                    db.commit()
+
+                    # Refresh holidays list
+                    self.holidays = self._get_holidays_from_db()
+
+                self._show_success(f"Holiday '{holiday.name}' deleted!")
+                self._close_dialog()
+                # Refresh the UI
+                self.content = self._build_content()
+                self._page.update()
+            except Exception as ex:
+                self._show_error(f"Error deleting holiday: {str(ex)}")
+                db.rollback()
+            finally:
+                db.close()
 
         dialog = ft.AlertDialog(
             title=ft.Text("Delete Holiday?"),
@@ -493,14 +623,15 @@ class HolidaysScreen(ft.Container):
             ],
         )
 
-        self._page.dialog = dialog
+        self._page.overlay.append(dialog)
         dialog.open = True
         self._page.update()
 
     def _close_dialog(self):
         """Close dialog"""
-        if self._page.dialog:
-            self._page.dialog.open = False
+        for overlay in self._page.overlay:
+            if isinstance(overlay, ft.AlertDialog) and overlay.open:
+                overlay.open = False
         self._page.update()
 
     def _show_success(self, message):

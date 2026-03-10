@@ -98,6 +98,32 @@ class AttendanceScreen(ft.Container):
         # Header title based on view mode
         title = "Attendance Management" if self.view_mode == "admin" else "My Attendance"
 
+        # Header buttons based on view mode
+        if self.view_mode == "admin":
+            header_buttons = ft.ElevatedButton(
+                "Mark Attendance",
+                icon=ft.Icons.ADD,
+                on_click=self.on_add,
+                style=ft.ButtonStyle(bgcolor="#F57C00", color="WHITE")
+            )
+        else:
+            # Employee mode: Show Punch In/Punch Out buttons instead of Mark Attendance
+            header_buttons = ft.Row([
+                ft.ElevatedButton(
+                    "Punch In",
+                    icon=ft.Icons.LOGIN,
+                    on_click=self._on_punch_in,
+                    style=ft.ButtonStyle(bgcolor="#4CAF50", color="WHITE")
+                ),
+                ft.Container(width=10),
+                ft.ElevatedButton(
+                    "Punch Out",
+                    icon=ft.Icons.LOGOUT,
+                    on_click=self._on_punch_out,
+                    style=ft.ButtonStyle(bgcolor="#F44336", color="WHITE")
+                ),
+            ])
+
         header = ft.Container(
             padding=15,
             bgcolor="#FF9800" if self.view_mode == "admin" else "#009688",
@@ -105,12 +131,7 @@ class AttendanceScreen(ft.Container):
                 ft.Text(title, size=18,
                         color="WHITE", weight=ft.FontWeight.BOLD),
                 ft.Container(expand=True),
-                ft.ElevatedButton(
-                    "Mark Attendance",
-                    icon=ft.Icons.ADD,
-                    on_click=self.on_add,
-                    style=ft.ButtonStyle(bgcolor="#F57C00", color="WHITE")
-                ),
+                header_buttons,
             ])
         )
 
@@ -366,11 +387,30 @@ class AttendanceScreen(ft.Container):
         except Exception as ex:
             self._show_error(f"Error: {str(ex)}")
 
+    def _on_punch_in(self, e):
+        """Handle punch in for employee - auto records current time"""
+        if not self.employee_id:
+            self._show_error("Employee not found! Please contact admin.")
+            return
+        self._quick_attendance(self.employee_id, "check_in")
+
+    def _on_punch_out(self, e):
+        """Handle punch out for employee - auto records current time"""
+        if not self.employee_id:
+            self._show_error("Employee not found! Please contact admin.")
+            return
+        self._quick_attendance(self.employee_id, "check_out")
+
     def on_back(self, e):
         """Handle back navigation"""
         _safe_navigate_to_home(self._page, self.user)
 
     def on_add(self, e):
+        """Show add attendance dialog - only for admin mode"""
+        if self.view_mode == "employee":
+            self._show_error(
+                "Please use Punch In/Punch Out buttons to mark your attendance.")
+            return
         self._show_add_dialog()
 
     def _show_add_dialog(self):

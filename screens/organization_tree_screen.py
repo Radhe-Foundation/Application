@@ -276,8 +276,8 @@ class OrganizationTreeScreen(ft.Container):
         """Refresh the tree view only (without rebuilding entire screen)"""
         # Rebuild tree view
         tree_view = self._build_org_tree()
-        # Update the tree container - layout is now Column with [Header, Toolbar, Content]
-        self.content.content.controls[2].content = tree_view
+        # Update the tree container - layout is Column with [Toolbar, Content]
+        self.content.content.controls[1].content = tree_view
         self._page.update()
 
     def _toggle_collapse(self, emp_id):

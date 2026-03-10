@@ -72,6 +72,67 @@ class Colors:
     BLACK = "#000000"
     WHITE = "#FFFFFF"
 
+    # Blue shades
+    BLUE_50 = "#E3F2FD"
+    BLUE_100 = "#BBDEFB"
+    BLUE_200 = "#90CAF9"
+    BLUE_300 = "#64B5F6"
+    BLUE_400 = "#42A5F5"
+    BLUE_500 = "#2196F3"
+    BLUE_600 = "#1E88E5"
+    BLUE_700 = "#1976D2"
+    BLUE_800 = "#1565C0"
+    BLUE_900 = "#0D47A1"
+
+    # Green shades
+    GREEN_50 = "#E8F5E9"
+    GREEN_100 = "#C8E6C9"
+    GREEN_200 = "#A5D6A7"
+    GREEN_300 = "#81C784"
+    GREEN_400 = "#66BB6A"
+    GREEN_500 = "#4CAF50"
+    GREEN_600 = "#43A047"
+    GREEN_700 = "#388E3C"
+    GREEN_800 = "#2E7D32"
+    GREEN_900 = "#1B5E20"
+
+    # Red shades
+    RED_50 = "#FFEBEE"
+    RED_100 = "#FFCDD2"
+    RED_200 = "#EF9A9A"
+    RED_300 = "#E57373"
+    RED_400 = "#EF5350"
+    RED_500 = "#F44336"
+    RED_600 = "#E53935"
+    RED_700 = "#D32F2F"
+    RED_800 = "#C62828"
+    RED_900 = "#B71C1C"
+
+    # Orange shades
+    ORANGE_50 = "#FFF3E0"
+    ORANGE_100 = "#FFE0B2"
+    ORANGE_200 = "#FFCC80"
+    ORANGE_300 = "#FFB74D"
+    ORANGE_400 = "#FFA726"
+    ORANGE_500 = "#FF9800"
+    ORANGE_600 = "#FB8C00"
+    ORANGE_700 = "#F57C00"
+    ORANGE_800 = "#EF6C00"
+    ORANGE_900 = "#E65100"
+
+    # Grey scale (50-900) for dark theme compatibility
+    GREY_50 = "#FAFAFA"
+    GREY_100 = "#F5F5F5"
+    GREY_200 = "#EEEEEE"
+    GREY_300 = "#E0E0E0"
+    GREY_400 = "#BDBDBD"
+    GREY_500 = "#9E9E9E"
+    GREY_600 = "#757575"
+    GREY_700 = "#616161"
+    GREY_800 = "#424242"
+    GREY_850 = "#2D2D2D"
+    GREY_900 = "#212121"
+
     # Special colors
     TRANSPARENT = "transparent"
     NONE = None
