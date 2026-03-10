@@ -331,8 +331,20 @@ class EmployeesScreen(ft.Container):
         profile_upload_status = ft.Text("", size=11, visible=False)
 
         def pick_profile_photo(e):
-            """Pick profile photo using file picker and upload to Supabase with local fallback"""
+            """Pick profile photo using file picker and upload to Supabase only
+
+            FIX: Removed local fallback as it doesn't work for multi-device access.
+            Profile photos now require Supabase Storage to be available.
+            """
             self._init_file_picker()
+
+            # Check Supabase Storage availability FIRST
+            storage = get_storage()
+            if not storage.available:
+                storage_error = storage.get_last_error() or "Cloud storage not configured"
+                self._show_error(
+                    f"Profile photo upload requires cloud storage. Error: {storage_error}")
+                return
 
             async def pick_and_set():
                 try:
@@ -342,7 +354,6 @@ class EmployeesScreen(ft.Container):
                     )
                     if files and files[0]:
                         path = files[0].path
-                        profile_photo_path[0] = path
 
                         # Check if file exists
                         if not os.path.exists(path):
@@ -357,54 +368,46 @@ class EmployeesScreen(ft.Container):
                         self._page.update()
 
                         # Upload to Supabase Storage for multi-device access
-                        # Using transactions_screen approach with local fallback
-                        storage = get_storage()
                         upload_success = False
                         upload_error = None
                         file_url = None
 
                         try:
-                            if storage.available:
-                                # Upload to Supabase Storage
-                                success, url_or_error, bucket_path = upload_to_supabase(
-                                    file_path=path,
-                                    folder="profiles",
-                                    custom_filename=os.path.basename(path)
-                                )
+                            # Upload to Supabase Storage
+                            success, url_or_error, bucket_path = upload_to_supabase(
+                                file_path=path,
+                                folder="profiles",
+                                custom_filename=os.path.basename(path)
+                            )
 
-                                if success and url_or_error:
-                                    file_url = url_or_error
-                                    upload_success = True
-                                    print(
-                                        f"[Profile] Profile photo uploaded to Supabase: {file_url}")
-                                else:
-                                    upload_error = url_or_error
-                                    print(
-                                        f"[Profile] Supabase upload failed: {url_or_error}")
-                            else:
-                                upload_error = storage.get_last_error() or "Cloud storage not available"
+                            if success and url_or_error:
+                                file_url = url_or_error
+                                upload_success = True
                                 print(
-                                    f"[Profile] Storage not available: {upload_error}")
+                                    f"[Profile] Profile photo uploaded to Supabase: {file_url}")
+                            else:
+                                upload_error = url_or_error
+                                print(
+                                    f"[Profile] Supabase upload failed: {url_or_error}")
 
                         except Exception as upload_err:
                             upload_error = str(upload_err)
                             print(f"[Profile] Upload error: {upload_err}")
 
-                        # If Supabase upload failed, fall back to local storage
-                        if not upload_success:
-                            if upload_error:
-                                profile_upload_status.value = f"Cloud upload failed: {upload_error}. Saving locally."
-                                profile_upload_status.color = WARNING
-                                print(
-                                    f"[Profile] Using local file path: {path}")
-                            # Fallback to local path
-                            file_url = path
-                        else:
-                            profile_upload_status.value = "Uploaded to cloud!"
-                            profile_upload_status.color = SUCCESS
+                        # Only proceed if upload was successful (no local fallback)
+                        if not upload_success or not file_url:
+                            error_msg = upload_error or "Upload failed"
+                            profile_photo.value = ""
+                            profile_upload_status.value = f"Upload failed: {error_msg}. Please try again."
+                            profile_upload_status.color = ERROR
+                            profile_upload_status.visible = True
+                            self._page.update()
+                            return
 
-                        # Save the URL/path
+                        # Success
                         profile_photo.value = file_url
+                        profile_upload_status.value = "✓ Uploaded to cloud!"
+                        profile_upload_status.color = SUCCESS
                         profile_upload_status.visible = True
                         self._page.update()
 
@@ -852,10 +855,22 @@ class EmployeesScreen(ft.Container):
         upload_status_text = ft.Text("", size=12, visible=False)
 
         def pick_profile_photo_edit(e):
-            """Pick profile photo using file picker and upload to Supabase"""
+            """Pick profile photo using file picker and upload to Supabase only
+
+            FIX: Removed local fallback as it doesn't work for multi-device access.
+            Profile photos now require Supabase Storage to be available.
+            """
             self._init_file_picker()
 
-            # Show loading indicator - modify the existing text widget
+            # Check Supabase Storage availability FIRST
+            storage = get_storage()
+            if not storage.available:
+                storage_error = storage.get_last_error() or "Cloud storage not configured"
+                self._show_error(
+                    f"Profile photo upload requires cloud storage. Error: {storage_error}")
+                return
+
+            # Show loading indicator
             upload_status_text.value = "Uploading..."
             upload_status_text.visible = True
             upload_status_text.color = INFO
@@ -876,60 +891,70 @@ class EmployeesScreen(ft.Container):
 
                         print(f"[Profile Edit] File selected: {path}")
 
+                        # Check if file exists
+                        if not os.path.exists(path):
+                            profile_photo.disabled = False
+                            profile_pick_btn.disabled = False
+                            upload_status_text.value = "File not found"
+                            upload_status_text.color = ERROR
+                            self._page.update()
+                            return
+
+                        # Show uploading status
+                        upload_status_text.value = "Uploading to cloud..."
+                        upload_status_text.color = INFO
+                        self._page.update()
+
                         # Upload to Supabase Storage for multi-device access
+                        upload_success = False
+                        upload_error = None
+                        file_url = None
+
                         try:
-                            # First check if storage is available
-                            from utils.supabase_storage import get_storage
-                            storage = get_storage()
+                            # Upload to Supabase Storage
+                            success, url_or_error, bucket_path = upload_to_supabase(
+                                file_path=path,
+                                folder="profiles",
+                                custom_filename=os.path.basename(path)
+                            )
 
-                            print(
-                                f"[Profile Edit] Storage available: {storage.available}")
-                            print(
-                                f"[Profile Edit] Storage error: {storage.get_last_error()}")
-
-                            if not storage.available:
-                                error_msg = storage.get_last_error() or "Storage not available"
-                                # Fallback to local path
-                                profile_photo.value = path
-                                upload_status_text.value = f"Storage not available: {error_msg}. Using local path."
-                                upload_status_text.color = WARNING
+                            if success and url_or_error:
+                                file_url = url_or_error
+                                upload_success = True
                                 print(
-                                    f"Profile photo storage not available: {error_msg}")
+                                    f"[Profile Edit] Profile photo uploaded to Supabase: {file_url}")
                             else:
-                                success, file_url, bucket_path = upload_to_supabase(
-                                    file_path=path,
-                                    folder="profiles",
-                                    custom_filename=os.path.basename(path)
-                                )
-                                if success and file_url:
-                                    # Save the Supabase URL instead of local path
-                                    profile_photo.value = file_url
-                                    upload_status_text.value = f"Uploaded successfully!"
-                                    upload_status_text.color = SUCCESS
-                                    print(
-                                        f"Profile photo uploaded: {file_url}")
-                                else:
-                                    # Fallback to local path if upload fails
-                                    error_msg = file_url or "Unknown error"
-                                    profile_photo.value = path
-                                    upload_status_text.value = f"Upload failed: {error_msg}. Using local path."
-                                    upload_status_text.color = WARNING
-                                    print(
-                                        f"Profile photo upload failed: {error_msg}")
+                                upload_error = url_or_error
+                                print(
+                                    f"[Profile Edit] Supabase upload failed: {url_or_error}")
+
                         except Exception as upload_err:
-                            error_msg = str(upload_err)
-                            # Fallback to local path
-                            profile_photo.value = path
-                            upload_status_text.value = f"Upload error: {error_msg}. Using local path."
-                            upload_status_text.color = WARNING
-                            print(
-                                f"Error uploading profile photo: {upload_err}")
-                            self._show_error(f"Upload error: {error_msg}")
+                            upload_error = str(upload_err)
+                            print(f"[Profile Edit] Upload error: {upload_err}")
+
+                        # Only proceed if upload was successful (no local fallback)
+                        if not upload_success or not file_url:
+                            error_msg = upload_error or "Upload failed"
+                            profile_photo.disabled = False
+                            profile_pick_btn.disabled = False
+                            upload_status_text.value = f"Upload failed: {error_msg}. Please try again."
+                            upload_status_text.color = ERROR
+                            upload_status_text.visible = True
+                            self._page.update()
+                            return
+
+                        # Success - save the Supabase URL
+                        profile_photo.value = file_url
+                        upload_status_text.value = "✓ Uploaded to cloud!"
+                        upload_status_text.color = SUCCESS
+                        print(
+                            f"[Profile Edit] Profile photo saved: {file_url}")
 
                         # Re-enable controls
                         profile_photo.disabled = False
                         profile_pick_btn.disabled = False
                         self._page.update()
+
                 except Exception as ex:
                     print(f"Error picking file: {ex}")
                     profile_photo.disabled = False

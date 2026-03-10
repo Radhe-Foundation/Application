@@ -2343,9 +2343,10 @@ class ChatScreen(ft.Container):
         self._show_snackbar(message)
 
     def _on_attach_file(self, e=None):
-        """Handle file attachment - uploads to Supabase Storage with local fallback
+        """Handle file attachment - uploads to Supabase Storage only
 
-        Uses transactions_screen approach with better upload status handling.
+        FIX: Removed local fallback as it doesn't work for multi-device access.
+        File sharing now requires Supabase Storage to be available.
         """
         if not self.selected_contact and not self.is_group_chat:
             self._show_snackbar(
@@ -2357,7 +2358,15 @@ class ChatScreen(ft.Container):
             self._show_error("File picker not initialized")
             return
 
-        # Show uploading message
+        # Check Supabase Storage availability FIRST
+        storage = get_storage()
+        if not storage.available:
+            storage_error = storage.get_last_error() or "Cloud storage not configured"
+            self._show_error(
+                f"File sharing requires cloud storage. Error: {storage_error}")
+            return
+
+        # Show selecting message
         snack = ft.SnackBar(
             content=ft.Text("Selecting file..."),
             bgcolor=PRIMARY_LIGHT
@@ -2366,9 +2375,8 @@ class ChatScreen(ft.Container):
         snack.open = True
         self._page.update()
 
-        # Use async pick_files with run_task (Flet 0.80+)
         def handle_picked_files(files):
-            """Process picked files after async selection - Supabase Storage with local fallback"""
+            """Process picked files after async selection - Supabase Storage only"""
             try:
                 if not files:
                     return
@@ -2390,71 +2398,53 @@ class ChatScreen(ft.Container):
 
                 # Show uploading status
                 snack = ft.SnackBar(
-                    content=ft.Text(f"Uploading {file_name}..."),
+                    content=ft.Text(f"Uploading {file_name} to cloud..."),
                     bgcolor=PRIMARY_LIGHT
                 )
                 self._page.overlay.append(snack)
                 snack.open = True
                 self._page.update()
 
-                # Check Supabase Storage availability
-                storage = get_storage()
-
-                # Try to upload to Supabase Storage
+                # Upload to Supabase Storage
                 file_url = None
                 upload_success = False
                 upload_error = None
-                local_file_data = None
 
                 try:
-                    if storage.available:
-                        # Upload to Supabase Storage
-                        success, url_or_error, bucket_path = upload_to_supabase(
-                            file_path,
-                            folder="chat_attachments",
-                            custom_filename=f"{self.current_user_id}_{int(datetime.now().timestamp())}_{file_name}"
-                        )
+                    # Upload to Supabase Storage
+                    success, url_or_error, bucket_path = upload_to_supabase(
+                        file_path,
+                        folder="chat_attachments",
+                        custom_filename=f"{self.current_user_id}_{int(datetime.now().timestamp())}_{file_name}"
+                    )
 
-                        if success and url_or_error:
-                            file_url = url_or_error
-                            upload_success = True
-                            print(
-                                f"[Chat] File uploaded to Supabase: {file_url}")
-                        else:
-                            upload_error = url_or_error
-                            print(
-                                f"[Chat] Supabase upload failed: {url_or_error}")
+                    if success and url_or_error:
+                        file_url = url_or_error
+                        upload_success = True
+                        print(f"[Chat] File uploaded to Supabase: {file_url}")
                     else:
-                        upload_error = storage.get_last_error() or "Cloud storage not available"
-                        print(f"[Chat] Storage not available: {upload_error}")
+                        upload_error = url_or_error
+                        print(f"[Chat] Supabase upload failed: {url_or_error}")
 
                 except Exception as upload_err:
                     upload_error = str(upload_err)
                     print(f"[Chat] Upload error: {upload_err}")
 
-                # If Supabase upload failed, fall back to local storage (like transactions_screen)
-                if not upload_success:
-                    if upload_error:
-                        print(
-                            f"[Chat] Cloud upload failed: {upload_error}. Saving locally.")
+                # Only proceed if upload was successful (no local fallback)
+                if not upload_success or not file_url:
+                    error_msg = upload_error or "Upload failed"
+                    self._show_error(
+                        f"Upload failed: {error_msg}. Please try again.")
+                    return
 
-                    # Fallback to local file storage
-                    try:
-                        with open(file_path, 'rb') as f:
-                            local_file_data = f.read()
-                        file_url = file_path  # Store local path as fallback
-                        print(f"[Chat] Using local file path: {file_url}")
-                    except Exception as e:
-                        self._show_error(f"Error reading file: {str(e)}")
-                        return
-                else:
-                    snack = ft.SnackBar(
-                        content=ft.Text("Uploaded to cloud!"),
-                        bgcolor=SUCCESS
-                    )
-                    self._page.overlay.append(snack)
-                    snack.open = True
-                    self._page.update()
+                # Success - show message
+                snack = ft.SnackBar(
+                    content=ft.Text("✓ Uploaded to cloud!"),
+                    bgcolor=SUCCESS
+                )
+                self._page.overlay.append(snack)
+                snack.open = True
+                self._page.update()
 
                 # Store the file URL in database
                 db = get_db_session()
