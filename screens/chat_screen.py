@@ -28,8 +28,6 @@ from database.operations import (
     end_call,
     remove_group_member,
     delete_chat_group,
-    _get_cached,
-    _set_cached,
 )
 
 
@@ -176,17 +174,17 @@ class ChatScreen(ft.Container):
         self._presence_thread = None
         self._stop_threads = False
 
-# File picker for attachments - do NOT add to page.overlay or page.services
-        # FilePicker in Flet is self-contained and doesn't need to be added to any collection
+# File picker for attachments - created once and reused
         self._file_picker: Optional[ft.FilePicker] = None
 
         # Polling thread for presence
         self._presence_poll_thread = None
 
-        # Initialize FilePicker - don't add to overlay, just create it
+        # Initialize FilePicker properly (Flet 0.80+ uses async pick_files)
+        # Note: FilePicker is a Service, not a Control, so we add it to page.services
         try:
             self._file_picker = ft.FilePicker()
-            # FilePicker is automatically handled by Flet - no need to add to any collection
+            self._page.services.append(self._file_picker)
         except Exception as e:
             print(f"[Chat] FilePicker init error: {e}")
 
@@ -321,12 +319,8 @@ class ChatScreen(ft.Container):
                         from utils.notification_manager import get_notification_manager
                         nm = get_notification_manager()
                         if nm:
-                            # FIX: Pass receiver_id as target_user_id so only the correct user gets the notification
                             nm.show_chat_message(
-                                sender_name, new_record.get(
-                                    'content', '')[:50],
-                                target_user_id=receiver_id  # Only notify the actual recipient
-                            )
+                                sender_name, new_record.get('content', '')[:50])
                     except Exception as e:
                         print(f"[Chat] Notification error: {e}")
 
@@ -341,12 +335,11 @@ class ChatScreen(ft.Container):
             print(f"[Chat] Error handling new message: {e}")
 
     def _start_polling(self):
-        """Start polling fallback for real-time updates - optimized with reduced frequency"""
+        """Start polling fallback for real-time updates"""
         def poll_messages():
             last_message_count = 0
             while not self._stop_threads:
                 try:
-                    # Reduced polling to every 5 seconds for better responsiveness
                     time.sleep(5)
                     if self.selected_contact and not self._stop_threads:
                         # Load messages and check for new ones
@@ -363,12 +356,9 @@ class ChatScreen(ft.Container):
                                     from utils.notification_manager import get_notification_manager
                                     nm = get_notification_manager()
                                     if nm:
-                                        # FIX: Pass receiver_id as target_user_id so only correct user gets notification
-                                        # The receiver_id is self.current_user_id since we received a message
                                         nm.show_chat_message(
                                             latest_msg.sender_name,
-                                            latest_msg.content[:50],
-                                            target_user_id=self.current_user_id  # Only notify current user
+                                            latest_msg.content[:50]
                                         )
                                 except Exception as e:
                                     print(
@@ -386,22 +376,10 @@ class ChatScreen(ft.Container):
         self._presence_thread = threading.Thread(
             target=poll_messages, daemon=True)
         self._presence_thread.start()
-        print("[Chat] Polling started (every 30 seconds for better performance)")
+        print("[Chat] Polling started (every 5 seconds)")
 
     def _load_contacts(self) -> None:
-        """Load all other active users from the database with caching."""
-        # Check cache first (cache for 30 seconds)
-        cache_key = f"chat_contacts_{self.current_user_id}"
-        cached_contacts = _get_cached(cache_key)
-
-        if cached_contacts is not None:
-            # Use cached contacts
-            self.contacts = cached_contacts
-            # Update online statuses
-            for contact in self.contacts:
-                self._online_contacts[contact.id] = contact.is_online
-            return
-
+        """Load all other active users from the database."""
         self.contacts = []
         self._online_contacts = {}
 
@@ -441,9 +419,16 @@ class ChatScreen(ft.Container):
                 # Update online contacts tracking
                 self._online_contacts[user.id] = is_online
 
-                # Get last message preview (skip for initial load to improve performance)
-                # This will be loaded on-demand when needed
+                # Get last message preview
                 last_msg = ""
+                try:
+                    messages = get_direct_messages(
+                        db, self.current_user_id, user.id, limit=1)
+                    if messages:
+                        last_msg = messages[0].content[:30] + "..." if len(
+                            messages[0].content or "") > 30 else messages[0].content or ""
+                except:
+                    pass
 
                 # Get profile photo from Employee table
                 user_id = int(user.id)
@@ -467,9 +452,6 @@ class ChatScreen(ft.Container):
             print(f"[ChatScreen] Error loading contacts: {exc}")
         finally:
             db.close()
-
-        # Cache the contacts for 30 seconds
-        _set_cached(cache_key, self.contacts)
 
     def _load_groups(self) -> None:
         """Load user's chat groups"""
@@ -2343,11 +2325,7 @@ class ChatScreen(ft.Container):
         self._show_snackbar(message)
 
     def _on_attach_file(self, e=None):
-        """Handle file attachment - uploads to Supabase Storage only
-
-        FIX: Removed local fallback as it doesn't work for multi-device access.
-        File sharing now requires Supabase Storage to be available.
-        """
+        """Handle file attachment - uploads to Supabase Storage for cloud sharing"""
         if not self.selected_contact and not self.is_group_chat:
             self._show_snackbar(
                 "Select a contact or group first to share files")
@@ -2358,25 +2336,9 @@ class ChatScreen(ft.Container):
             self._show_error("File picker not initialized")
             return
 
-        # Check Supabase Storage availability FIRST
-        storage = get_storage()
-        if not storage.available:
-            storage_error = storage.get_last_error() or "Cloud storage not configured"
-            self._show_error(
-                f"File sharing requires cloud storage. Error: {storage_error}")
-            return
-
-        # Show selecting message
-        snack = ft.SnackBar(
-            content=ft.Text("Selecting file..."),
-            bgcolor=PRIMARY_LIGHT
-        )
-        self._page.overlay.append(snack)
-        snack.open = True
-        self._page.update()
-
+        # Use async pick_files with run_task (Flet 0.80+)
         def handle_picked_files(files):
-            """Process picked files after async selection - Supabase Storage only"""
+            """Process picked files after async selection - with Supabase upload"""
             try:
                 if not files:
                     return
@@ -2391,12 +2353,7 @@ class ChatScreen(ft.Container):
                 file_name = file_path.split(
                     '/')[-1] if '/' in file_path else file_path
 
-                # Check if file exists
-                if not os.path.exists(file_path):
-                    self._show_error(f"File not found: {file_name}")
-                    return
-
-                # Show uploading status
+                # Show uploading message
                 snack = ft.SnackBar(
                     content=ft.Text(f"Uploading {file_name} to cloud..."),
                     bgcolor=PRIMARY_LIGHT
@@ -2405,48 +2362,51 @@ class ChatScreen(ft.Container):
                 snack.open = True
                 self._page.update()
 
-                # Upload to Supabase Storage
+                # Try to upload to Supabase Storage
                 file_url = None
                 upload_success = False
                 upload_error = None
 
                 try:
-                    # Upload to Supabase Storage
-                    success, url_or_error, bucket_path = upload_to_supabase(
-                        file_path,
-                        folder="chat_attachments",
-                        custom_filename=f"{self.current_user_id}_{int(datetime.now().timestamp())}_{file_name}"
-                    )
+                    storage = get_storage()
+                    if storage.available:
+                        # Upload to Supabase Storage
+                        success, url_or_error, bucket_path = upload_to_supabase(
+                            file_path,
+                            folder="chat_attachments",
+                            custom_filename=f"{self.current_user_id}_{int(datetime.now().timestamp())}_{file_name}"
+                        )
 
-                    if success and url_or_error:
-                        file_url = url_or_error
-                        upload_success = True
-                        print(f"[Chat] File uploaded to Supabase: {file_url}")
+                        if success and url_or_error:
+                            file_url = url_or_error
+                            upload_success = True
+                            print(
+                                f"[Chat] File uploaded to Supabase: {file_url}")
+                        else:
+                            upload_error = url_or_error
+                            print(
+                                f"[Chat] Supabase upload failed: {url_or_error}")
                     else:
-                        upload_error = url_or_error
-                        print(f"[Chat] Supabase upload failed: {url_or_error}")
-
+                        upload_error = "Cloud storage not configured"
+                        print("[Chat] Supabase storage not available")
                 except Exception as upload_err:
                     upload_error = str(upload_err)
                     print(f"[Chat] Upload error: {upload_err}")
 
-                # Only proceed if upload was successful (no local fallback)
-                if not upload_success or not file_url:
+                # If upload failed, show error
+                if not upload_success:
                     error_msg = upload_error or "Upload failed"
-                    self._show_error(
-                        f"Upload failed: {error_msg}. Please try again.")
+                    snack = ft.SnackBar(
+                        content=ft.Text(
+                            f"Cloud upload failed: {error_msg}. File not attached."),
+                        bgcolor=ERROR
+                    )
+                    self._page.overlay.append(snack)
+                    snack.open = True
+                    self._page.update()
                     return
 
-                # Success - show message
-                snack = ft.SnackBar(
-                    content=ft.Text("✓ Uploaded to cloud!"),
-                    bgcolor=SUCCESS
-                )
-                self._page.overlay.append(snack)
-                snack.open = True
-                self._page.update()
-
-                # Store the file URL in database
+                # Store the Supabase URL (cloud accessible) instead of local path
                 db = get_db_session()
                 try:
                     if self.is_group_chat and self.selected_group:
@@ -2456,7 +2416,7 @@ class ChatScreen(ft.Container):
                             content=f"📎 Shared file: {file_name}",
                             group_id=self.selected_group.id,
                             has_attachment=True,
-                            attachment_path=file_url
+                            attachment_path=file_url  # Store Supabase URL, not local path
                         )
                     elif self.selected_contact:
                         send_chat_message(
@@ -2465,7 +2425,7 @@ class ChatScreen(ft.Container):
                             content=f"📎 Shared file: {file_name}",
                             receiver_id=self.selected_contact.id,
                             has_attachment=True,
-                            attachment_path=file_url
+                            attachment_path=file_url  # Store Supabase URL, not local path
                         )
                 finally:
                     db.close()

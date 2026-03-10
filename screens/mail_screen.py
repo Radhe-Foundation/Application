@@ -872,15 +872,10 @@ class MailScreen(ft.Container):
 
             if hasattr(self, '_attached_file_path') and self._attached_file_path:
                 attached = self._attached_file_path
-                # Check if URL exists and is not None/empty
-                attached_url = attached.get('url')
-                attached_name = attached.get('name')
-                if attached_url and attached_name and str(attached_url).strip():
+                if attached.get('url') and attached.get('name'):
                     has_attachment = True
-                    attachment_path_value = str(
-                        attached_url).strip() if attached_url else None
-                    attachment_name_value = str(
-                        attached_name).strip() if attached_name else None
+                    attachment_path_value = str(attached.get('url', ''))
+                    attachment_name_value = str(attached.get('name', ''))
 
             # Get db session and send email
             db = None
@@ -890,13 +885,9 @@ class MailScreen(ft.Container):
                 if category_dropdown.value:
                     cat = EmailCategory(category_dropdown.value)
 
-                # Ensure recipient lists are never None - convert to empty list if needed
-                recipient_ids = self._get_recipient_ids(
-                    self._to_recipients) if self._to_recipients else []
-                cc_ids = self._get_recipient_ids(
-                    self._cc_recipients) if self._cc_recipients else []
-                bcc_ids = self._get_recipient_ids(
-                    self._bcc_recipients) if self._bcc_recipients else []
+                recipient_ids = self._get_recipient_ids(self._to_recipients)
+                cc_ids = self._get_recipient_ids(self._cc_recipients)
+                bcc_ids = self._get_recipient_ids(self._bcc_recipients)
 
                 send_email(db, self.current_user_id, subject_field.value, body_field.value,
                            recipient_ids, cat, cc_ids=cc_ids, bcc_ids=bcc_ids,
@@ -1568,21 +1559,17 @@ class MailScreen(ft.Container):
         self._page.update()
 
     def _attach_file_in_compose(self, e=None):
-        """Attach file in compose mail - uploads to Supabase only
-
-        FIX: Removed local file path fallback as it doesn't work for multi-user scenarios.
-        File attachments now require Supabase Storage to be available.
-        """
-        # Initialize file picker - don't add to overlay, just create it
+        """Attach file in compose mail - uploads to Supabase for cloud access"""
+        # Initialize file picker if not already done
         if not hasattr(self, '_file_picker') or not self._file_picker:
             self._file_picker = ft.FilePicker()
-            # FilePicker is automatically handled by Flet - no need to add to any collection
+            self._page.services.append(self._file_picker)
 
         # Store selected file info (will store Supabase URL after upload)
         self._attached_file_path = {"path": None, "name": None, "url": None}
 
         def handle_picked_files(files):
-            """Process picked files after selection - Supabase Storage only"""
+            """Process picked files after selection - with Supabase upload"""
             try:
                 if not files:
                     return
@@ -1595,20 +1582,10 @@ class MailScreen(ft.Container):
 
                 # Show uploading message
                 snack = ft.SnackBar(content=ft.Text(
-                    f"Uploading {file_name}..."), bgcolor=TEAMS_BLUE)
+                    f"Uploading {file_name} to cloud..."), bgcolor=TEAMS_BLUE)
                 self._page.overlay.append(snack)
                 snack.open = True
                 self._page.update()
-
-                # FIX: Check Supabase Storage availability FIRST
-                storage = get_storage()
-                if not storage.available:
-                    # FIX: Show clear error - file attachment requires cloud storage
-                    self._show_error(
-                        "File attachments require cloud storage to be configured. "
-                        "Please contact administrator to enable Supabase Storage."
-                    )
-                    return
 
                 # Try to upload to Supabase Storage
                 file_url = None
@@ -1616,39 +1593,42 @@ class MailScreen(ft.Container):
                 upload_error = None
 
                 try:
-                    # Upload to Supabase Storage
-                    success, url_or_error, bucket_path = upload_to_supabase(
-                        file_path,
-                        folder="mail_attachments",
-                        custom_filename=f"{self.current_user_id}_{int(datetime.now().timestamp())}_{file_name}"
-                    )
+                    storage = get_storage()
+                    if storage.available:
+                        # Upload to Supabase Storage
+                        success, url_or_error, bucket_path = upload_to_supabase(
+                            file_path,
+                            folder="mail_attachments",
+                            custom_filename=f"{self.current_user_id}_{int(datetime.now().timestamp())}_{file_name}"
+                        )
 
-                    if success and url_or_error:
-                        file_url = url_or_error
-                        upload_success = True
-                        print(
-                            f"[Mail] File uploaded to Supabase: {file_url}")
+                        if success and url_or_error:
+                            file_url = url_or_error
+                            upload_success = True
+                            print(
+                                f"[Mail] File uploaded to Supabase: {file_url}")
+                        else:
+                            upload_error = url_or_error
+                            print(
+                                f"[Mail] Supabase upload failed: {url_or_error}")
                     else:
-                        upload_error = url_or_error
-                        print(
-                            f"[Mail] Supabase upload failed: {url_or_error}")
-                        # FIX: Show error to user instead of falling back to local path
-                        self._show_error(f"Upload failed: {upload_error}")
-                        return
-
+                        upload_error = "Cloud storage not configured"
+                        print("[Mail] Supabase storage not available")
                 except Exception as upload_err:
                     upload_error = str(upload_err)
                     print(f"[Mail] Upload error: {upload_err}")
-                    self._show_error(f"Upload error: {upload_error}")
+
+                # If upload failed, show error
+                if not upload_success:
+                    error_msg = upload_error or "Upload failed"
+                    snack = ft.SnackBar(content=ft.Text(
+                        f"Cloud upload failed: {error_msg}. File not attached."), bgcolor=ERROR)
+                    self._page.overlay.append(snack)
+                    snack.open = True
+                    self._page.update()
                     return
 
-                # FIX: Only proceed if upload was successful (removed dangerous local path fallback)
-                if not upload_success or not file_url:
-                    self._show_error(
-                        "Failed to upload file. Please try again.")
-                    return
-
-                # Store the file URL in memory
+                # Store the Supabase URL (cloud accessible)
                 self._attached_file_path["path"] = file_url
                 self._attached_file_path["name"] = file_name
                 self._attached_file_path["url"] = file_url
@@ -1659,7 +1639,7 @@ class MailScreen(ft.Container):
 
                 # Show success message with filename
                 snack = ft.SnackBar(content=ft.Text(
-                    f"Attached: {file_name}"), bgcolor=SUCCESS)
+                    f"Attached (cloud): {file_name}"), bgcolor=SUCCESS)
                 self._page.overlay.append(snack)
                 snack.open = True
                 self._page.update()
@@ -1988,12 +1968,6 @@ class MailScreen(ft.Container):
 
     def _show_success(self, msg):
         snack = ft.SnackBar(content=ft.Text(msg), bgcolor=SUCCESS)
-        self._page.overlay.append(snack)
-        snack.open = True
-
-    def _show_error(self, msg):
-        """Show error message"""
-        snack = ft.SnackBar(content=ft.Text(msg), bgcolor=ERROR)
         self._page.overlay.append(snack)
         snack.open = True
 

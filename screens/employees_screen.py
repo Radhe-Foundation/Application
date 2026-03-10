@@ -2,7 +2,7 @@
 Vernika HRA - Enhanced Employees Screen with ID/PASS Creation, Full Details, and Document Generation
 """
 
-from utils.supabase_storage import upload_to_supabase, get_storage
+from utils.supabase_storage import upload_to_supabase
 from components.forms import DatePickerField
 from database.operations import get_all_employees, get_employee_by_id
 from database.models import Employee, User, Department, Position, Role
@@ -15,6 +15,18 @@ from datetime import datetime, date
 import bcrypt
 import flet as ft
 from flet import padding
+
+# Theme colors
+PRIMARY = "#2E86AB"
+SUCCESS = "#4CAF50"
+ERROR = "#F44336"
+WARNING = "#FF9800"
+INFO = "#2196F3"
+BACKGROUND = "#F5F5F5"
+SURFACE = "#FFFFFF"
+TEXT_PRIMARY = "#1A1C1E"
+TEXT_SECONDARY = "#6C757D"
+
 
 # Theme colors
 PRIMARY = "#2E86AB"
@@ -74,10 +86,18 @@ class EmployeesScreen(ft.Container):
         return get_db_session()
 
     def _init_file_picker(self):
-        """Initialize file picker for profile photos"""
+        """Initialize file picker for profile photos - using page.services (Flet 0.80+)"""
         if not self._file_picker:
             self._file_picker = ft.FilePicker()
-            # FilePicker is automatically handled by Flet - no need to add to any collection
+            # Use page.services for Service objects (Flet 0.80+)
+            # FilePicker is a Service, not a Control
+            try:
+                if self._file_picker not in self._page.services:
+                    self._page.services.append(self._file_picker)
+            except AttributeError:
+                # Fallback for older Flet versions or if services doesn't exist
+                if self._file_picker not in self._page.overlay:
+                    self._page.overlay.append(self._file_picker)
 
     def _build_content(self):
         """Build the full content with header"""
@@ -151,40 +171,20 @@ class EmployeesScreen(ft.Container):
         """Build employee list with PostgreSQL"""
         from sqlalchemy.orm import joinedload
 
-        # Debounce timer for search
-        self._search_debounce_timer = None
-
-        def load_employees(search_term: str = None):
-            """Load employees with optional search filter"""
-            db = None
-            try:
-                db = get_db_session()
-                query = db.query(Employee).options(
-                    joinedload(Employee.department),
-                    joinedload(Employee.position)
-                )
-
-                # Apply search filter if provided
-                if search_term and search_term.strip():
-                    search = search_term.strip().lower()
-                    query = query.filter(
-                        (Employee.first_name.ilike(f"%{search}%")) |
-                        (Employee.last_name.ilike(f"%{search}%")) |
-                        (Employee.email.ilike(f"%{search}%")) |
-                        (Employee.employee_code.ilike(f"%{search}%"))
-                    )
-
-                # Added limit for performance
-                return query.order_by(Employee.id.desc()).limit(100).all()
-            except Exception as e:
-                print(f"Error loading employees: {e}")
-                return []
-            finally:
-                if db:
-                    db.close()
-
-        # Initial load of employees
-        employees = load_employees()
+        db = None
+        try:
+            db = get_db_session()
+            # Query employees with eager loading of relationships using SQLAlchemy
+            employees = db.query(Employee).options(
+                joinedload(Employee.department),
+                joinedload(Employee.position)
+            ).all()
+        except Exception as e:
+            print(f"Error loading employees: {e}")
+            employees = []
+        finally:
+            if db:
+                db.close()
 
         if not employees:
             return ft.Container(
@@ -327,24 +327,9 @@ class EmployeesScreen(ft.Container):
         # File picker button for profile photo
         profile_photo_path = [None]  # Use list to store reference
 
-        # Upload status indicator
-        profile_upload_status = ft.Text("", size=11, visible=False)
-
         def pick_profile_photo(e):
-            """Pick profile photo using file picker and upload to Supabase only
-
-            FIX: Removed local fallback as it doesn't work for multi-device access.
-            Profile photos now require Supabase Storage to be available.
-            """
+            """Pick profile photo using file picker and upload to Supabase"""
             self._init_file_picker()
-
-            # Check Supabase Storage availability FIRST
-            storage = get_storage()
-            if not storage.available:
-                storage_error = storage.get_last_error() or "Cloud storage not configured"
-                self._show_error(
-                    f"Profile photo upload requires cloud storage. Error: {storage_error}")
-                return
 
             async def pick_and_set():
                 try:
@@ -354,63 +339,33 @@ class EmployeesScreen(ft.Container):
                     )
                     if files and files[0]:
                         path = files[0].path
-
-                        # Check if file exists
-                        if not os.path.exists(path):
-                            self._show_error(f"File not found: {path}")
-                            return
-
-                        # Show uploading status
-                        profile_photo.value = "Uploading..."
-                        profile_upload_status.value = "Uploading to cloud..."
-                        profile_upload_status.visible = True
-                        profile_upload_status.color = INFO
-                        self._page.update()
+                        profile_photo_path[0] = path
 
                         # Upload to Supabase Storage for multi-device access
-                        upload_success = False
-                        upload_error = None
-                        file_url = None
-
                         try:
-                            # Upload to Supabase Storage
-                            success, url_or_error, bucket_path = upload_to_supabase(
+                            success, file_url, bucket_path = upload_to_supabase(
                                 file_path=path,
                                 folder="profiles",
                                 custom_filename=os.path.basename(path)
                             )
-
-                            if success and url_or_error:
-                                file_url = url_or_error
-                                upload_success = True
-                                print(
-                                    f"[Profile] Profile photo uploaded to Supabase: {file_url}")
+                            if success and file_url:
+                                # Save the Supabase URL instead of local path
+                                profile_photo.value = file_url
+                                print(f"Profile photo uploaded: {file_url}")
                             else:
-                                upload_error = url_or_error
+                                # Fallback to local path if upload fails
+                                profile_photo.value = path
                                 print(
-                                    f"[Profile] Supabase upload failed: {url_or_error}")
-
+                                    f"Profile photo upload failed, using local path: {path}")
                         except Exception as upload_err:
-                            upload_error = str(upload_err)
-                            print(f"[Profile] Upload error: {upload_err}")
+                            print(
+                                f"Error uploading profile photo: {upload_err}")
+                            # Fallback to local path
+                            profile_photo.value = path
+                            self._show_error(
+                                f"Upload failed: {str(upload_err)}")
 
-                        # Only proceed if upload was successful (no local fallback)
-                        if not upload_success or not file_url:
-                            error_msg = upload_error or "Upload failed"
-                            profile_photo.value = ""
-                            profile_upload_status.value = f"Upload failed: {error_msg}. Please try again."
-                            profile_upload_status.color = ERROR
-                            profile_upload_status.visible = True
-                            self._page.update()
-                            return
-
-                        # Success
-                        profile_photo.value = file_url
-                        profile_upload_status.value = "✓ Uploaded to cloud!"
-                        profile_upload_status.color = SUCCESS
-                        profile_upload_status.visible = True
                         self._page.update()
-
                 except Exception as ex:
                     print(f"Error picking file: {ex}")
                     self._show_error(f"Error selecting file: {str(ex)}")
@@ -422,9 +377,6 @@ class EmployeesScreen(ft.Container):
             tooltip="Browse for image",
             on_click=pick_profile_photo
         )
-
-        # Upload status indicator for profile photo
-        profile_upload_status = ft.Text("", size=11, visible=False)
 
         # Date pickers for DOB and Date of Joining
         dob_picker = DatePickerField(label="Date of Birth", width=200)
@@ -713,13 +665,6 @@ class EmployeesScreen(ft.Container):
                 db.add(new_employee)
                 db.commit()
 
-                # Invalidate dashboard stats cache after adding new employee
-                try:
-                    from database.operations import _invalidate_cache
-                    _invalidate_cache("dashboard_")
-                except Exception as cache_err:
-                    print(f"Cache invalidation error: {cache_err}")
-
                 self._close_dialog()
                 self._show_success(
                     f"Employee '{first_name_val} {last_name_val}' created successfully!")
@@ -745,7 +690,6 @@ class EmployeesScreen(ft.Container):
                 email, phone,
                 # Add profile photo field with picker
                 ft.Row([profile_photo, profile_pick_btn], spacing=5),
-                profile_upload_status,
                 ft.Row([dob_picker, gender], spacing=10),
                 address,
                 ft.Row([city, state, pincode], spacing=10),
@@ -851,33 +795,9 @@ class EmployeesScreen(ft.Container):
         profile_photo_path = [
             emp.profile_photo] if emp.profile_photo else [None]
 
-        # Initialize upload status text at the right scope
-        upload_status_text = ft.Text("", size=12, visible=False)
-
         def pick_profile_photo_edit(e):
-            """Pick profile photo using file picker and upload to Supabase only
-
-            FIX: Removed local fallback as it doesn't work for multi-device access.
-            Profile photos now require Supabase Storage to be available.
-            """
+            """Pick profile photo using file picker and upload to Supabase"""
             self._init_file_picker()
-
-            # Check Supabase Storage availability FIRST
-            storage = get_storage()
-            if not storage.available:
-                storage_error = storage.get_last_error() or "Cloud storage not configured"
-                self._show_error(
-                    f"Profile photo upload requires cloud storage. Error: {storage_error}")
-                return
-
-            # Show loading indicator
-            upload_status_text.value = "Uploading..."
-            upload_status_text.visible = True
-            upload_status_text.color = INFO
-            profile_photo.disabled = True
-            if profile_pick_btn:
-                profile_pick_btn.disabled = True
-            self._page.update()
 
             async def pick_and_set():
                 try:
@@ -889,79 +809,34 @@ class EmployeesScreen(ft.Container):
                         path = files[0].path
                         profile_photo_path[0] = path
 
-                        print(f"[Profile Edit] File selected: {path}")
-
-                        # Check if file exists
-                        if not os.path.exists(path):
-                            profile_photo.disabled = False
-                            profile_pick_btn.disabled = False
-                            upload_status_text.value = "File not found"
-                            upload_status_text.color = ERROR
-                            self._page.update()
-                            return
-
-                        # Show uploading status
-                        upload_status_text.value = "Uploading to cloud..."
-                        upload_status_text.color = INFO
-                        self._page.update()
-
                         # Upload to Supabase Storage for multi-device access
-                        upload_success = False
-                        upload_error = None
-                        file_url = None
-
                         try:
-                            # Upload to Supabase Storage
-                            success, url_or_error, bucket_path = upload_to_supabase(
+                            success, file_url, bucket_path = upload_to_supabase(
                                 file_path=path,
                                 folder="profiles",
                                 custom_filename=os.path.basename(path)
                             )
-
-                            if success and url_or_error:
-                                file_url = url_or_error
-                                upload_success = True
-                                print(
-                                    f"[Profile Edit] Profile photo uploaded to Supabase: {file_url}")
+                            if success and file_url:
+                                # Save the Supabase URL instead of local path
+                                profile_photo.value = file_url
+                                print(f"Profile photo uploaded: {file_url}")
                             else:
-                                upload_error = url_or_error
+                                # Fallback to local path if upload fails
+                                profile_photo.value = path
                                 print(
-                                    f"[Profile Edit] Supabase upload failed: {url_or_error}")
-
+                                    f"Profile photo upload failed, using local path: {path}")
                         except Exception as upload_err:
-                            upload_error = str(upload_err)
-                            print(f"[Profile Edit] Upload error: {upload_err}")
+                            print(
+                                f"Error uploading profile photo: {upload_err}")
+                            # Fallback to local path
+                            profile_photo.value = path
+                            self._show_error(
+                                f"Upload failed: {str(upload_err)}")
 
-                        # Only proceed if upload was successful (no local fallback)
-                        if not upload_success or not file_url:
-                            error_msg = upload_error or "Upload failed"
-                            profile_photo.disabled = False
-                            profile_pick_btn.disabled = False
-                            upload_status_text.value = f"Upload failed: {error_msg}. Please try again."
-                            upload_status_text.color = ERROR
-                            upload_status_text.visible = True
-                            self._page.update()
-                            return
-
-                        # Success - save the Supabase URL
-                        profile_photo.value = file_url
-                        upload_status_text.value = "✓ Uploaded to cloud!"
-                        upload_status_text.color = SUCCESS
-                        print(
-                            f"[Profile Edit] Profile photo saved: {file_url}")
-
-                        # Re-enable controls
-                        profile_photo.disabled = False
-                        profile_pick_btn.disabled = False
                         self._page.update()
-
                 except Exception as ex:
                     print(f"Error picking file: {ex}")
-                    profile_photo.disabled = False
-                    profile_pick_btn.disabled = False
-                    upload_status_text.value = ""
                     self._show_error(f"Error selecting file: {str(ex)}")
-                    self._page.update()
 
             self._page.run_task(pick_and_set)
 
@@ -1133,7 +1008,6 @@ class EmployeesScreen(ft.Container):
             email, phone,
             # Add profile photo field with picker in edit dialog
             ft.Row([profile_photo, profile_pick_btn], spacing=5),
-            upload_status_text,  # Show upload status
             ft.Row([dob_picker, gender], spacing=10),
             address,
             ft.Row([city, state, pincode], spacing=10),
@@ -2919,14 +2793,6 @@ class EmployeesScreen(ft.Container):
                             db.delete(user_to_delete)
 
                 db.commit()
-
-                # Invalidate dashboard stats cache after deleting employee
-                try:
-                    from database.operations import _invalidate_cache
-                    _invalidate_cache("dashboard_")
-                except Exception as cache_err:
-                    print(f"Cache invalidation error: {cache_err}")
-
                 self._close_dialog()
                 self._show_success("Employee deleted successfully!")
                 self._refresh()
