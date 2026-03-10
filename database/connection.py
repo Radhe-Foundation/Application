@@ -27,7 +27,7 @@ from sqlalchemy import create_engine, event, text
 from sqlalchemy.engine import Engine
 from sqlalchemy.orm import Session, sessionmaker
 from sqlalchemy.ext.declarative import declarative_base
-from sqlalchemy.pool import QueuePool
+from sqlalchemy.pool import QueuePool, NullPool
 
 
 # Configure logging
@@ -60,7 +60,7 @@ def get_engine() -> Engine:
             "keepalives_interval": 5,
             "keepalives_count": 5,
             "application_name": "Vernika_HRA",
-            "options": "-c statement_timeout=30000"
+            "options": "-c statement_timeout=30000 -c work_mem=16MB"
         }
 
         try:
@@ -74,6 +74,8 @@ def get_engine() -> Engine:
                 pool_pre_ping=True,
                 # Performance optimizations
                 pool_use_lifo=True,  # Use LIFO for better connection reuse
+                # Enable query result caching
+                query_cache_size=500,
                 connect_args=connect_args
             )
 
@@ -90,12 +92,20 @@ def get_engine() -> Engine:
 
 
 def _setup_postgresql_optimizations(engine: Engine) -> None:
-    """Set up PostgreSQL-specific optimizations."""
+    """Set up PostgreSQL-specific optimizations for better performance."""
     @event.listens_for(engine, "connect")
     def set_pg_session_optimizations(dbapi_connection, connection_record):
         cursor = dbapi_connection.cursor()
+        # Set statement timeout to 30 seconds
         cursor.execute("SET statement_timeout = '30s'")
+        # Set timezone to UTC
         cursor.execute("SET timezone = 'UTC'")
+        # Set work memory for better query performance
+        cursor.execute("SET work_mem = '16MB'")
+        # Enable parallel query execution
+        cursor.execute("SET max_parallel_workers_per_gather = 2")
+        # Disable synchronous commit for better write performance (safe for non-critical data)
+        # cursor.execute("SET synchronous_commit = OFF")
         cursor.close()
 
 

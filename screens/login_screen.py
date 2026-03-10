@@ -755,7 +755,8 @@ class LoginScreen(ft.Container):
             # Re-initialize notifications after navigation
             try:
                 from utils.notification_manager import ensure_notification_manager
-                ensure_notification_manager(self._page)
+                # Pass user_id so notifications are targeted to correct user
+                ensure_notification_manager(self._page, user_id=user_id)
             except Exception as e:
                 print(f"Notification init error: {e}")
 

@@ -1559,7 +1559,11 @@ class MailScreen(ft.Container):
         self._page.update()
 
     def _attach_file_in_compose(self, e=None):
-        """Attach file in compose mail - uploads to Supabase with local fallback"""
+        """Attach file in compose mail - uploads to Supabase only
+
+        FIX: Removed local file path fallback as it doesn't work for multi-user scenarios.
+        File attachments now require Supabase Storage to be available.
+        """
         # Initialize file picker - don't add to overlay, just create it
         if not hasattr(self, '_file_picker') or not self._file_picker:
             self._file_picker = ft.FilePicker()
@@ -1569,7 +1573,7 @@ class MailScreen(ft.Container):
         self._attached_file_path = {"path": None, "name": None, "url": None}
 
         def handle_picked_files(files):
-            """Process picked files after selection - with Supabase upload + local fallback"""
+            """Process picked files after selection - Supabase Storage only"""
             try:
                 if not files:
                     return
@@ -1587,46 +1591,55 @@ class MailScreen(ft.Container):
                 snack.open = True
                 self._page.update()
 
-                # Try to upload to Supabase Storage first
+                # FIX: Check Supabase Storage availability FIRST
+                storage = get_storage()
+                if not storage.available:
+                    # FIX: Show clear error - file attachment requires cloud storage
+                    self._show_error(
+                        "File attachments require cloud storage to be configured. "
+                        "Please contact administrator to enable Supabase Storage."
+                    )
+                    return
+
+                # Try to upload to Supabase Storage
                 file_url = None
                 upload_success = False
                 upload_error = None
 
                 try:
-                    storage = get_storage()
-                    if storage.available:
-                        # Upload to Supabase Storage
-                        success, url_or_error, bucket_path = upload_to_supabase(
-                            file_path,
-                            folder="mail_attachments",
-                            custom_filename=f"{self.current_user_id}_{int(datetime.now().timestamp())}_{file_name}"
-                        )
+                    # Upload to Supabase Storage
+                    success, url_or_error, bucket_path = upload_to_supabase(
+                        file_path,
+                        folder="mail_attachments",
+                        custom_filename=f"{self.current_user_id}_{int(datetime.now().timestamp())}_{file_name}"
+                    )
 
-                        if success and url_or_error:
-                            file_url = url_or_error
-                            upload_success = True
-                            print(
-                                f"[Mail] File uploaded to Supabase: {file_url}")
-                        else:
-                            upload_error = url_or_error
-                            print(
-                                f"[Mail] Supabase upload failed: {url_or_error}")
-                    else:
-                        upload_error = "Cloud storage not available"
+                    if success and url_or_error:
+                        file_url = url_or_error
+                        upload_success = True
                         print(
-                            "[Mail] Supabase storage not available - using local path")
+                            f"[Mail] File uploaded to Supabase: {file_url}")
+                    else:
+                        upload_error = url_or_error
+                        print(
+                            f"[Mail] Supabase upload failed: {url_or_error}")
+                        # FIX: Show error to user instead of falling back to local path
+                        self._show_error(f"Upload failed: {upload_error}")
+                        return
+
                 except Exception as upload_err:
                     upload_error = str(upload_err)
                     print(f"[Mail] Upload error: {upload_err}")
+                    self._show_error(f"Upload error: {upload_error}")
+                    return
 
-                # If Supabase upload failed, use local file path as fallback
-                if not upload_success:
-                    print(
-                        f"[Mail] Using local file path as fallback: {file_path}")
-                    # Use local file path as fallback
-                    file_url = file_path
+                # FIX: Only proceed if upload was successful (removed dangerous local path fallback)
+                if not upload_success or not file_url:
+                    self._show_error(
+                        "Failed to upload file. Please try again.")
+                    return
 
-                # Store the file URL (Supabase URL or local path)
+                # Store the file URL in memory
                 self._attached_file_path["path"] = file_url
                 self._attached_file_path["name"] = file_name
                 self._attached_file_path["url"] = file_url

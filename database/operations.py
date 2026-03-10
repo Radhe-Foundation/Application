@@ -2397,3 +2397,323 @@ def notify_meeting_invite(db: Session, meeting_id: int, participant_id: int):
         related_entity_type="meeting",
         related_entity_id=meeting_id
     )
+
+
+# ==================== OPTIMIZED QUERY FUNCTIONS (V2) ====================
+# These functions are optimized for better performance with Supabase
+
+def get_dashboard_stats_v2():
+    """
+    Get dashboard statistics using a single optimized query.
+    This replaces the multiple queries in get_dashboard_stats().
+
+    Returns:
+        dict: Dashboard statistics
+    """
+    from database.connection import get_db_session
+    from sqlalchemy import text
+
+    session = get_db_session()
+    try:
+        # Try to use the PostgreSQL function first (fastest)
+        try:
+            result = session.execute(
+                text("SELECT * FROM get_dashboard_statistics()")).fetchone()
+            if result:
+                return {
+                    "total_users": result[0] or 0,
+                    "active_users": result[1] or 0,
+                    "total_employees": result[2] or 0,
+                    "total_departments": session.query(Department).filter(Department.is_active == True).count() or 0,
+                    "total_positions": session.query(Position).filter(Position.is_active == True).count() or 0,
+                    "pending_tasks": result[10] or 0,
+                    "in_progress_tasks": result[11] or 0,
+                    "completed_tasks": result[12] or 0,
+                    "pending_leaves": result[9] or 0,
+                    "present_today": result[6] or 0,
+                    "on_leave": result[8] or 0,
+                }
+        except Exception as e:
+            logger.debug(f"PostgreSQL function not available: {e}")
+
+        # Fallback to optimized single session query
+        from datetime import date as date_type
+        today = date_type.today()
+
+        # Use a single query with subqueries for efficiency
+        stats = {}
+
+        # Users (single query)
+        stats['total_users'] = session.query(func.count(User.id)).scalar() or 0
+        stats['active_users'] = session.query(func.count(User.id)).filter(
+            User.status == UserStatus.ACTIVE
+        ).scalar() or 0
+
+        # Employees
+        stats['total_employees'] = session.query(
+            func.count(Employee.id)).scalar() or 0
+
+        # Departments & Positions
+        stats['total_departments'] = session.query(func.count(Department.id)).filter(
+            Department.is_active == True
+        ).scalar() or 0
+        stats['total_positions'] = session.query(func.count(Position.id)).filter(
+            Position.is_active == True
+        ).scalar() or 0
+
+        # Today's attendance (single query)
+        stats['present_today'] = session.query(func.count(Attendance.id)).filter(
+            Attendance.date == today,
+            Attendance.status == AttendanceStatus.PRESENT
+        ).scalar() or 0
+
+        # On leave today (single query)
+        stats['on_leave'] = session.query(func.count(LeaveRequest.id)).filter(
+            LeaveRequest.status == LeaveStatus.APPROVED,
+            LeaveRequest.start_date <= today,
+            LeaveRequest.end_date >= today
+        ).scalar() or 0
+
+        # Tasks (single query per status)
+        stats['pending_tasks'] = session.query(func.count(Task.id)).filter(
+            Task.status == TaskStatus.TODO
+        ).scalar() or 0
+        stats['in_progress_tasks'] = session.query(func.count(Task.id)).filter(
+            Task.status == TaskStatus.IN_PROGRESS
+        ).scalar() or 0
+        stats['completed_tasks'] = session.query(func.count(Task.id)).filter(
+            Task.status == TaskStatus.COMPLETED
+        ).scalar() or 0
+
+        # Pending leaves
+        stats['pending_leaves'] = session.query(func.count(LeaveRequest.id)).filter(
+            LeaveRequest.status == LeaveStatus.PENDING
+        ).scalar() or 0
+
+        return stats
+
+    except Exception as e:
+        logger.error(f"Error getting dashboard stats v2: {e}")
+        return {
+            "total_users": 0, "active_users": 0, "total_employees": 0,
+            "total_departments": 0, "total_positions": 0, "pending_tasks": 0,
+            "in_progress_tasks": 0, "completed_tasks": 0, "pending_leaves": 0,
+            "present_today": 0, "on_leave": 0
+        }
+    finally:
+        session.close()
+
+
+def get_all_employees_fast(limit: int = 1000, offset: int = 0):
+    """
+    Get all employees with pre-loaded relationships.
+    Optimized to avoid N+1 query problem.
+
+    Args:
+        limit: Maximum number of records to return
+        offset: Number of records to skip
+
+    Returns:
+        list: List of employees with department and position loaded
+    """
+    from database.connection import get_db_session
+
+    session = get_db_session()
+    try:
+        # Try PostgreSQL function first
+        try:
+            result = session.execute(
+                text(
+                    "SELECT * FROM get_employees_with_details() LIMIT :limit OFFSET :offset"),
+                {"limit": limit, "offset": offset}
+            ).fetchall()
+
+            # Convert to dict format
+            employees = []
+            for row in result:
+                employees.append({
+                    'id': row[0],
+                    'employee_code': row[1],
+                    'first_name': row[2],
+                    'last_name': row[3],
+                    'email': row[4],
+                    'phone': row[5],
+                    'is_active': row[6],
+                    'department_name': row[7],
+                    'department_code': row[8],
+                    'position_title': row[9],
+                    'position_code': row[10],
+                })
+            return employees
+        except Exception as e:
+            logger.debug(f"PostgreSQL function not available: {e}")
+
+        # Fallback to SQLAlchemy with eager loading
+        return session.query(Employee).options(
+            joinedload(Employee.department),
+            joinedload(Employee.position)
+        ).offset(offset).limit(limit).all()
+
+    finally:
+        session.close()
+
+
+def get_attendance_records_fast(employee_id: int = None, start_date: date = None,
+                                end_date: date = None, limit: int = 100):
+    """
+    Get attendance records with optimized query.
+
+    Args:
+        employee_id: Filter by employee ID
+        start_date: Filter by start date
+        end_date: Filter by end date
+        limit: Maximum records to return
+
+    Returns:
+        list: Attendance records
+    """
+    from database.connection import get_db_session
+
+    session = get_db_session()
+    try:
+        query = session.query(Attendance).options(
+            joinedload(Attendance.employee)
+        )
+
+        if employee_id:
+            query = query.filter(Attendance.employee_id == employee_id)
+        if start_date:
+            query = query.filter(Attendance.date >= start_date)
+        if end_date:
+            query = query.filter(Attendance.date <= end_date)
+
+        return query.order_by(Attendance.date.desc()).limit(limit).all()
+    finally:
+        session.close()
+
+
+def get_leave_requests_fast(employee_id: int = None, status: LeaveStatus = None,
+                            limit: int = 100):
+    """
+    Get leave requests with optimized query.
+
+    Args:
+        employee_id: Filter by employee ID
+        status: Filter by leave status
+        limit: Maximum records to return
+
+    Returns:
+        list: Leave requests
+    """
+    from database.connection import get_db_session
+
+    session = get_db_session()
+    try:
+        query = session.query(LeaveRequest).options(
+            joinedload(LeaveRequest.employee),
+            joinedload(LeaveRequest.leave_type)
+        )
+
+        if employee_id:
+            query = query.filter(LeaveRequest.employee_id == employee_id)
+        if status:
+            query = query.filter(LeaveRequest.status == status)
+
+        return query.order_by(LeaveRequest.created_at.desc()).limit(limit).all()
+    finally:
+        session.close()
+
+
+def get_tasks_fast(assigned_to_id: int = None, status: TaskStatus = None,
+                   limit: int = 100):
+    """
+    Get tasks with optimized query.
+
+    Args:
+        assigned_to_id: Filter by assigned employee ID
+        status: Filter by task status
+        limit: Maximum records to return
+
+    Returns:
+        list: Tasks
+    """
+    from database.connection import get_db_session
+
+    session = get_db_session()
+    try:
+        query = session.query(Task).options(
+            joinedload(Task.assigned_to),
+            joinedload(Task.created_by)
+        )
+
+        if assigned_to_id:
+            query = query.filter(Task.assigned_to_id == assigned_to_id)
+        if status:
+            query = query.filter(Task.status == status)
+
+        return query.order_by(Task.created_at.desc()).limit(limit).all()
+    finally:
+        session.close()
+
+
+def get_static_data_cached():
+    """
+    Get static reference data (departments, positions, roles) with caching.
+    This data rarely changes and should be cached aggressively.
+
+    Returns:
+        dict: Static data including departments, positions, roles
+    """
+    from utils.cache import get_global_cache
+
+    cache = get_global_cache()
+
+    # Try to get from cache first (5 minutes TTL)
+    cached = cache.get("static_reference_data")
+    if cached is not None:
+        return cached
+
+    # Fetch from database
+    from database.connection import get_db_session
+    session = get_db_session()
+    try:
+        departments = session.query(Department).filter(
+            Department.is_active == True
+        ).all()
+
+        positions = session.query(Position).filter(
+            Position.is_active == True
+        ).all()
+
+        roles = session.query(Role).all()
+
+        result = {
+            'departments': [
+                {'id': d.id, 'name': d.name, 'code': d.code}
+                for d in departments
+            ],
+            'positions': [
+                {'id': p.id, 'title': p.title, 'code': p.code,
+                    'department_id': p.department_id}
+                for p in positions
+            ],
+            'roles': [
+                {'id': r.id, 'name': r.name, 'display_name': r.display_name}
+                for r in roles
+            ]
+        }
+
+        # Cache for 5 minutes
+        cache.set("static_reference_data", result, 300)
+
+        return result
+    finally:
+        session.close()
+
+
+def invalidate_static_data_cache():
+    """Invalidate static data cache when departments/positions change."""
+    from utils.cache import get_global_cache
+    cache = get_global_cache()
+    cache.delete("static_reference_data")
+    cache.delete("dashboard_stats")

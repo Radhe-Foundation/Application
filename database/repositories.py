@@ -17,7 +17,7 @@ from datetime import datetime, date
 from functools import wraps
 
 from sqlalchemy.orm import Session, joinedload
-from sqlalchemy import func, and_, or_
+from sqlalchemy import func, and_, or_, text
 
 logger = logging.getLogger(__name__)
 
@@ -388,7 +388,7 @@ def get_dashboard_stats() -> Dict[str, Any]:
         User, Employee, Department, Position, Attendance, LeaveRequest,
         Task, UserStatus, LeaveStatus, AttendanceStatus, TaskStatus
     )
-    from datetime import date
+    from datetime import date as date_type
 
     stats = {
         'total_users': 0,
@@ -403,13 +403,13 @@ def get_dashboard_stats() -> Dict[str, Any]:
 
     try:
         with get_session() as session:
-            today = date.today()
+            today = date_type.today()
 
-            # Users
+            # Users - use string comparison for better performance
             stats['total_users'] = session.query(
                 func.count(User.id)).scalar() or 0
             stats['active_users'] = session.query(func.count(User.id)).filter(
-                User.status == UserStatus.ACTIVE
+                User.status == 'active'
             ).scalar() or 0
 
             # Employees
@@ -424,32 +424,92 @@ def get_dashboard_stats() -> Dict[str, Any]:
                 Position.is_active == True
             ).scalar() or 0
 
-            # Today's attendance
+            # Today's attendance - use string for status
             stats['present_today'] = session.query(func.count(Attendance.id)).filter(
                 and_(
                     Attendance.date == today,
-                    Attendance.status == AttendanceStatus.PRESENT
+                    Attendance.status == 'present'
                 )
             ).scalar() or 0
 
             # On leave today
             stats['on_leave'] = session.query(func.count(LeaveRequest.id)).filter(
                 and_(
-                    LeaveRequest.status == LeaveStatus.APPROVED,
+                    LeaveRequest.status == 'approved',
                     LeaveRequest.start_date <= today,
                     LeaveRequest.end_date >= today
                 )
             ).scalar() or 0
 
-            # Pending tasks
+            # Pending tasks - use string for status
             stats['pending_tasks'] = session.query(func.count(Task.id)).filter(
-                Task.status.in_([TaskStatus.TODO, TaskStatus.IN_PROGRESS])
+                Task.status.in_(['todo', 'in_progress'])
             ).scalar() or 0
 
     except Exception as e:
         logger.error(f"Error getting dashboard stats: {e}")
 
     return stats
+
+
+# ==================== Optimized Dashboard Stats V2 ====================
+
+def get_dashboard_stats_v2() -> Dict[str, Any]:
+    """Get dashboard statistics using PostgreSQL function - fastest method"""
+    from sqlalchemy import text
+
+    try:
+        with get_session() as session:
+            # Try to call the PostgreSQL function directly
+            result = session.execute(
+                text("SELECT * FROM get_dashboard_statistics()")).fetchone()
+            if result:
+                return {
+                    'total_users': result[0] or 0,
+                    'active_users': result[1] or 0,
+                    'total_employees': result[2] or 0,
+                    'departments': result[4] or 0,
+                    'positions': result[5] or 0,
+                    'present_today': result[6] or 0,
+                    'on_leave': result[8] or 0,
+                    'pending_tasks': result[10] or 0,
+                    'in_progress_tasks': result[11] or 0,
+                    'completed_tasks': result[12] or 0,
+                }
+    except Exception as e:
+        logger.debug(f"PostgreSQL function not available, using fallback: {e}")
+
+    # Fallback to the standard function
+    return get_dashboard_stats()
+
+
+# ==================== Fast Employee Loading ====================
+
+def get_employees_for_screens(limit: int = 1000) -> List[Dict]:
+    """
+    Get employees with all related data for screen display.
+    Optimized for fast loading in employee-related screens.
+    """
+    try:
+        with get_session() as session:
+            # Use raw SQL with JOINs for maximum performance
+            result = session.execute(text("""
+                SELECT 
+                    e.id, e.employee_code, e.first_name, e.last_name, 
+                    e.email, e.phone, e.is_active, e.department_id, e.position_id,
+                    d.name as department_name, d.code as department_code,
+                    p.title as position_title, p.code as position_code
+                FROM employees e
+                LEFT JOIN departments d ON e.department_id = d.id
+                LEFT JOIN positions p ON e.position_id = p.id
+                ORDER BY e.first_name, e.last_name
+                LIMIT :limit
+            """), {"limit": limit}).fetchall()
+
+            return [dict(row._mapping) for row in result]
+    except Exception as e:
+        logger.error(f"Error getting employees for screens: {e}")
+        return []
 
 
 # ==================== Convenience Functions ====================

@@ -206,6 +206,8 @@ class NotificationManager:
         self._sound_enabled = True
         self._notification_callback: Optional[Callable] = None
         self._global_banner: Optional[GlobalNotificationBanner] = None
+        # Track current logged-in user
+        self._current_user_id: Optional[int] = None
 
         # Notification settings
         self._settings = {
@@ -223,6 +225,17 @@ class NotificationManager:
             self._global_banner = GlobalNotificationBanner(page)
         except Exception as e:
             print(f"[Notification] Global banner init error: {e}")
+
+    def set_current_user(self, user_id: int):
+        """Set the current logged-in user ID for targeted notifications"""
+        self._current_user_id = user_id
+        # Clear notifications when user changes
+        self._notifications.clear()
+        self._unread_count = 0
+
+    def get_current_user_id(self) -> Optional[int]:
+        """Get the current logged-in user ID"""
+        return self._current_user_id
 
     def set_sound_enabled(self, enabled: bool):
         """Enable or disable notification sounds"""
@@ -257,9 +270,27 @@ class NotificationManager:
                          priority: str = "medium",
                          related_entity_type: str = None,
                          related_entity_id: int = None,
-                         show_banner: bool = True) -> Notification:
-        """Add a new notification"""
+                         show_banner: bool = True,
+                         target_user_id: int = None) -> Notification:
+        """Add a new notification
+
+        Args:
+            target_user_id: If specified, only show this notification to the specific user.
+                          If None, shows to current user (for backward compatibility).
+        """
         import uuid
+
+        # SECURITY FIX: If target_user_id is specified, only show if current user matches
+        if target_user_id is not None:
+            if self._current_user_id is None:
+                print(f"[Notification] Ignoring notification - no user logged in")
+                return None
+            if target_user_id != self._current_user_id:
+                # This notification is for a different user - don't show it
+                print(
+                    f"[Notification] Ignoring notification for user {target_user_id} - current user is {self._current_user_id}")
+                return None
+
         notification = Notification(
             id=str(uuid.uuid4()),
             title=title,
@@ -502,25 +533,39 @@ class NotificationManager:
             show_banner=True
         )
 
-    def show_chat_message(self, sender_name: str, preview: str):
-        """Show notification for new chat message"""
+    def show_chat_message(self, sender_name: str, preview: str, target_user_id: int = None):
+        """Show notification for new chat message
+
+        Args:
+            sender_name: Name of the message sender
+            preview: Message preview text
+            target_user_id: The user ID who should receive this notification (the recipient)
+        """
         message = preview[:50] + "..." if len(preview) > 50 else preview
         return self.add_notification(
             title=f"Message from {sender_name}",
             message=message,
             notification_type="chat_message",
             priority="high",
-            show_banner=True
+            show_banner=True,
+            target_user_id=target_user_id  # Pass target user to ensure only correct user sees it
         )
 
-    def show_email_received(self, sender_name: str, subject: str):
-        """Show notification for new email"""
+    def show_email_received(self, sender_name: str, subject: str, target_user_id: int = None):
+        """Show notification for new email
+
+        Args:
+            sender_name: Name of the email sender
+            subject: Email subject
+            target_user_id: The user ID who should receive this notification (the recipient)
+        """
         return self.add_notification(
             title=f"Email from {sender_name}",
             message=subject,
             notification_type="email_received",
             priority="medium",
-            show_banner=True
+            show_banner=True,
+            target_user_id=target_user_id  # Pass target user to ensure only correct user sees it
         )
 
     def show_meeting_invite(self, organizer_name: str, meeting_title: str):
@@ -548,10 +593,17 @@ class NotificationManager:
 _notification_manager: Optional[NotificationManager] = None
 
 
-def init_notification_manager(page: ft.Page) -> NotificationManager:
-    """Initialize notification manager"""
+def init_notification_manager(page: ft.Page, user_id: int = None) -> NotificationManager:
+    """Initialize notification manager
+
+    Args:
+        page: The Flet page
+        user_id: The current logged-in user ID (optional but recommended)
+    """
     global _notification_manager
     _notification_manager = NotificationManager(page)
+    if user_id is not None:
+        _notification_manager.set_current_user(user_id)
     return _notification_manager
 
 
@@ -561,10 +613,14 @@ def get_notification_manager() -> Optional[NotificationManager]:
     return _notification_manager
 
 
-def ensure_notification_manager(page: ft.Page) -> NotificationManager:
+def ensure_notification_manager(page: ft.Page, user_id: int = None) -> NotificationManager:
     """
     Ensure notification manager exists and is properly initialized.
     Call this after page.clean() or navigation to re-initialize notifications.
+
+    Args:
+        page: The Flet page
+        user_id: The current logged-in user ID (optional but recommended)
     """
     global _notification_manager
     if _notification_manager is None:
@@ -584,6 +640,11 @@ def ensure_notification_manager(page: ft.Page) -> NotificationManager:
             print(f"[Notification] Re-init error: {e}")
             # If re-init fails, create fresh manager
             _notification_manager = NotificationManager(page)
+
+    # Set current user if provided
+    if user_id is not None:
+        _notification_manager.set_current_user(user_id)
+
     return _notification_manager
 
 

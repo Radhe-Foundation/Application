@@ -6,7 +6,8 @@ Admin dashboard with full management capabilities for all modules
 import flet as ft
 # Import both for backward compatibility
 from database.session_manager import get_session, get_db_session
-from database.operations import get_dashboard_stats as get_db_stats
+# Import optimized dashboard stats - try v2 first, fallback to original
+from database.repositories import get_dashboard_stats as get_db_stats, get_dashboard_stats_v2
 from auth.role_check import check_admin_access
 # Import web helpers for responsive design
 from utils.web_helpers import adaptive_value, Breakpoints
@@ -1020,7 +1021,17 @@ class AdminScreen(ft.Container):
         )
 
     def _get_dashboard_stats(self):
-        """Get dashboard statistics directly from database for real-time data"""
+        """Get dashboard statistics - uses optimized v2 with PostgreSQL function"""
+        # Try optimized v2 first (uses PostgreSQL function if available)
+        try:
+            stats = get_dashboard_stats_v2()
+            if stats and stats.get('total_users', 0) >= 0:
+                print(f"Using optimized dashboard stats v2: {stats}")
+                return stats
+        except Exception as e:
+            print(f"Dashboard stats v2 failed: {e}")
+
+        # Fallback to inline optimized query (string comparisons for performance)
         stats = {
             'total_users': 0,
             'active_users': 0,
@@ -1034,7 +1045,7 @@ class AdminScreen(ft.Container):
         }
         try:
             from datetime import date
-            from database.models import User, Employee, Department, Position, Attendance, LeaveRequest, Task, UserStatus
+            from database.models import User, Employee, Department, Position, Attendance, LeaveRequest, Task
             from sqlalchemy import func, and_
 
             with get_session() as session:
@@ -1042,19 +1053,14 @@ class AdminScreen(ft.Container):
                 stats['total_users'] = session.query(
                     func.count(User.id)).scalar() or 0
 
-                # Active users
+                # Active users - use string for performance
                 stats['active_users'] = session.query(func.count(User.id)).filter(
-                    User.status == UserStatus.ACTIVE
+                    User.status == 'active'
                 ).scalar() or 0
 
                 # Total employees
                 stats['total_employees'] = session.query(
                     func.count(Employee.id)).scalar() or 0
-
-                # Active employees
-                stats['active_employees'] = session.query(func.count(Employee.id)).filter(
-                    Employee.is_active == True
-                ).scalar() or 0
 
                 # Departments
                 stats['departments'] = session.query(func.count(Department.id)).filter(
@@ -1066,7 +1072,7 @@ class AdminScreen(ft.Container):
                     Position.is_active == True
                 ).scalar() or 0
 
-                # Present today
+                # Present today - use string for performance
                 today = date.today()
                 stats['present_today'] = session.query(func.count(Attendance.id)).filter(
                     and_(
@@ -1075,7 +1081,7 @@ class AdminScreen(ft.Container):
                     )
                 ).scalar() or 0
 
-                # On leave today
+                # On leave today - use string
                 stats['on_leave'] = session.query(func.count(LeaveRequest.id)).filter(
                     and_(
                         LeaveRequest.status == 'approved',
@@ -1084,7 +1090,7 @@ class AdminScreen(ft.Container):
                     )
                 ).scalar() or 0
 
-                # Pending tasks
+                # Pending tasks - use string
                 stats['pending_tasks'] = session.query(func.count(Task.id)).filter(
                     Task.status != 'completed'
                 ).scalar() or 0

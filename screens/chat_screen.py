@@ -321,8 +321,12 @@ class ChatScreen(ft.Container):
                         from utils.notification_manager import get_notification_manager
                         nm = get_notification_manager()
                         if nm:
+                            # FIX: Pass receiver_id as target_user_id so only the correct user gets the notification
                             nm.show_chat_message(
-                                sender_name, new_record.get('content', '')[:50])
+                                sender_name, new_record.get(
+                                    'content', '')[:50],
+                                target_user_id=receiver_id  # Only notify the actual recipient
+                            )
                     except Exception as e:
                         print(f"[Chat] Notification error: {e}")
 
@@ -359,9 +363,12 @@ class ChatScreen(ft.Container):
                                     from utils.notification_manager import get_notification_manager
                                     nm = get_notification_manager()
                                     if nm:
+                                        # FIX: Pass receiver_id as target_user_id so only correct user gets notification
+                                        # The receiver_id is self.current_user_id since we received a message
                                         nm.show_chat_message(
                                             latest_msg.sender_name,
-                                            latest_msg.content[:50]
+                                            latest_msg.content[:50],
+                                            target_user_id=self.current_user_id  # Only notify current user
                                         )
                                 except Exception as e:
                                     print(
@@ -2336,7 +2343,11 @@ class ChatScreen(ft.Container):
         self._show_snackbar(message)
 
     def _on_attach_file(self, e=None):
-        """Handle file attachment - uploads to Supabase Storage with local fallback"""
+        """Handle file attachment - uploads to Supabase Storage only
+
+        FIX: Removed local file path fallback as it doesn't work for multi-user scenarios.
+        File sharing now requires Supabase Storage to be available.
+        """
         if not self.selected_contact and not self.is_group_chat:
             self._show_snackbar(
                 "Select a contact or group first to share files")
@@ -2349,7 +2360,7 @@ class ChatScreen(ft.Container):
 
         # Use async pick_files with run_task (Flet 0.80+)
         def handle_picked_files(files):
-            """Process picked files after async selection - with Supabase upload + local fallback"""
+            """Process picked files after async selection - Supabase Storage only"""
             try:
                 if not files:
                     return
@@ -2373,47 +2384,55 @@ class ChatScreen(ft.Container):
                 snack.open = True
                 self._page.update()
 
-                # Try to upload to Supabase Storage first
+                # FIX: Check Supabase Storage availability FIRST, before any upload attempts
+                storage = get_storage()
+                if not storage.available:
+                    # FIX: Show clear error - file sharing requires cloud storage
+                    self._show_error(
+                        "File sharing requires cloud storage to be configured. "
+                        "Please contact administrator to enable Supabase Storage."
+                    )
+                    return
+
+                # Try to upload to Supabase Storage
                 file_url = None
                 upload_success = False
                 upload_error = None
 
                 try:
-                    storage = get_storage()
-                    if storage.available:
-                        # Upload to Supabase Storage
-                        success, url_or_error, bucket_path = upload_to_supabase(
-                            file_path,
-                            folder="chat_attachments",
-                            custom_filename=f"{self.current_user_id}_{int(datetime.now().timestamp())}_{file_name}"
-                        )
+                    # Upload to Supabase Storage
+                    success, url_or_error, bucket_path = upload_to_supabase(
+                        file_path,
+                        folder="chat_attachments",
+                        custom_filename=f"{self.current_user_id}_{int(datetime.now().timestamp())}_{file_name}"
+                    )
 
-                        if success and url_or_error:
-                            file_url = url_or_error
-                            upload_success = True
-                            print(
-                                f"[Chat] File uploaded to Supabase: {file_url}")
-                        else:
-                            upload_error = url_or_error
-                            print(
-                                f"[Chat] Supabase upload failed: {url_or_error}")
-                    else:
-                        upload_error = "Cloud storage not available"
+                    if success and url_or_error:
+                        file_url = url_or_error
+                        upload_success = True
                         print(
-                            "[Chat] Supabase storage not available - using local path")
+                            f"[Chat] File uploaded to Supabase: {file_url}")
+                    else:
+                        upload_error = url_or_error
+                        print(
+                            f"[Chat] Supabase upload failed: {url_or_error}")
+                        # FIX: Show error to user instead of falling back to local path
+                        self._show_error(f"Upload failed: {upload_error}")
+                        return
+
                 except Exception as upload_err:
                     upload_error = str(upload_err)
                     print(f"[Chat] Upload error: {upload_err}")
+                    self._show_error(f"Upload error: {upload_error}")
+                    return
 
-                # If Supabase upload failed, use local file path as fallback
-                if not upload_success:
-                    print(
-                        f"[Chat] Using local file path as fallback: {file_path}")
-                    # Use local file path - it will be accessible if both users are on same machine
-                    # or if the file is in a shared location
-                    file_url = file_path  # Use local path as fallback
+                # FIX: Only proceed if upload was successful (removed dangerous local path fallback)
+                if not upload_success or not file_url:
+                    self._show_error(
+                        "Failed to upload file. Please try again.")
+                    return
 
-                # Store the file URL (Supabase URL or local path)
+                # Store the file URL in database
                 db = get_db_session()
                 try:
                     if self.is_group_chat and self.selected_group:
