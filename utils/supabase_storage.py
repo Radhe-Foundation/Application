@@ -428,3 +428,36 @@ def delete_from_supabase(bucket_path: str) -> Tuple[bool, str]:
     """Delete file from Supabase Storage"""
     storage = get_storage()
     return storage.delete_file(bucket_path)
+
+
+def upload_company_logo(file_content: bytes, filename: str) -> Optional[str]:
+    """
+    Upload company logo to Supabase Storage
+
+    Args:
+        file_content: File content as bytes
+        filename: Original filename (e.g., logo.png)
+
+    Returns:
+        URL of uploaded file or None if failed
+    """
+    storage = get_storage()
+
+    # Determine content type from filename
+    import os
+    file_ext = os.path.splitext(filename)[1].lower()
+    content_type = storage._get_mime_type(file_ext)
+
+    # Upload to logo folder
+    success, url_or_error, _ = storage.upload_file_from_bytes(
+        file_content=file_content,
+        filename=filename,
+        folder="logo",
+        content_type=content_type
+    )
+
+    if success:
+        return url_or_error
+    else:
+        print(f"[Storage] Logo upload failed: {url_or_error}")
+        return None

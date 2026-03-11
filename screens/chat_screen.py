@@ -83,6 +83,7 @@ class Contact:
     profile_photo: Optional[str] = None
     unread_count: int = 0
     last_message: str = ""
+    last_message_time: Optional[datetime] = None
 
 
 @dataclass
@@ -96,6 +97,7 @@ class ChatGroupVM:
     avatar_color: str = PRIMARY_LIGHT
     unread_count: int = 0
     last_message: str = ""
+    last_message_time: Optional[datetime] = None
 
 
 @dataclass
@@ -313,16 +315,23 @@ class ChatScreen(ft.Container):
                         is_relevant = (receiver_id == self.selected_contact.id or
                                        sender_id == self.selected_contact.id)
 
-                # Show notification for new messages not from current user
+                # Show popup notification banner for new messages not from current user
                 if sender_id != self.current_user_id:
                     try:
                         from utils.notification_manager import get_notification_manager
                         nm = get_notification_manager()
                         if nm:
-                            nm.show_chat_message(
-                                sender_name, new_record.get('content', '')[:50])
+                            nm.show_banner_notification(
+                                f"Message from {sender_name}",
+                                new_record.get('content', '')[:50],
+                                "chat_message",
+                                5
+                            )
                     except Exception as e:
                         print(f"[Chat] Notification error: {e}")
+
+                # Refresh contacts to update unread counts and reorder
+                self._refresh_contacts_for_new_messages()
 
                 if is_relevant:
                     self._load_messages_for_selected()
@@ -341,6 +350,10 @@ class ChatScreen(ft.Container):
             while not self._stop_threads:
                 try:
                     time.sleep(5)
+
+                    # Refresh contacts and groups to check for new messages
+                    self._refresh_contacts_for_new_messages()
+
                     if self.selected_contact and not self._stop_threads:
                         # Load messages and check for new ones
                         old_count = len(self.messages)
@@ -352,13 +365,16 @@ class ChatScreen(ft.Container):
                             # Get the latest message
                             latest_msg = self.messages[-1] if self.messages else None
                             if latest_msg and not latest_msg.is_own:
+                                # Show popup notification banner
                                 try:
                                     from utils.notification_manager import get_notification_manager
                                     nm = get_notification_manager()
                                     if nm:
-                                        nm.show_chat_message(
-                                            latest_msg.sender_name,
-                                            latest_msg.content[:50]
+                                        nm.show_banner_notification(
+                                            f"Message from {latest_msg.sender_name}",
+                                            latest_msg.content[:50],
+                                            "chat_message",
+                                            5
                                         )
                                 except Exception as e:
                                     print(
@@ -377,6 +393,101 @@ class ChatScreen(ft.Container):
             target=poll_messages, daemon=True)
         self._presence_thread.start()
         print("[Chat] Polling started (every 5 seconds)")
+
+    def _refresh_contacts_for_new_messages(self):
+        """Refresh contacts to check for new messages and reorder conversations"""
+        try:
+            db = get_db_session()
+
+            # Get unread message counts for each contact
+            from database.models import ChatMessage
+            from sqlalchemy import or_, func
+
+            for contact in self.contacts:
+                # Get unread messages count for this contact
+                unread_count = db.query(func.count(ChatMessage.id)).filter(
+                    ChatMessage.receiver_id == self.current_user_id,
+                    ChatMessage.sender_id == contact.id,
+                    ChatMessage.is_read == False,
+                    ChatMessage.group_id == None
+                ).scalar() or 0
+
+                # Update unread count
+                contact.unread_count = unread_count
+
+                # Get last message time and content
+                last_msg = db.query(ChatMessage).filter(
+                    or_(
+                        (ChatMessage.sender_id == self.current_user_id) & (
+                            ChatMessage.receiver_id == contact.id),
+                        (ChatMessage.sender_id == contact.id) & (
+                            ChatMessage.receiver_id == self.current_user_id)
+                    ),
+                    ChatMessage.group_id == None
+                ).order_by(ChatMessage.created_at.desc()).first()
+
+                if last_msg:
+                    contact.last_message_time = last_msg.created_at
+                    contact.last_message = (last_msg.content[:30] + "..." if len(
+                        last_msg.content or "") > 30 else last_msg.content or "") if last_msg.content else ""
+
+            # Get unread counts for groups
+            for group in self.groups:
+                unread_count = db.query(func.count(ChatMessage.id)).filter(
+                    ChatMessage.receiver_id == self.current_user_id,
+                    ChatMessage.group_id == group.id,
+                    ChatMessage.is_read == False
+                ).scalar() or 0
+
+                group.unread_count = unread_count
+
+                # Get last message for group
+                last_msg = db.query(ChatMessage).filter(
+                    ChatMessage.group_id == group.id
+                ).order_by(ChatMessage.created_at.desc()).first()
+
+                if last_msg:
+                    group.last_message_time = last_msg.created_at
+                    group.last_message = (last_msg.content[:30] + "..." if len(
+                        last_msg.content or "") > 30 else last_msg.content or "") if last_msg.content else ""
+
+            db.close()
+
+            # Sort contacts by last message time (most recent first), but keep contacts with unread at top
+            # Separate contacts with unread messages from those without
+            contacts_with_unread = [
+                c for c in self.contacts if c.unread_count > 0]
+            contacts_without_unread = [
+                c for c in self.contacts if c.unread_count == 0]
+
+            # Sort each group by last message time
+            contacts_with_unread.sort(
+                key=lambda x: x.last_message_time or datetime.min, reverse=True)
+            contacts_without_unread.sort(
+                key=lambda x: x.last_message_time or datetime.min, reverse=True)
+
+            # Combine: unread contacts first, then the rest
+            self.contacts = contacts_with_unread + contacts_without_unread
+
+            # Same for groups
+            groups_with_unread = [g for g in self.groups if g.unread_count > 0]
+            groups_without_unread = [
+                g for g in self.groups if g.unread_count == 0]
+
+            groups_with_unread.sort(
+                key=lambda x: x.last_message_time or datetime.min, reverse=True)
+            groups_without_unread.sort(
+                key=lambda x: x.last_message_time or datetime.min, reverse=True)
+
+            self.groups = groups_with_unread + groups_without_unread
+
+            # Refresh UI if we have contacts column
+            if self._contacts_column:
+                search_val = self._search_field.value if self._search_field else ""
+                self._refresh_contacts_ui(search_text=search_val)
+
+        except Exception as e:
+            print(f"[Chat] Error refreshing contacts for new messages: {e}")
 
     def _load_contacts(self) -> None:
         """Load all other active users from the database."""
@@ -719,7 +830,24 @@ class ChatScreen(ft.Container):
         )
 
     def _build_contacts_panel(self) -> ft.Container:
-        """Left-hand panel with contacts - WhatsApp style."""
+        """Left-hand panel with contacts - WhatsApp style - Responsive"""
+
+        # Calculate responsive width based on page width
+        # Default to 380px, but scale for smaller screens
+        def get_contacts_panel_width():
+            try:
+                page_width = self._page.window_width if hasattr(
+                    self._page, 'window_width') else 1200
+                if page_width < 500:
+                    return page_width  # Full width on mobile
+                elif page_width < 800:
+                    return min(320, page_width - 50)
+                else:
+                    return 380
+            except:
+                return 380
+
+        contacts_panel_width = get_contacts_panel_width()
 
         # Header with title and create group button - WhatsApp style
         header = ft.Container(
@@ -823,7 +951,7 @@ class ChatScreen(ft.Container):
         self._refresh_contacts_ui()
 
         return ft.Container(
-            width=380,
+            width=contacts_panel_width,
             bgcolor=ft.Colors.WHITE,
             content=ft.Column(
                 spacing=0,
@@ -1292,22 +1420,8 @@ class ChatScreen(ft.Container):
                             ),
                         ],
                     ),
-                    # Action buttons - WhatsApp style
+                    # Action buttons - WhatsApp style (voice/video call buttons removed as per requirement)
                     ft.Row([
-                        ft.IconButton(
-                            icon=ft.Icons.VIDEO_CALL,
-                            tooltip="Video Call",
-                            on_click=self._initiate_video_call,
-                            icon_color="#DDFFDD",
-                            icon_size=22,
-                        ),
-                        ft.IconButton(
-                            icon=ft.Icons.PHONE,
-                            tooltip="Voice Call",
-                            on_click=self._initiate_voice_call,
-                            icon_color="#DDFFDD",
-                            icon_size=22,
-                        ),
                         ft.IconButton(
                             icon=ft.Icons.MORE_VERT,
                             tooltip="More",
@@ -1543,7 +1657,7 @@ class ChatScreen(ft.Container):
         self._page.show_dialog(dlg)
 
     def _show_emoji_picker(self, e=None):
-        """Show emoji picker dialog"""
+        """Show emoji picker dialog with a simple scrollable emoji grid"""
         def close_dlg(ev):
             try:
                 self._page.pop_dialog()
@@ -1551,17 +1665,103 @@ class ChatScreen(ft.Container):
             except Exception:
                 pass
 
-        emojis = [
-            "😀", "😃", "😄", "😁", "😆", "😅", "🤣", "😂",
-            "🙂", "🙃", "😉", "😊", "😇", "🥰", "😍", "🤩",
-            "😘", "😗", "😚", "😋", "😛", "😜", "🤪", "😝",
-            "🤑", "🤗", "🤭", "🤫", "🤔", "🤐", "🤨", "😐",
-            "😑", "😶", "😏", "😒", "🙄", "😬", "🤥", "😌",
-            "👍", "👎", "👌", "✌️", "🤞", "🤟", "🤘", "🤙",
-            "❤️", "💔", "💯", "🔥", "⭐", "✨", "💪", "🙏",
-            "🎉", "🎊", "✅", "❌", "💡", "📌", "🔔", "⏰"
+        # Combine all emojis into one flat list
+        all_emojis = [
+            # Smileys
+            "😀", "😃", "😄", "😁", "😆", "😅", "🤣", "😂", "🙂", "🙃", "😉", "😊", "😇", "🥰", "😍", "🤩",
+            "😘", "😗", "😚", "😙", "😋", "😛", "😜", "🤪", "😝", "🤑", "🤗", "🤭", "🤫", "🤔", "🤐", "🤨",
+            "😐", "😑", "😶", "😏", "😒", "🙄", "😬", "🤥", "😌", "😔", "😪", "🤤", "😴", "😷", "🤒", "🤕",
+            "🤢", "🤮", "🤧", "🥵", "🥶", "🥴", "😵", "🤯", "🤠", "🥳", "😎", "🤓", "🧐", "😕", "😟", "🙁",
+            "☹️", "😮", "😯", "😲", "😳", "🥺", "😦", "😧", "😨", "😰", "😥", "😢", "😭", "😱", "😖", "😣",
+            "😞", "😓", "😩", "😫", "🥱", "😤", "😡", "😠", "🤬", "😈", "👿", "💀", "☠️", "💩", "🤡", "👹",
+            "👺", "👻", "👽", "👾", "🤖", "😺", "😸", "😹", "😻", "😼", "😽", "🙀", "😿", "😾", "🙈", "🙉",
+            "🙊", "💋", "💌", "💘", "💝", "💖", "💗", "💓", "💞", "💕", "💟", "❣️", "💔", "❤", "🧡", "💛",
+            "💚", "💙", "💜", "🤎", "🖤", "🤍", "💯", "💢", "💥", "💫", "💦", "💨", "🕳️", "💣", "💬", "👁️‍🗨️",
+            # Gestures
+            "👋", "🤚", "🖐️", "✋", "🖖", "👌", "🤌", "🤏", "✌️", "🤞", "🤟", "🤘", "🤙", "👈", "👉", "👆",
+            "🖕", "👇", "☝️", "👍", "👎", "✊", "👊", "🤛", "🤜", "👏", "🙌", "👐", "🤲", "🤝", "🙏", "✍️",
+            # People
+            "💅", "🤳", "💪", "🦾", "🦿", "🦵", "🦶", "👂", "🦻", "👃", "🧠", "🫀", "🫁", "🦷", "🦴", "👀",
+            "👁️", "👅", "👄", "👶", "🧒", "👦", "👧", "🧑", "👱", "👨", "🧔", "👩", "🧓", "👴", "👵", "🙍",
+            "🙎", "🙅", "💁", "🙆", "🙋", "🧏", "🙇", "🤦", "🤷", "👮", "🕵️", "💂", "🥷", "👷", "🤴", "👸",
+            # Animals
+            "🐶", "🐱", "🐭", "🐹", "🐰", "🦊", "🐻", "🐼", "🐻‍❄️", "🐨", "🐯", "🦁", "🐮", "🐷", "🐸", "🐵",
+            "🙈", "🙉", "🙊", "🐒", "🐔", "🐧", "🐦", "🐤", "🐣", "🐥", "🦆", "🦅", "🦉", "🦇", "🐺", "🐗",
+            "🐴", "🦄", "🐝", "🪱", "🐛", "🦋", "🐌", "🐞", "🐜", "🪰", "🪲", "🪳", "🦟", "🦗", "🕷️", "🕸️",
+            "🦂", "🐢", "🐍", "🦎", "🦖", "🦕", "🐙", "🦑", "🦐", "🦞", "🦀", "🐡", "🐠", "🐟", "🐬", "🐳",
+            "🐋", "🦈", "🐊", "🐅", "🐆", "🦓", "🦍", "🦧", "🦣", "🐘", "🦛", "🦏", "🐪", "🐫", "🦒", "🦘",
+            # Nature
+            "🌵", "🎄", "🌲", "🌳", "🌴", "🪵", "🌱", "🌿", "☘️", "🍀", "🎍", "🪴", "🎋", "🍃", "🍂", "🍁",
+            "🍄", "🐚", "🪨", "🌾", "💐", "🌷", "🌹", "🥀", "🌺", "🌸", "🌼", "🌻", "🌞", "🌝", "🌛", "🌜",
+            "🌚", "🌕", "🌖", "🌗", "🌘", "🌑", "🌒", "🌓", "🌔", "🌙", "🌎", "🌍", "🌏", "🪐", "💫", "⭐",
+            "🌟", "✨", "⚡", "☄️", "💥", "🔥", "🌪️", "🌈", "☀️", "🌤️", "⛅", "🌥️", "☁️", "🌦️", "🌧️", "⛈️",
+            "🌩️", "🌨️", "❄️", "☃️", "⛄", "🌬️", "💨", "💧", "💦", "☔", "☂️", "🌊", "🌫️",
+            # Food
+            "🍇", "🍈", "🍉", "🍊", "🍋", "🍌", "🍍", "🥭", "🍎", "🍏", "🍐", "🍑", "🍒", "🍓", "🫐", "🥝",
+            "🍅", "🫒", "🥥", "🥑", "🥔", "🍆", "🥕", "🌽", "🌶️", "🫑", "🥒", "🥬", "🥦", "🧄", "🧅", "🍄",
+            "🥜", "🫘", "🌰", "🍞", "🥐", "🥖", "🫓", "🥨", "🥯", "🥞", "🧇", "🧀", "🍖", "🍗", "🥩", "🥓",
+            "🍔", "🍟", "🍕", "🌭", "🥪", "🌮", "🌯", "🫔", "🥙", "🧆", "🥚", "🍳", "🍿", "🧈", "🥞", "🧇",
+            "🍝", "🍜", "🍲", "🍛", "🍣", "🍱", "🥟", "🦪", "🍤", "🍙", "🍚", "🍘", "🍥", "🥠", "🥮", "🍢",
+            "🍡", "🍧", "🍨", "🍦", "🥧", "🧁", "🍰", "🎂", "🍮", "🍭", "🍬", "🍫", "🍿", "🍩", "🍪", "🌰",
+            # Drinks
+            "🥜", "🍯", "🥛", "🍼", "☕", "🫖", "🍵", "🧃", "🥤", "🧋", "🍶", "🍺", "🍻", "🥂", "🍷", "🥃",
+            "🍸", "🍹", "🧉", "🍾", "🧊", "🥄", "🍴", "🍽️", "🥣", "🥤",
+            # Activities
+            "⚽", "🏀", "🏈", "⚾", "🥎", "🎾", "🏐", "🏉", "🥏", "🎱", "🪀", "🏓", "🏸", "🏒", "🏑", "🥍",
+            "🏏", "🪃", "🥅", "⛳", "🪁", "🏹", "🎣", "🤿", "🥊", "🥋", "🎽", "🛹", "🛼", "🛷", "⛸️", "🥌",
+            "🎿", "⛷️", "🏂", "🪂", "🏋️", "🤼", "🤸", "🤺", "⛹️", "🤾", "🏌️", "🏇", "🧘", "🏄", "🏊", "🤽",
+            "🚣", "🧗", "🚵", "🚴", "🏆", "🥇", "🥈", "🥉", "🏅", "🎖️", "🏵️", "🎗️", "🎫", "🎟️", "🎪", "🤹",
+            # Music
+            "🎭", "🩰", "🎨", "🎬", "🎤", "🎧", "🎼", "🎹", "🥁", "🪘", "🎷", "🎺", "🪗", "🎸", "🪕", "🎻",
+            "🪈", "🎲", "♟️", "🎯", "🎳", "🎮", "🎰", "🧩", "🧸", "♠️", "♣️", "♥️", "♦️", "🃏", "🎴", "🌁",
+            # Travel
+            "🚗", "🚕", "🚙", "🚌", "🚎", "🏎️", "🚓", "🚑", "🚒", "🚐", "🛻", "🚚", "🚛", "🚜", "🏍️", "🛵",
+            "🚲", "🛴", "🛹", "🛼", "🚨", "🚔", "🚍", "🚘", "🚖", "🚡", "🚠", "🚟", "🚃", "🚋", "🚞", "🚝",
+            "🚄", "🚅", "🚈", "🚂", "🚆", "🚇", "🚊", "🚉", "✈️", "🛫", "🛬", "🛩️", "💺", "🛰️", "🚀", "🛸",
+            "🚁", "🛶", "⛵", "🚤", "🛥️", "🛳️", "⛴️", "🚢", "⚓", "🪝", "⛽", "🚧", "🚦", "🚥", "🗺️", "🗿",
+            "🗽", "🗼", "🏰", "🏯", "🏟️", "🎡", "🎢", "🎠", "⛲", "⛱️", "🏖️", "🏝️", "🏜️", "🌋", "⛰️", "🏔️",
+            "🗻", "🏕️", "⛺", "🛖", "🏠", "🏡", "🏘️", "🏚️", "🏗️", "🏭", "🏢", "🏬", "🏣", "🏤", "🏥", "🏦",
+            "🏨", "🏪", "🏫", "🏩", "💒", "🏛️", "⛪", "🕌", "🕍", "🛕", "🕋", "⛩️", "🛤️", "🛣️", "🗾", "🏞️",
+            "🌅", "🌄", "🌠", "🎇", "🎆", "🌇", "🌆", "🏙️", "🌃", "🌌", "🌉", "🌁",
+            # Objects
+            "⌚", "📱", "📲", "💻", "⌨️", "🖥️", "🖨️", "🖱️", "🖲️", "🕹️", "🗜️", "💽", "💾", "💿", "📀", "📼",
+            "📷", "📸", "📹", "🎥", "📽️", "🎞️", "📞", "☎️", "📟", "📠", "📺", "📻", "🎙️", "🎚️", "🎛️", "🧭",
+            "⏱️", "⏲️", "⏰", "🕰️", "⌛", "⏳", "📡", "🔋", "🔌", "💡", "🔦", "🕯️", "🪔", "🧯", "🛢️", "💸",
+            "💵", "💴", "💶", "💷", "🪙", "💰", "💳", "💎", "⚖️", "🪜", "🧰", "🪛", "🔧", "🔨", "⚒️", "🛠️",
+            "⛏️", "🪚", "🔩", "⚙️", "🪤", "🧱", "⛓️", "🧲", "🔫", "💣", "🧨", "🪓", "🔪", "🗡️", "⚔️", "🛡️",
+            "🚬", "⚰️", "🪦", "⚱️", "🏺", "🔮", "📿", "🧿", "💈", "⚗️", "🔭", "🔬", "🕳️", "🩹", "🩺", "💊",
+            "💉", "🩸", "🧬", "🦠", "🧫", "🧪", "🌡️", "🧹", "🪠", "🧺", "🧻", "🚽", "🚰", "🚿", "🛁", "🛀",
+            "🧼", "🪥", "🪒", "🧽", "🪣", "🧴", "🛎️", "🔑", "🗝️", "🚪", "🪑", "🛋️", "🛏️", "🛌", "🧸", "🪆",
+            "🖼️", "🪞", "🪟", "🛍️", "🛒", "🎁", "🎈", "🎏", "🎀", "🪄", "🪅", "🎊", "🎉", "🎎", "🏮", "🎐",
+            "🧧", "✉️", "📩", "📨", "📧", "💌", "📥", "📤", "📦", "🏷️", "🪧", "📪", "📫", "📬", "📭", "📮",
+            "📯", "📜", "📃", "📄", "📑", "🧾", "📊", "📈", "📉", "🗒️", "🗓️", "📆", "📅", "🗑️", "📇", "🗃️",
+            "🗳️", "🗄️", "📋", "📁", "📂", "🗂️", "🗞️", "📰", "📓", "📔", "📒", "📕", "📗", "📘", "📙", "📚",
+            "📖", "🔖", "🧷", "🔗", "📎", "🖇️", "📐", "📏", "🧮", "📌", "📍", "✂️", "🖊️", "🖋️", "✒️", "🖌️",
+            "🖍️", "📝", "✏️", "🔍", "🔎", "🔏", "🔐", "🔒", "🔓",
+            # Symbols
+            "❤️", "🧡", "💛", "💚", "💙", "💜", "🖤", "🤍", "🤎", "💔", "❣️", "💕", "💞", "💓", "💗", "💖",
+            "💘", "💝", "💟", "☮️", "✝️", "☪️", "🕉️", "☸️", "✡️", "🔯", "🕎", "☯️", "☦️", "🛐", "⛎", "♈",
+            "♉", "♊", "♋", "♌", "♍", "♎", "♏", "♐", "♑", "♒", "♓", "🆔", "⚛️", "🉑", "☢️", "☣️", "📴", "📳",
+            "🈶", "🈚", "🈸", "🈺", "🈷️", "✴️", "🆚", "💮", "🉐", "㊙️", "㊗️", "🈴", "🈵", "🈹", "🈲", "🅰️",
+            "🅱️", "🆎", "🆑", "🅾️", "🆘", "❌", "⭕", "🛑", "⛔", "📛", "🚫", "💯", "💢", "♨️", "🚷", "🚯",
+            "🚳", "🚱", "🔞", "📵", "🚭", "❗", "❕", "❓", "❔", "‼️", "⁉️", "🔅", "🔆", "〽️", "⚠️", "🚸", "🔱",
+            "⚜️", "🔰", "♻️", "✅", "🈯", "💹", "❇️", "✳️", "❎", "🌐", "💠", "Ⓜ️", "🌀", "💤", "🏧", "🚾", "♿",
+            "🅿️", "🛗", "🈳", "🈂️", "🛂", "🛃", "🛄", "🛅", "🚹", "🚺", "🚼", "⚧️", "🚻", "🚮", "🎦", "📶",
+            "🈁", "🔣", "ℹ️", "🔤", "🔡", "🔠", "🆖", "🆗", "🆙", "🆒", "🆕", "🆓", "0️⃣", "1️⃣", "2️⃣", "3️⃣",
+            "4️⃣", "5️⃣", "6️⃣", "7️⃣", "8️⃣", "9️⃣", "🔟", "🔢", "#️⃣", "*️⃣", "⏏️", "▶️", "⏸️", "⏯️", "⏹️", "⏺️",
+            "⏭️", "⏮️", "⏩", "⏪", "⏫", "⏬", "◀️", "🔼", "🔽", "➡️", "⬅️", "⬆️", "⬇️", "↗️", "↘️", "↙️", "↖️",
+            "↕️", "↔️", "↪️", "↩️", "⤴️", "⤵️", "🔀", "🔁", "🔂", "🔄", "🔃", "🎵", "🎶", "➕", "➖", "➗", "✖️",
+            "♾️", "💲", "💱", "™️", "©️", "®️", "〰️", "➰", "➿", "🔚", "🔙", "🔛", "🔝", "🔜", "✔️", "☑️", "🔘",
+            "🔴", "🟠", "🟡", "🟢", "🔵", "🟣", "⚫", "⚪", "🟤", "🔺", "🔻", "🔸", "🔹", "🔶", "🔷", "🔳", "🔲",
+            "▪️", "▫️", "◾", "◽", "◼️", "◻️", "🟥", "🟧", "🟨", "🟩", "🟦", "🟪", "⬛", "⬜", "🟫", "🔈", "🔇",
+            "🔉", "🔊", "🔔", "🔕", "📣", "📢", "💬", "💭", "🗯️", "♠️", "♣️", "♥️", "♦️", "🃏", "🎴", "🀄",
+            # Flags
+            "🏳️", "🏴", "🏴‍☠️", "🏁", "🚩", "🎌", "🏳️‍🌈", "🏳️‍⚧️", "🇺🇸", "🇬🇧", "🇨🇦", "🇦🇺", "🇮🇳", "🇩🇪",
+            "🇫🇷", "🇪🇸", "🇮🇹", "🇯🇵", "🇰🇷", "🇨🇳", "🇧🇷", "🇲🇽", "🇷🇺", "🇿🇦", "🇳🇬", "🇪🇬", "🇸🇦", "🇦🇪",
+            "🇹🇷", "🇮🇩", "🇵🇰", "🇱🇰", "🇳🇵", "🇦🇫", "🇪🇺", "🇺🇳",
         ]
 
+        # Insert emoji into input field
         def insert_emoji(emoji):
             if self._input_field:
                 current = self._input_field.value or ""
@@ -1571,27 +1771,35 @@ class ChatScreen(ft.Container):
                 except Exception:
                     pass
 
-        emoji_btns = []
-        for emoji in emojis:
-            emoji_btns.append(
+        # Create buttons for each emoji
+        emoji_buttons = []
+        for emoji in all_emojis:
+            emoji_buttons.append(
                 ft.Container(
                     content=ft.Text(emoji, size=22),
+                    width=40,
+                    height=40,
                     on_click=lambda ev, em=emoji: insert_emoji(em),
-                    padding=4,
                     alignment=ft.alignment.Alignment(0, 0),
+                    border_radius=8,
                 )
             )
 
         dlg = ft.AlertDialog(
             title=ft.Text("Emoji", weight=ft.FontWeight.BOLD),
             content=ft.Container(
-                width=320,
-                height=320,
-                content=ft.GridView(runs_count=8, spacing=2,
-                                    run_spacing=2, controls=emoji_btns)
+                width=350,
+                height=400,
+                content=ft.GridView(
+                    runs_count=8,
+                    spacing=2,
+                    run_spacing=2,
+                    controls=emoji_buttons,
+                ),
             ),
             actions=[ft.TextButton("Close", on_click=close_dlg)]
         )
+
         self._page.show_dialog(dlg)
 
     def _refresh_contacts_ui(self, search_text: str = "") -> None:
@@ -1742,7 +1950,7 @@ class ChatScreen(ft.Container):
         )
 
     def _build_contact_tile(self, contact: Contact) -> ft.Container:
-        """Build a contact tile - WhatsApp style"""
+        """Build a contact tile - WhatsApp style with unread count badge"""
         import os
         from pathlib import Path
 
@@ -1815,6 +2023,24 @@ class ChatScreen(ft.Container):
                 color=ft.Colors.WHITE,
             )
 
+        # Unread count badge
+        unread_badge = None
+        if contact.unread_count > 0:
+            unread_badge = ft.Container(
+                content=ft.Text(
+                    str(contact.unread_count) if contact.unread_count < 100 else "99+",
+                    size=11,
+                    weight=ft.FontWeight.BOLD,
+                    color=ft.Colors.WHITE,
+                ),
+                bgcolor=PRIMARY_LIGHTER,
+                border_radius=10,
+                padding=ft.padding.symmetric(horizontal=6, vertical=2),
+                width=20,
+                height=20,
+                alignment=ft.alignment.Alignment(0, 0),
+            )
+
         return ft.Container(
             on_click=on_click,
             padding=ft.padding.symmetric(horizontal=12, vertical=8),
@@ -1860,10 +2086,45 @@ class ChatScreen(ft.Container):
                                 ),
                             ],
                         ),
+                        # Unread count badge on the right
+                        ft.Column(
+                            spacing=2,
+                            horizontal_alignment=ft.CrossAxisAlignment.END,
+                            controls=[
+                                ft.Text(
+                                    self._format_message_time(
+                                        contact.last_message_time) if contact.last_message_time else "",
+                                    size=11,
+                                    color=PRIMARY_LIGHTER if contact.unread_count > 0 else TEXT_TERTIARY,
+                                ),
+                                unread_badge if unread_badge else ft.Container(
+                                    width=0, height=20),
+                            ],
+                        ),
                     ],
                 ),
             ),
         )
+
+    def _format_message_time(self, msg_time: Optional[datetime]) -> str:
+        """Format message time for display in contact list"""
+        if not msg_time:
+            return ""
+        try:
+            now = datetime.now()
+            today = now.date()
+            msg_date = msg_time.date()
+
+            if msg_date == today:
+                return msg_time.strftime("%H:%M")
+            elif msg_date == today.replace(day=today.day - 1):
+                return "Yesterday"
+            elif (today - msg_date).days < 7:
+                return msg_date.strftime("%a")  # Day name
+            else:
+                return msg_date.strftime("%d/%m/%y")
+        except Exception:
+            return ""
 
     def _get_avatar_color(self, username: str) -> str:
         """Generate color based on username."""

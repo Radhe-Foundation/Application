@@ -4,7 +4,7 @@ Complete settings management with company profile, theme, notifications, and pre
 """
 
 import flet as ft
-from flet import Column, Container, Text, Row, Button, Icon, Icons, Card, TextField, Switch, Dropdown
+from flet import Column, Container, Text, Row, Button, ElevatedButton, Icon, Icons, Card, TextField, Switch, Dropdown
 from flet import padding, FontWeight, ScrollMode, IconButton, RadioGroup, Radio
 from flet import AlertDialog, dropdown
 from datetime import datetime
@@ -85,6 +85,7 @@ class SettingsScreen(Column):
         }
 
         # Try to load from database if available
+        db = None
         try:
             db = get_db_session()
             # Load company settings which might contain preferences
@@ -92,9 +93,14 @@ class SettingsScreen(Column):
             if company:
                 # For now, use defaults - could be extended to store in DB
                 pass
-            db.close()
         except Exception as e:
             print(f"Error loading settings: {e}")
+        finally:
+            if db:
+                try:
+                    db.close()
+                except:
+                    pass
 
         return settings
 
@@ -132,8 +138,6 @@ class SettingsScreen(Column):
     def refresh(self):
         """Refresh the settings screen content"""
         self.build_content()
-        if self.current_section == "users":
-            self.refresh_users_list()
         self._page.update()
 
     def build_ui(self):
@@ -155,7 +159,7 @@ class SettingsScreen(Column):
                 "notifications", "Notifications", Icons.NOTIFICATIONS),
             self._create_nav_button("chat", "Chat & Mail", Icons.CHAT),
             self._create_nav_button("company", "Company", Icons.BUSINESS),
-            self._create_nav_button("users", "Users", Icons.PEOPLE),
+            # Users section removed as per request
         ], spacing=5, scroll=ft.ScrollMode.AUTO)
 
         self.content_container = Container()
@@ -213,7 +217,7 @@ class SettingsScreen(Column):
             "notifications": self._build_notifications_settings,
             "chat": self._build_chat_settings,
             "company": self._build_company_settings,
-            "users": self._build_users_settings,
+            # Users section removed as per request
         }
 
         builder = builders.get(self.current_section)
@@ -602,39 +606,54 @@ class SettingsScreen(Column):
         self.show_snackbar("Chat & Mail settings saved!", Colors.GREEN)
 
     def _build_company_settings(self):
-        """Build company settings form"""
-        session = get_db_session()
+        """Build company settings form with proper persistence"""
+        session = None
         try:
+            session = get_db_session()
             company = session.query(Company).first()
 
-            company_name_val = company.name if company and company.name else ""
-            company_email_val = company.email if company and company.email else ""
-            company_phone_val = company.phone if company and company.phone else ""
-            company_address_val = company.address if company and company.address else ""
+            company_name_val = ""
+            company_email_val = ""
+            company_phone_val = ""
+            company_address_val = ""
+
+            if company:
+                company_name_val = str(company.name) if company.name else ""
+                company_email_val = str(company.email) if company.email else ""
+                company_phone_val = str(company.phone) if company.phone else ""
+                company_address_val = str(
+                    company.address) if company.address else ""
+
+            # Load company logo if exists
+            company_logo_val = ""
+            if company and hasattr(company, 'logo_url') and company.logo_url:
+                company_logo_val = company.logo_url
 
             self.company_name = TextField(
                 label="Company Name",
                 width=400,
-                value=str(company_name_val) if company_name_val else ""
+                value=company_name_val
             )
             self.company_email = TextField(
                 label="Email",
                 width=400,
-                value=str(company_email_val) if company_email_val else ""
+                value=company_email_val
             )
             self.company_phone = TextField(
                 label="Phone",
                 width=400,
-                value=str(company_phone_val) if company_phone_val else ""
+                value=company_phone_val
             )
             self.company_address = TextField(
                 label="Address",
                 width=400,
                 multiline=True,
                 min_lines=2,
-                value=str(company_address_val) if company_address_val else ""
+                value=company_address_val
             )
 
+            # Company Logo Section - REMOVED as per request
+            # Keeping company info fields only
             return Column([
                 Text("Company Profile", size=20, weight=FontWeight.BOLD),
                 Container(height=15),
@@ -649,96 +668,82 @@ class SettingsScreen(Column):
         finally:
             session.close()
 
-    def _build_users_settings(self):
-        """Build users management section"""
-        self.users_container = Container()
-        self.refresh_users_list()
+    def _upload_company_logo(self, e):
+        """Upload company logo"""
+        # Create file picker for logo upload if not exists
+        if not hasattr(self, '_logo_file_picker') or not self._logo_file_picker:
+            self._logo_file_picker = ft.FilePicker()
+            # Add to page services for Flet 0.80+
+            if hasattr(self._page, 'services'):
+                if self._logo_file_picker not in self._page.services:
+                    self._page.services.append(self._logo_file_picker)
+            else:
+                # Fallback for older versions
+                self._page.overlay.append(self._logo_file_picker)
 
-        return Column([
-            Text("User Management", size=20, weight=FontWeight.BOLD),
-            Container(height=15),
-            Button("Add New User", icon=Icons.ADD, on_click=self.add_user),
-            Container(height=15),
-            self.users_container,
-        ], scroll=ScrollMode.AUTO, spacing=15)
+        # Define the result handler
+        def on_file_picked(e):
+            # Handle the result - e.files contains selected files
+            files = getattr(e, 'files', None)
+            if files:
+                file = files[0]
+                # Read and save the file
+                try:
+                    import os
+                    from utils.supabase_storage import upload_company_logo
 
-    def refresh_users_list(self):
-        """Refresh users list"""
+                    # Read file content
+                    with open(file.path, 'rb') as f:
+                        file_data = f.read()
+
+                    # Upload to storage
+                    logo_url = upload_company_logo(file_data, file.name)
+
+                    if logo_url:
+                        # Save to company
+                        session = get_db_session()
+                        try:
+                            company = session.query(Company).first()
+                            if company:
+                                company.logo_url = logo_url
+                                session.commit()
+                                self.show_snackbar(
+                                    "Logo uploaded successfully!", Colors.GREEN)
+                                # Refresh the UI
+                                self.build_ui()
+                                self.build_content()
+                        except Exception as ex:
+                            self.show_snackbar(
+                                f"Error saving logo: {str(ex)}", Colors.RED)
+                        finally:
+                            session.close()
+                    else:
+                        self.show_snackbar("Failed to upload logo", Colors.RED)
+                except Exception as ex:
+                    self.show_snackbar(f"Error: {str(ex)}", Colors.RED)
+
+        # Connect the handler
+        self._logo_file_picker.on_upload = on_file_picked
+        # Use pick_files which returns results via callback
+        self._logo_file_picker.pick_files(
+            allow_multiple=False,
+            file_type=ft.FilePickerFileType.IMAGE
+        )
+
+    def _remove_company_logo(self, e):
+        """Remove company logo"""
         session = get_db_session()
         try:
-            users = get_all_users(session)
-
-            rows = []
-            for user in users:
-                role_name = user.role.name if user.role else "N/A"
-
-                status_color = Colors.GREEN
-                if user.status:
-                    if user.status.value == "inactive":
-                        status_color = Colors.RED
-                    elif user.status.value == "locked":
-                        status_color = Colors.ORANGE
-
-                rows.append(
-                    Container(
-                        padding=15,
-                        border=ft.border.only(
-                            bottom=ft.BorderSide(1, Colors.GREY_200)),
-                        content=Row([
-                            Container(
-                                content=Column([
-                                    Text(f"{user.username}", size=14,
-                                         weight=FontWeight.BOLD),
-                                    Text(user.email, size=12,
-                                         color=Colors.GREY_600),
-                                ], spacing=2),
-                                expand=True
-                            ),
-                            Container(
-                                content=Text(role_name.upper(), size=10,
-                                             color=Colors.WHITE, weight=FontWeight.BOLD),
-                                bgcolor=Colors.BLUE_300,
-                                padding=padding.symmetric(
-                                    horizontal=8, vertical=4),
-                                border_radius=4
-                            ),
-                            Container(
-                                content=Text(user.status.value if user.status else "active", size=10,
-                                             color=Colors.WHITE, weight=FontWeight.BOLD),
-                                bgcolor=status_color,
-                                padding=padding.symmetric(
-                                    horizontal=8, vertical=4),
-                                border_radius=4
-                            ),
-                            IconButton(
-                                Icons.EDIT, icon_color=Colors.GREY_600,
-                                icon_size=20,
-                                on_click=lambda e, u_id=user.id: self.edit_user(
-                                    u_id)
-                            ),
-                        ], spacing=10, vertical_alignment=ft.CrossAxisAlignment.CENTER)
-                    )
-                )
-
-            empty_message = Column([
-                Icon(Icons.PEOPLE, size=40, color=Colors.GREY_300),
-                Text("No users found", size=14, color=Colors.GREY_500),
-            ], horizontal_alignment=ft.CrossAxisAlignment.CENTER) if not rows else None
-
-            self.users_container.content = Column([
-                Card(
-                    content=Container(
-                        content=Column(
-                            rows if rows else [],
-                            spacing=0
-                        ),
-                        width=600
-                    ),
-                    elevation=1
-                )
-            ], spacing=0)
-            self._page.update()
-
+            company = session.query(Company).first()
+            if company and hasattr(company, 'logo_url'):
+                company.logo_url = None
+                session.commit()
+                self.show_snackbar("Logo removed!", Colors.GREEN)
+                # Refresh the UI
+                self.build_ui()
+                self.build_content()
+        except Exception as ex:
+            self.show_snackbar(f"Error: {str(ex)}", Colors.RED)
         finally:
             session.close()
 
@@ -747,238 +752,40 @@ class SettingsScreen(Column):
         _safe_navigate_to_home(self._page, self.user)
 
     def save_company_settings(self, e):
-        """Save company settings"""
+        """Save company settings with proper persistence"""
         session = get_db_session()
         try:
             company = session.query(Company).first()
             if not company:
                 company = Company(name="New Company")
                 session.add(company)
+                session.flush()  # Get the ID
 
+            # Update company fields
             company.name = self.company_name.value or ""
             company.email = self.company_email.value or ""
             company.phone = self.company_phone.value or ""
             company.address = self.company_address.value or ""
 
             session.commit()
-            self.show_snackbar("Company settings saved!", Colors.GREEN)
-        except Exception as ex:
-            session.rollback()
-            self.show_snackbar(f"Error: {str(ex)}", Colors.RED)
-        finally:
-            session.close()
 
-    def add_user(self, e):
-        """Open dialog to add new user"""
-        session = get_db_session()
-        try:
-            roles = get_all_roles(session)
+            # Show success message
+            self.show_snackbar(
+                "Company settings saved! Changes will reflect throughout the app.", Colors.GREEN)
 
-            self.new_username = TextField(
-                label="Username *", width=350, autofocus=True
-            )
-            self.new_email = TextField(
-                label="Email *", width=350
-            )
-            self.new_password = TextField(
-                label="Password *", width=350, password=True
-            )
-            self.new_role = Dropdown(
-                label="Role *",
-                width=350,
-                options=[dropdown.Option(str(r.id), content=Text(r.display_name))
-                         for r in roles]
-            )
-
-            dialog = AlertDialog(
-                modal=True,
-                title=Text("Add New User", weight=FontWeight.BOLD),
-                content=Container(
-                    width=400,
-                    content=Column([
-                        self.new_username,
-                        self.new_email,
-                        self.new_password,
-                        self.new_role,
-                        Text("* Required fields", size=11,
-                             color=Colors.GREY_500),
-                    ], scroll=ScrollMode.AUTO, spacing=10),
-                    padding=10
-                ),
-                actions=[
-                    Button("Cancel", on_click=lambda: self.close_dialog(dialog)),
-                    Button("Create User", on_click=self.save_user,
-                           bgcolor=Colors.GREY_700, color=Colors.WHITE),
-                ]
-            )
-
-            self._page.dialog = dialog
-            dialog.open = True
-            self._page.update()
-
-        finally:
-            session.close()
-
-    def save_user(self, e):
-        """Save new user"""
-        if not self.new_username.value.strip():
-            self.show_snackbar("Username is required!", Colors.RED)
-            return
-        if not self.new_email.value.strip():
-            self.show_snackbar("Email is required!", Colors.RED)
-            return
-        if not self.new_password.value.strip():
-            self.show_snackbar("Password is required!", Colors.RED)
-            return
-        if not self.new_role.value:
-            self.show_snackbar("Role is required!", Colors.RED)
-            return
-
-        import bcrypt
-        from database.models import UserStatus
-
-        session = get_db_session()
-        try:
-            # Check if username exists
-            existing = session.query(User).filter(
-                User.username == self.new_username.value.strip()).first()
-            if existing:
-                self.show_snackbar("Username already exists!", Colors.RED)
-                return
-
-            user = User(
-                username=self.new_username.value.strip(),
-                email=self.new_email.value.strip(),
-                password_hash=bcrypt.hashpw(
-                    self.new_password.value.encode(), bcrypt.gensalt()).decode(),
-                role_id=int(self.new_role.value),
-                status=UserStatus.ACTIVE
-            )
-            session.add(user)
-            session.commit()
-
-            self.close_dialog(self._page.dialog)
-            self.show_snackbar("User created successfully!", Colors.GREEN)
-            self.refresh_users_list()
+            # Try to notify other parts of the app about the change
+            try:
+                from utils.cache import invalidate_company_cache
+                invalidate_company_cache()
+            except:
+                pass
 
         except Exception as ex:
             session.rollback()
             self.show_snackbar(f"Error: {str(ex)}", Colors.RED)
+            import traceback
+            traceback.print_exc()
         finally:
-            session.close()
-
-    def edit_user(self, user_id):
-        """Edit existing user"""
-        session = get_db_session()
-        try:
-            user = session.query(User).filter(User.id == user_id).first()
-            if not user:
-                self.show_snackbar("User not found!", Colors.RED)
-                return
-
-            # Get roles for dropdown
-            roles = get_all_roles(session)
-
-            # Get current role
-            current_role_id = str(user.role_id) if user.role_id else ""
-
-            username_field = ft.TextField(
-                label="Username",
-                value=user.username,
-                width=300,
-                disabled=True  # Username typically can't be changed
-            )
-
-            email_field = ft.TextField(
-                label="Email",
-                value=user.email,
-                width=300,
-            )
-
-            # Role dropdown
-            role_options = [ft.dropdown.Option(
-                str(r.id), r.display_name) for r in roles]
-            role_dropdown = ft.Dropdown(
-                label="Role",
-                width=300,
-                options=role_options,
-                value=current_role_id,
-            )
-
-            # Status dropdown
-            status_options = [
-                ft.dropdown.Option("active", "Active"),
-                ft.dropdown.Option("inactive", "Inactive"),
-                ft.dropdown.Option("locked", "Locked"),
-            ]
-            current_status = user.status.value if user.status else "active"
-            status_dropdown = ft.Dropdown(
-                label="Status",
-                width=300,
-                options=status_options,
-                value=current_status,
-            )
-
-            error_text = ft.Text("", color=Colors.RED, size=12, visible=False)
-
-            def save_changes(e):
-                if not email_field.value:
-                    error_text.value = "Email is required!"
-                    error_text.visible = True
-                    self._page.update()
-                    return
-
-                try:
-                    from database.models import UserStatus
-
-                    user.email = email_field.value
-                    if role_dropdown.value:
-                        user.role_id = int(role_dropdown.value)
-                    if status_dropdown.value:
-                        user.status = UserStatus(status_dropdown.value)
-
-                    session.commit()
-                    self.show_snackbar(
-                        "User updated successfully!", Colors.GREEN)
-                    self._close_dialog(None)
-                    self.refresh_users_list()
-
-                except Exception as ex:
-                    error_text.value = f"Error: {str(ex)}"
-                    error_text.visible = True
-                    self._page.update()
-
-            def close_dlg(e):
-                self._close_dialog(e)
-                session.close()
-
-            dialog = ft.AlertDialog(
-                title=ft.Text("Edit User"),
-                content=ft.Column([
-                    username_field,
-                    email_field,
-                    role_dropdown,
-                    status_dropdown,
-                    error_text,
-                ], spacing=15),
-                actions=[
-                    ft.TextButton("Cancel", on_click=close_dlg),
-                    ft.ElevatedButton(
-                        "Save Changes",
-                        on_click=save_changes,
-                        style=ft.ButtonStyle(
-                            bgcolor=Colors.PRIMARY, color=Colors.WHITE),
-                    ),
-                ],
-            )
-
-            self._page.dialog = dialog
-            dialog.open = True
-            self._page.update()
-
-        except Exception as ex:
-            print(f"Error editing user: {ex}")
-            self.show_snackbar(f"Error: {str(ex)}", Colors.RED)
             session.close()
 
     def _close_dialog(self, e):

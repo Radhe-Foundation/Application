@@ -162,7 +162,7 @@ class AdminScreen(ft.Container):
             icon_color=PRIMARY
         )
 
-        # Custom Navigation Sidebar - compact with proper icon-text alignment
+        # Custom Navigation Sidebar - COMPACT ICON-ONLY with hover text
         nav_items = []
 
         # FIXED: Navigation only includes existing screens
@@ -180,22 +180,24 @@ class AdminScreen(ft.Container):
             (10, "Teams", ft.Icons.GROUP, ft.Icons.GROUP_OUTLINED),
             (11, "Projects", ft.Icons.FOLDER_SPECIAL,
              ft.Icons.FOLDER_SPECIAL_OUTLINED),
-            (12, "Holidays", ft.Icons.CALENDAR_TODAY,
-             ft.Icons.CALENDAR_TODAY_OUTLINED),
-            (13, "Meetings", ft.Icons.VIDEO_CALL, ft.Icons.VIDEO_CALL_OUTLINED),
-            (14, "News", ft.Icons.CAMPAIGN, ft.Icons.CAMPAIGN_OUTLINED),
-            (15, "Settings", ft.Icons.SETTINGS, ft.Icons.SETTINGS_OUTLINED),
-            (16, "Org Tree", ft.Icons.ACCOUNT_TREE, ft.Icons.ACCOUNT_TREE_OUTLINED),
-            (17, "Data Entry", ft.Icons.TABLE_ROWS, ft.Icons.TABLE_ROWS_OUTLINED),
-            (18, "Inventory", ft.Icons.INVENTORY, ft.Icons.INVENTORY_OUTLINED),
-            (19, "Transactions", ft.Icons.PAYMENT, ft.Icons.PAYMENT_OUTLINED),
-            (20, "Time Track", ft.Icons.TIMER, ft.Icons.TIMER_OUTLINED),
-            (21, "Storage", ft.Icons.CLOUD, ft.Icons.CLOUD_OUTLINED),
-            (22, "CRM", ft.Icons.PEOPLE, ft.Icons.PEOPLE_OUTLINED),
+            # Holidays removed as per request
+            (12, "Meetings", ft.Icons.VIDEO_CALL, ft.Icons.VIDEO_CALL_OUTLINED),
+            (13, "News", ft.Icons.CAMPAIGN, ft.Icons.CAMPAIGN_OUTLINED),
+            (14, "Settings", ft.Icons.SETTINGS, ft.Icons.SETTINGS_OUTLINED),
+            (15, "Org Tree", ft.Icons.ACCOUNT_TREE, ft.Icons.ACCOUNT_TREE_OUTLINED),
+            (16, "Data Entry", ft.Icons.TABLE_ROWS, ft.Icons.TABLE_ROWS_OUTLINED),
+            (17, "Inventory", ft.Icons.INVENTORY, ft.Icons.INVENTORY_OUTLINED),
+            (18, "Transactions", ft.Icons.PAYMENT, ft.Icons.PAYMENT_OUTLINED),
+            (19, "Time Track", ft.Icons.TIMER, ft.Icons.TIMER_OUTLINED),
+            (20, "Storage", ft.Icons.CLOUD, ft.Icons.CLOUD_OUTLINED),
+            (21, "CRM", ft.Icons.PEOPLE, ft.Icons.PEOPLE_OUTLINED),
         ]
 
         # Track selected index
         self._selected_nav_index = 0
+
+        # Compact sidebar width - icon only
+        compact_width = 60
 
         def create_nav_item(index, label, selected_icon, unselected_icon):
             def on_click(e):
@@ -209,34 +211,62 @@ class AdminScreen(ft.Container):
 
             is_selected = (index == self._selected_nav_index)
 
-            return ft.Container(
-                content=ft.Row([
-                    ft.Icon(
-                        selected_icon if is_selected else unselected_icon,
-                        size=20,
-                        color=PRIMARY if is_selected else TEXT_SECONDARY,
-                    ),
-                    ft.Text(
-                        label,
-                        size=13,
-                        weight=ft.FontWeight.W_500 if is_selected else ft.FontWeight.W_400,
-                        color=PRIMARY if is_selected else TEXT_SECONDARY,
-                    ),
-                ], spacing=8, alignment=ft.MainAxisAlignment.START),
+            # Create the icon
+            icon_control = ft.Icon(
+                selected_icon if is_selected else unselected_icon,
+                size=22,
+                color=PRIMARY if is_selected else TEXT_SECONDARY,
+            )
+
+            # Create the text label (hidden by default, shown on hover)
+            text_control = ft.Text(
+                label,
+                size=13,
+                weight=ft.FontWeight.W_500 if is_selected else ft.FontWeight.W_400,
+                color=PRIMARY if is_selected else TEXT_SECONDARY,
+                opacity=0,  # Hidden by default
+                animate_opacity=ft.Animation(200, "easeInOut"),
+            )
+
+            # Container for icon and text
+            item_content = ft.Row(
+                [icon_control, text_control],
+                spacing=8,
+                alignment=ft.MainAxisAlignment.START,
+            )
+
+            # Create the nav item container with hover effect
+            nav_item = ft.Container(
+                content=item_content,
                 padding=ft.padding.symmetric(horizontal=12, vertical=10),
                 border_radius=8,
                 bgcolor=PRIMARY + "15" if is_selected else "transparent",
                 on_click=on_click,
                 ink=True,
+                # Hover handlers to show/hide text
+                on_hover=lambda e: (
+                    setattr(text_control, 'opacity', 1 if e.control.bgcolor ==
+                            "transparent" else text_control.opacity),
+                    setattr(text_control, 'bgcolor', PRIMARY + "20" if e.data ==
+                            "true" else (PRIMARY + "15" if is_selected else "transparent")),
+                    setattr(e.control, 'bgcolor', PRIMARY + "20" if e.data ==
+                            "true" else (PRIMARY + "15" if is_selected else "transparent")),
+                    e.control.update() if hasattr(e.control, 'update') else None,
+                    self._page.update()
+                ),
+                tooltip=label,  # Show tooltip on hover as fallback
+                width=compact_width,
             )
+
+            return nav_item
 
         # Create nav items
         for idx, label, sel_icon, unsel_icon in nav_data:
             nav_items.append(create_nav_item(idx, label, sel_icon, unsel_icon))
 
-        # Build sidebar with scroll - responsive width
+        # Build sidebar with scroll - COMPACT icon-only width
         sidebar = ft.Container(
-            width=sidebar_width,
+            width=compact_width,
             bgcolor=SURFACE,
             content=ft.ListView(
                 controls=nav_items,
@@ -430,45 +460,42 @@ class AdminScreen(ft.Container):
             from screens.projects_screen import ProjectsScreen
             proj_content = ProjectsScreen(self.page, self.current_user)
             return self._wrap_with_admin_header("Projects", proj_content)
+        # Holidays removed as per request - index 12 is now Meetings
         elif index == 12:
-            from screens.holidays_screen import HolidaysScreen
-            hol_content = HolidaysScreen(self.page, self.current_user)
-            return self._wrap_with_admin_header("Holidays", hol_content)
-        elif index == 13:
             from screens.meetings_screen import MeetingsScreen
             meet_content = MeetingsScreen(self.page, self.current_user)
             return self._wrap_with_admin_header("Meetings", meet_content)
-        elif index == 14:
+        elif index == 13:
             from screens.announcements_screen import AnnouncementsScreen
             news_content = AnnouncementsScreen(self.page, self.current_user)
             return self._wrap_with_admin_header("News / Announcements", news_content)
-        elif index == 15:
+        elif index == 14:
             from screens.settings_screen import SettingsScreen
             settings_content = SettingsScreen(self.page, self.current_user)
             return self._wrap_with_admin_header("Settings", settings_content, show_back_button=False)
-        elif index == 16:
+        elif index == 15:
             from screens.organization_tree_screen import OrganizationTreeScreen
             org_content = OrganizationTreeScreen(self.page, self.current_user)
             return self._wrap_with_admin_header("Organization Tree", org_content)
-        elif index == 17:
+        elif index == 16:
             from screens.data_entry_screen import DataEntryScreen
             data_content = DataEntryScreen(self.page, self.current_user)
             return self._wrap_with_admin_header("Data Entry", data_content)
-        elif index == 18:
+        elif index == 17:
             from screens.inventory_screen import InventoryScreen
             inv_content = InventoryScreen(self.page, self.current_user)
             return self._wrap_with_admin_header("Inventory", inv_content)
-        elif index == 19:
+        elif index == 18:
             from screens.transactions_screen import TransactionsScreen
             trans_content = TransactionsScreen(self.page, self.current_user)
             return self._wrap_with_admin_header("Transactions", trans_content)
-        elif index == 20:
+        elif index == 19:
             from screens.time_tracking_screen import TimeTrackingScreen
             time_content = TimeTrackingScreen(self.page, self.current_user)
             return self._wrap_with_admin_header("Time Tracking", time_content)
-        elif index == 21:
+        elif index == 20:
             return self._create_storage_tab()
-        elif index == 22:
+        elif index == 21:
             from screens.crm_screen import CRMScreen
             crm_content = CRMScreen(self.page, self.current_user)
             return self._wrap_with_admin_header("CRM Dashboard", crm_content)
@@ -489,7 +516,7 @@ class AdminScreen(ft.Container):
             self._create_leaves_tab,
             self._create_teams_tab,
             self._create_projects_tab,
-            self._create_holidays_tab,
+            # Holidays removed as per request
             self._create_meetings_tab,
             self._create_announcements_tab,
             self._create_settings_tab,
@@ -515,6 +542,120 @@ class AdminScreen(ft.Container):
 
     def _create_header(self):
         """Create header with user info, toggle button and logout"""
+
+        # Quick action buttons for common tasks
+        def create_quick_action_button(icon, tooltip, on_click, color=PRIMARY):
+            return ft.IconButton(
+                icon=icon,
+                tooltip=tooltip,
+                on_click=on_click,
+                icon_color=color,
+                scale=0.9
+            )
+
+        # Quick action handlers
+        # Holidays removed as per request
+
+        def on_add_logo(e):
+            # Navigate to settings tab (index 15) with company section
+            self._selected_nav_index = 15
+            # Update nav items visual state
+            try:
+                sidebar = self.content.content.controls[0]
+                if hasattr(sidebar, 'content') and hasattr(sidebar.content, 'controls'):
+                    nav_items = sidebar.content.controls
+                    for i, item in enumerate(nav_items):
+                        item.bgcolor = PRIMARY + "15" if i == 15 else "transparent"
+            except:
+                pass
+            from screens.settings_screen import SettingsScreen
+            settings_content = SettingsScreen(self._page, self.current_user)
+            settings_content.current_section = "company"
+            settings_content.build_content()
+            content = self.content.content.controls[2]
+            wrapped = self._wrap_with_admin_header(
+                "Settings", settings_content)
+            content.content = wrapped
+            self._page.update()
+            # Trigger logo upload dialog after UI is built
+            import threading
+
+            def trigger_upload_logo():
+                import time
+                time.sleep(0.3)
+                try:
+                    settings_content._upload_company_logo(None)
+                except Exception as ex:
+                    print(f"Error triggering logo upload: {ex}")
+            threading.Timer(0.3, trigger_upload_logo).start()
+
+        def on_add_user(e):
+            # Navigate to settings tab (index 15) with users section and trigger add dialog
+            self._selected_nav_index = 15
+            # Update nav items visual state
+            try:
+                sidebar = self.content.content.controls[0]
+                if hasattr(sidebar, 'content') and hasattr(sidebar.content, 'controls'):
+                    nav_items = sidebar.content.controls
+                    for i, item in enumerate(nav_items):
+                        item.bgcolor = PRIMARY + "15" if i == 15 else "transparent"
+            except:
+                pass
+            from screens.settings_screen import SettingsScreen
+            settings_content = SettingsScreen(self._page, self.current_user)
+            settings_content.current_section = "users"
+            settings_content.build_content()
+            content = self.content.content.controls[2]
+            wrapped = self._wrap_with_admin_header(
+                "Settings", settings_content)
+            content.content = wrapped
+            self._page.update()
+            # Trigger add user dialog after UI is built
+            import threading
+
+            def trigger_add_user():
+                import time
+                time.sleep(0.3)
+                try:
+                    settings_content.add_user(None)
+                except Exception as ex:
+                    print(f"Error triggering add user dialog: {ex}")
+            threading.Timer(0.3, trigger_add_user).start()
+
+        def on_edit_user(e):
+            # Navigate to settings tab (index 15) with users section
+            self._selected_nav_index = 15
+            # Update nav items visual state
+            try:
+                sidebar = self.content.content.controls[0]
+                if hasattr(sidebar, 'content') and hasattr(sidebar.content, 'controls'):
+                    nav_items = sidebar.content.controls
+                    for i, item in enumerate(nav_items):
+                        item.bgcolor = PRIMARY + "15" if i == 15 else "transparent"
+            except:
+                pass
+            from screens.settings_screen import SettingsScreen
+            settings_content = SettingsScreen(self._page, self.current_user)
+            settings_content.current_section = "users"
+            settings_content.build_content()
+            content = self.content.content.controls[2]
+            wrapped = self._wrap_with_admin_header(
+                "Settings", settings_content)
+            content.content = wrapped
+            self._page.update()
+            # Show info message to select a user to edit
+
+            def show_edit_info():
+                import time
+                time.sleep(0.5)
+                try:
+                    settings_content.show_snackbar(
+                        "Click the Edit icon on any user to modify their details", "#FF9800")
+                except Exception as ex:
+                    print(f"Error showing info: {ex}")
+            import threading
+            threading.Timer(0.5, show_edit_info).start()
+
         return ft.Container(
             content=ft.Row([
                 # Navigation toggle button
@@ -760,19 +901,18 @@ class AdminScreen(ft.Container):
                 ], spacing=15, wrap=True),
 
                 ft.Container(height=15),
-                # Row 3: Projects, Holidays, Meetings, Settings - with wrap for responsiveness
+                # Row 3: Projects, Meetings, Settings - with wrap for responsiveness
                 ft.Text("Projects & Operations", size=14, color=TEXT_SECONDARY,
                         weight=ft.FontWeight.W_500),
                 ft.Container(height=8),
                 ft.Row([
                     self._create_module_card(
                         "Projects", ft.Icons.FOLDER_SPECIAL, "Project Mgmt", 11, BLUE_500),
+                    # Holidays removed as per request
                     self._create_module_card(
-                        "Holidays", ft.Icons.CALENDAR_TODAY, "Holiday Calendar", 12, GREEN_500),
+                        "Meetings", ft.Icons.VIDEO_CALL, "Schedule Meetings", 12, ORANGE_500),
                     self._create_module_card(
-                        "Meetings", ft.Icons.VIDEO_CALL, "Schedule Meetings", 13, ORANGE_500),
-                    self._create_module_card(
-                        "Settings", ft.Icons.SETTINGS, "System Settings", 15, TEAL_500),
+                        "Settings", ft.Icons.SETTINGS, "System Settings", 14, TEAL_500),
                 ], spacing=15, wrap=True),
 
                 ft.Container(height=30),
@@ -2566,13 +2706,7 @@ class AdminScreen(ft.Container):
             expand=True
         )
 
-    def _create_holidays_tab(self):
-        """Create holidays management tab"""
-        from screens.holidays_screen import HolidaysScreen
-        return ft.Container(
-            content=HolidaysScreen(self.page, self.current_user),
-            expand=True
-        )
+    # Holidays removed as per request
 
     def _create_meetings_tab(self):
         """Create meetings management tab"""
@@ -2652,9 +2786,10 @@ class AdminScreen(ft.Container):
         self.page.add(SettingsScreen(self.page, self.current_user))
 
     def _navigate_to_tab(self, index):
-        """Helper to navigate to a specific tab index"""
+        """Helper to navigate to a specific tab index with proper header wrapping"""
+        # Use lazy loaded version to get properly wrapped content with header
         content = self.content.content.controls[2]  # Get the content container
-        content.content = self._get_tab_content(index)
+        content.content = self._get_tab_content_lazy(index)
         self.page.update()
 
     def _show_message(self, message, type="info"):

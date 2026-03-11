@@ -197,7 +197,7 @@ class NavigationManager:
                     'positions': ('screens.positions_screen', 'PositionsScreen'),
                     'teams': ('screens.teams_screen', 'TeamsScreen'),
                     'projects': ('screens.projects_screen', 'ProjectsScreen'),
-                    'holidays': ('screens.holidays_screen', 'HolidaysScreen'),
+                    # Holidays removed as per request
                     'meetings': ('screens.meetings_screen', 'MeetingsScreen'),
                     'announcements': ('screens.announcements_screen', 'AnnouncementsScreen'),
                     'settings': ('screens.settings_screen', 'SettingsScreen'),

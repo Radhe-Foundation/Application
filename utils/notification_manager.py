@@ -229,9 +229,43 @@ class NotificationManager:
     def set_current_user(self, user_id: int):
         """Set the current logged-in user ID for targeted notifications"""
         self._current_user_id = user_id
-        # Clear notifications when user changes
-        self._notifications.clear()
-        self._unread_count = 0
+        # Load notifications from database for this user
+        self._load_notifications_from_db()
+
+    def _load_notifications_from_db(self):
+        """Load notifications from database for multi-device support"""
+        if not self._current_user_id:
+            return
+
+        try:
+            from utils.notification_manager import load_notifications_from_db
+            db_notifications = load_notifications_from_db(
+                self._current_user_id, limit=50)
+
+            # Convert to Notification objects
+            self._notifications = []
+            for n in db_notifications:
+                self._notifications.append(Notification(
+                    id=str(n.get('id', '')),
+                    title=n.get('title', ''),
+                    message=n.get('message', ''),
+                    type=n.get('type', 'info'),
+                    priority=n.get('priority', 'medium'),
+                    read=n.get('is_read', False),
+                    related_entity_type=n.get('related_entity_type'),
+                    related_entity_id=n.get('related_entity_id'),
+                    timestamp=n.get('created_at', datetime.now())
+                ))
+
+            # Update unread count
+            self._unread_count = sum(
+                1 for n in self._notifications if not n.read)
+
+        except Exception as e:
+            print(f"[Notification] Error loading from DB: {e}")
+            # Fall back to empty list
+            self._notifications = []
+            self._unread_count = 0
 
     def get_current_user_id(self) -> Optional[int]:
         """Get the current logged-in user ID"""
@@ -271,12 +305,14 @@ class NotificationManager:
                          related_entity_type: str = None,
                          related_entity_id: int = None,
                          show_banner: bool = True,
-                         target_user_id: int = None) -> Notification:
+                         target_user_id: int = None,
+                         save_to_db: bool = True) -> Notification:
         """Add a new notification
 
         Args:
             target_user_id: If specified, only show this notification to the specific user.
                           If None, shows to current user (for backward compatibility).
+            save_to_db: If True, saves notification to database for persistence across devices
         """
         import uuid
 
@@ -287,8 +323,23 @@ class NotificationManager:
                 return None
             if target_user_id != self._current_user_id:
                 # This notification is for a different user - don't show it
+                # But still save to DB for them to see when they log in
+                if save_to_db:
+                    try:
+                        from utils.notification_manager import save_notification_to_db
+                        save_notification_to_db(
+                            user_id=target_user_id,
+                            title=title,
+                            message=message,
+                            notification_type=notification_type,
+                            priority=priority,
+                            related_entity_type=related_entity_type,
+                            related_entity_id=related_entity_id
+                        )
+                    except:
+                        pass
                 print(
-                    f"[Notification] Ignoring notification for user {target_user_id} - current user is {self._current_user_id}")
+                    f"[Notification] Saved notification for user {target_user_id}")
                 return None
 
         notification = Notification(
@@ -299,11 +350,28 @@ class NotificationManager:
             action=action,
             priority=priority,
             related_entity_type=related_entity_type,
-            related_entity_id=related_entity_id
+            related_entity_id=related_entity_id,
+            target_user_id=target_user_id or self._current_user_id
         )
 
         self._notifications.insert(0, notification)
         self._unread_count += 1
+
+        # Save to database for persistence across devices
+        if save_to_db and self._current_user_id:
+            try:
+                from utils.notification_manager import save_notification_to_db
+                save_notification_to_db(
+                    user_id=self._current_user_id,
+                    title=title,
+                    message=message,
+                    notification_type=notification_type,
+                    priority=priority,
+                    related_entity_type=related_entity_type,
+                    related_entity_id=related_entity_id
+                )
+            except Exception as e:
+                print(f"[Notification] Error saving to DB: {e}")
 
         # Show toast notification (on current screen)
         self._show_toast(notification)

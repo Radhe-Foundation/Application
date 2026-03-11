@@ -131,24 +131,26 @@ class EmployeeScreen(ft.Container):
             (6, "My Attendance", ft.Icons.EVENT, ft.Icons.EVENT_OUTLINED),
             (7, "My Teams", ft.Icons.GROUP, ft.Icons.GROUP_OUTLINED),
             (8, "Projects", ft.Icons.WORK, ft.Icons.WORK_OUTLINED),
-            (9, "Holidays", ft.Icons.CALENDAR_TODAY,
-             ft.Icons.CALENDAR_TODAY_OUTLINED),
-            (10, "Meetings", ft.Icons.VIDEO_CALL, ft.Icons.VIDEO_CALL_OUTLINED),
-            (11, "Announcements", ft.Icons.CAMPAIGN, ft.Icons.CAMPAIGN_OUTLINED),
+            # Holidays removed as per request
+            (9, "Meetings", ft.Icons.VIDEO_CALL, ft.Icons.VIDEO_CALL_OUTLINED),
+            (10, "Announcements", ft.Icons.CAMPAIGN, ft.Icons.CAMPAIGN_OUTLINED),
             # Business Screens
-            (12, "Data Entry", ft.Icons.TABLE_ROWS, ft.Icons.TABLE_ROWS_OUTLINED),
-            (13, "Inventory", ft.Icons.INVENTORY, ft.Icons.INVENTORY_OUTLINED),
-            (14, "Transactions", ft.Icons.PAYMENT, ft.Icons.PAYMENT_OUTLINED),
-            (15, "Time Track", ft.Icons.TIMER, ft.Icons.TIMER_OUTLINED),
+            (11, "Data Entry", ft.Icons.TABLE_ROWS, ft.Icons.TABLE_ROWS_OUTLINED),
+            (12, "Inventory", ft.Icons.INVENTORY, ft.Icons.INVENTORY_OUTLINED),
+            (13, "Transactions", ft.Icons.PAYMENT, ft.Icons.PAYMENT_OUTLINED),
+            (14, "Time Track", ft.Icons.TIMER, ft.Icons.TIMER_OUTLINED),
             # Org Tree
-            (16, "Org Tree", ft.Icons.ACCOUNT_TREE, ft.Icons.ACCOUNT_TREE_OUTLINED),
+            (15, "Org Tree", ft.Icons.ACCOUNT_TREE, ft.Icons.ACCOUNT_TREE_OUTLINED),
             # CRM
-            (17, "CRM", ft.Icons.PEOPLE, ft.Icons.PEOPLE_OUTLINED),
+            (16, "CRM", ft.Icons.PEOPLE, ft.Icons.PEOPLE_OUTLINED),
         ]
 
         # Track selected index
         self._selected_nav_index = 0
         nav_items = []
+
+        # Compact sidebar width - icon only
+        compact_width = 60
 
         def create_nav_item(index, label, selected_icon, unselected_icon):
             def on_click(e):
@@ -161,33 +163,61 @@ class EmployeeScreen(ft.Container):
 
             is_selected = (index == self._selected_nav_index)
 
-            return ft.Container(
-                content=ft.Row([
-                    ft.Icon(
-                        selected_icon if is_selected else unselected_icon,
-                        size=20,
-                        color=PRIMARY if is_selected else TEXT_SECONDARY,
-                    ),
-                    ft.Text(
-                        label,
-                        size=13,
-                        weight=ft.FontWeight.W_500 if is_selected else ft.FontWeight.W_400,
-                        color=PRIMARY if is_selected else TEXT_SECONDARY,
-                    ),
-                ], spacing=8, alignment=ft.MainAxisAlignment.START),
+            # Create the icon
+            icon_control = ft.Icon(
+                selected_icon if is_selected else unselected_icon,
+                size=22,
+                color=PRIMARY if is_selected else TEXT_SECONDARY,
+            )
+
+            # Create the text label (hidden by default, shown on hover)
+            text_control = ft.Text(
+                label,
+                size=13,
+                weight=ft.FontWeight.W_500 if is_selected else ft.FontWeight.W_400,
+                color=PRIMARY if is_selected else TEXT_SECONDARY,
+                opacity=0,  # Hidden by default
+                animate_opacity=ft.Animation(200, "easeInOut"),
+            )
+
+            # Container for icon and text
+            item_content = ft.Row(
+                [icon_control, text_control],
+                spacing=8,
+                alignment=ft.MainAxisAlignment.START,
+            )
+
+            # Create the nav item container with hover effect
+            nav_item = ft.Container(
+                content=item_content,
                 padding=ft.padding.symmetric(horizontal=12, vertical=10),
                 border_radius=8,
                 bgcolor=PRIMARY + "15" if is_selected else "transparent",
                 on_click=on_click,
                 ink=True,
+                # Hover handlers to show/hide text
+                on_hover=lambda e: (
+                    setattr(text_control, 'opacity', 1 if e.control.bgcolor ==
+                            "transparent" else text_control.opacity),
+                    setattr(text_control, 'bgcolor', PRIMARY + "20" if e.data ==
+                            "true" else (PRIMARY + "15" if is_selected else "transparent")),
+                    setattr(e.control, 'bgcolor', PRIMARY + "20" if e.data ==
+                            "true" else (PRIMARY + "15" if is_selected else "transparent")),
+                    e.control.update() if hasattr(e.control, 'update') else None,
+                    self._page.update()
+                ),
+                tooltip=label,  # Show tooltip on hover as fallback
+                width=compact_width,
             )
+
+            return nav_item
 
         # Create nav items with responsive labels
         for idx, label, sel_icon, unsel_icon in nav_data:
             nav_items.append(create_nav_item(idx, label, sel_icon, unsel_icon))
 
-        # Build sidebar with logo at top and scrollable nav items - responsive
-        # Hide sidebar on mobile, show icon-only on tablet, full on desktop
+        # Build sidebar with logo at top and scrollable nav items - COMPACT icon-only
+        # Hide sidebar on mobile, show icon-only on tablet/desktop
         logo_width = 50 if is_mobile else (60 if is_tablet else 80)
         logo_height = 40 if is_mobile else (45 if is_tablet else 50)
 
@@ -198,7 +228,7 @@ class EmployeeScreen(ft.Container):
             logo_url = "/assets/logo/Vernikalogo.png"  # Fallback to local
 
         sidebar = ft.Container(
-            width=sidebar_width,
+            width=compact_width,
             bgcolor=SURFACE,
             content=ft.Column([
                 # Logo at top center - hide on mobile, use image on tablet/desktop
@@ -265,24 +295,23 @@ class EmployeeScreen(ft.Container):
             return self._create_teams_tab()
         elif index == 8:
             return self._create_projects_tab()
+        # Holidays removed as per request
         elif index == 9:
-            return self._create_holidays_tab()
-        elif index == 10:
             return self._create_meetings_tab()
-        elif index == 11:
+        elif index == 10:
             return self._create_announcements_tab()
-        # Business Screens (indices 12-15)
-        elif index == 12:
+        # Business Screens (indices 11-14)
+        elif index == 11:
             return self._create_data_entry_tab()
-        elif index == 13:
+        elif index == 12:
             return self._create_inventory_tab()
-        elif index == 14:
+        elif index == 13:
             return self._create_transactions_tab()
-        elif index == 15:
+        elif index == 14:
             return self._create_time_tracking_tab()
-        elif index == 16:
+        elif index == 15:
             return self._create_org_tree_tab()
-        elif index == 17:
+        elif index == 16:
             return self._create_crm_tab()
         return self._create_dashboard_tab()
 
@@ -461,16 +490,7 @@ class EmployeeScreen(ft.Container):
             )
         )
 
-        # Holidays card
-        action_cards.append(
-            self._create_action_card(
-                "Holidays",
-                "Company holidays",
-                ft.Icons.CALENDAR_TODAY,
-                lambda _: self._navigate_to(9),
-                GREEN_500
-            )
-        )
+        # Holidays card removed as per request
 
         # Meetings card - navigate to meetings (index 10)
         action_cards.append(
@@ -673,11 +693,7 @@ class EmployeeScreen(ft.Container):
         projects_content = ProjectsScreen(self._page, self.current_user)
         return self._wrap_with_employee_header("Projects", projects_content)
 
-    def _create_holidays_tab(self):
-        """Create holidays tab"""
-        from screens.holidays_screen import HolidaysScreen
-        holidays_content = HolidaysScreen(self._page, self.current_user)
-        return self._wrap_with_employee_header("Holidays", holidays_content)
+    # Holidays removed as per request
 
     def _create_meetings_tab(self):
         """Create meetings tab"""
