@@ -5,15 +5,20 @@ Fixed: Multiple CC/BCC, Bulk Send, Professional Compose UI, Improved Recipient P
 """
 
 import flet as ft
-from datetime import datetime
+from datetime import datetime, date
+from typing import List, Optional, Dict, Any
+import threading
+import time
+
 from database.session_manager import get_session, get_db_session, check_db_connection
-from database.models import EmailCategory
+from database.models import EmailCategory, User
 from database.operations import (
     send_email, get_user_emails, get_email_by_id,
     mark_email_as_read, delete_email, get_unread_email_count, get_all_users,
     create_email_group, add_email_group_member, get_user_email_groups,
     get_email_group_members, get_email_group_member_ids, get_all_email_groups,
-    remove_email_group_member, save_draft, get_draft_by_id
+    remove_email_group_member, save_draft, get_draft_by_id,
+    update_user_presence
 )
 
 # Import Supabase storage for file attachments
@@ -59,6 +64,16 @@ class MailScreen(ft.Container):
         self.email_detail_dialog = None
         self._hovered_email = None
 
+        # Presence tracking
+        self._online_contacts: Dict[int, bool] = {}
+        self._message_ids: set = set()
+        self._presence_poll_thread = None
+        self._stop_threads = False
+        self._typing_indicator = None
+
+        # File picker for attachments
+        self._file_picker = None
+
         # Draft tracking
         self._current_draft_id = None
 
@@ -81,6 +96,10 @@ class MailScreen(ft.Container):
 
         self.content = self._build_content()
         self._load_emails()
+
+        # Start presence tracking
+        self._update_presence_online()
+        self._start_presence_polling()
 
         # Note: Mail notifications are handled for new emails
 
@@ -134,6 +153,449 @@ class MailScreen(ft.Container):
                 except:
                     pass
             pass
+
+    # ==================== Presence System ====================
+    def _update_presence_online(self):
+        """Update user presence to online"""
+        try:
+            db = get_db_session()
+            update_user_presence(db, self.current_user_id, True)
+            db.close()
+        except Exception as e:
+            print(f"[Mail] Error updating presence: {e}")
+
+    def _start_presence_polling(self):
+        """Poll for user presence updates"""
+        def poll_presence():
+            while not self._stop_threads:
+                try:
+                    # Poll every 5 seconds for better real-time feel
+                    time.sleep(5)
+                    if self._stop_threads:
+                        break
+                    self._update_online_statuses()
+                except Exception as e:
+                    print(f"[Mail] Presence poll error: {e}")
+
+        self._presence_poll_thread = threading.Thread(
+            target=poll_presence, daemon=True)
+        self._presence_poll_thread.start()
+
+    def _update_online_statuses(self):
+        """Update online status of all contacts"""
+        try:
+            db = get_db_session()
+            try:
+                users = db.query(User).filter(
+                    User.id != self.current_user_id).all()
+                for user in users:
+                    user_id = int(getattr(user, 'id', 0))
+                    if user_id:
+                        is_online = bool(getattr(user, 'is_online', False))
+                        last_seen = getattr(user, 'last_seen', None)
+                        self._online_contacts[user_id] = is_online
+            finally:
+                db.close()
+        except Exception as e:
+            print(f"[Mail] Error updating presence: {e}")
+
+    def will_unmount(self):
+        """Cleanup when leaving the screen"""
+        self._stop_threads = True
+        try:
+            db = get_db_session()
+            update_user_presence(db, self.current_user_id, False)
+            db.close()
+        except Exception:
+            pass
+
+    # ==================== Optimized Email Fetching ====================
+    def _fetch_new_emails_for_folder(self) -> List:
+        """Fetch only NEW emails for the current folder"""
+        new_emails = []
+
+        # Get the latest email timestamp we already have
+        latest_timestamp = None
+        if self.emails:
+            try:
+                latest_timestamp = max(
+                    getattr(e, 'created_at', None) for e in self.emails if getattr(e, 'created_at', None)
+                )
+            except Exception:
+                pass
+
+        db = get_db_session()
+        try:
+            from sqlalchemy import desc
+
+            query = db.query(type(self.emails[0]) if self.emails else None).filter(
+            ) if self.emails else None
+
+            # For now, just return empty - full implementation would query for newer emails
+            # This is a simplified version that can be expanded
+            pass
+        except Exception as exc:
+            print(f"[Mail] Error fetching new emails: {exc}")
+        finally:
+            db.close()
+
+        return new_emails
+
+    def _refresh_email_list_for_new_messages(self):
+        """Refresh email list to check for new emails"""
+        try:
+            # Refresh the main email list
+            self._load_emails()
+
+            # Rebuild content to show updated list
+            self.content = self._build_content()
+
+            try:
+                self._page.update()
+            except Exception:
+                pass
+        except Exception as e:
+            print(f"[Mail] Error refreshing email list: {e}")
+
+    # ==================== Emoji Picker ====================
+    def _show_emoji_picker(self, e=None):
+        """Show emoji picker dialog"""
+        def close_dlg(ev):
+            try:
+                self._page.pop_dialog()
+                self._page.update()
+            except Exception:
+                pass
+
+        # Combine all emojis into one flat list
+        all_emojis = [
+            # Smileys
+            "😀", "😃", "😄", "😁", "😆", "😅", "🤣", "😂", "🙂", "🙃", "😉", "😊", "😇", "🥰", "😍", "🤩",
+            "😘", "😗", "😚", "😙", "😋", "😛", "😜", "🤪", "😝", "🤑", "🤗", "🤭", "🤫", "🤔", "🤐", "🤨",
+            "😐", "😑", "😶", "😏", "😒", "🙄", "😬", "🤥", "😌", "😔", "😪", "🤤", "😴", "😷", "🤒", "🤕",
+            "😕", "😟", "🙁", "☹️", "😮", "😯", "😲", "😳", "🥺", "😦", "😧", "😨", "😰", "😥", "😢", "😭",
+            "😱", "😖", "😣", "😞", "😓", "😩", "😫", "🥱", "😤", "😡", "😠", "🤬", "😈", "👿", "💀", "☠️",
+            "💩", "🤡", "👹", "👺", "👻", "👽", "👾", "🤖", "😺", "😸", "😹", "😻", "😼", "😽", "🙀", "😿", "😾",
+            # Gestures
+            "👋", "🤚", "🖐️", "✋", "🖖", "👌", "🤌", "🤏", "✌️", "🤞", "🤟", "🤘", "🤙", "👈", "👉", "👆",
+            "🖕", "👇", "☝️", "👍", "👎", "✊", "👊", "🤛", "🤜", "👏", "🙌", "👐", "🤲", "🤝", "🙏", "✍️",
+            # Hearts
+            "❤️", "🧡", "💛", "💚", "💙", "💜", "🖤", "🤍", "🤎", "💔", "❣️", "💕", "💞", "💓", "💗", "💖",
+            "💘", "💝", "💟", "💯", "💢", "💥", "💫", "💦", "💨", "🕳️", "💣", "💬", "👁️‍🗨️",
+            # Objects
+            "⌚", "📱", "💻", "⌨️", "🖥️", "🖨️", "🖱️", "🖲️", "💽", "💾", "💿", "📀", "📼", "📷", "📸", "📹",
+            "🎥", "📽️", "🎞️", "📞", "☎️", "📟", "📠", "📺", "📻", "🎙️", "🎚️", "🎛️", "🧭", "⏱️", "⏲️", "⏰",
+            "🕰️", "⌛", "⏳", "📡", "🔋", "🔌", "💡", "🔦", "🕯️", "🪔", "🧯", "🛢️", "💸", "💵", "💴", "💶",
+            "💷", "🪙", "💰", "💳", "💎", "⚖️", "🪜", "🧰", "🪛", "🔧", "🔨", "⚒️", "🛠️", "⛏️", "🪚", "🔩",
+            "⚙️", "🪤", "🧱", "⛓️", "🧲", "🔫", "💣", "🧨", "🪓", "🔪", "🗡️", "⚔️", "🛡️", "🚬", "⚰️", "🪦",
+            "⚱️", "🏺", "🔮", "📿", "🧿", "💈", "⚗️", "🔭", "🔬", "🕳️", "🩹", "🩺", "💊", "💉", "🩸", "🧬",
+            "🦠", "🧫", "🧪", "🌡️", "🧹", "🪠", "🧺", "🧻", "🚽", "🚰", "🚿", "🛁", "🛀", "🧼", "🪥", "🪒",
+            "🧽", "🪣", "🧴", "🛎️", "🔑", "🗝️", "🚪", "🪑", "🛋️", "🛏️", "🛌", "🧸", "🪆", "🖼️", "🪞", "🪟",
+            "🛍️", "🛒", "🎁", "🎈", "🎏", "🎀", "🪄", "🪅", "🎊", "🎉", "🎎", "🏮", "🎐", "🧧", "✉️", "📩",
+            "📨", "📧", "💌", "📥", "📤", "📦", "🏷️", "🪧", "📪", "📫", "📬", "📭", "📮", "📯", "📜", "📃",
+            "📄", "📑", "🧾", "📊", "📈", "📉", "🗒️", "🗓️", "📆", "📅", "🗑️", "📇", "🗃️", "🗳️", "🗄️", "📋",
+            "📁", "📂", "🗂️", "🗞️", "📰", "📓", "📔", "📒", "📕", "📗", "📘", "📙", "📚", "📖", "🔖", "🧷",
+            "🔗", "📎", "🖇️", "📐", "📏", "🧮", "📌", "📍", "✂️", "🖊️", "🖋️", "✒️", "🖌️", "🖍️", "📝", "✏️",
+            "🔍", "🔎", "🔏", "🔐", "🔒", "🔓",
+            # Flags
+            "🏳️", "🏴", "🏴‍☠️", "🏁", "🚩", "🎌", "🏳️‍🌈", "🏳️‍⚧️",
+        ]
+
+        # Insert emoji into input field
+        def insert_emoji(emoji):
+            # This will be called with the emoji - in compose we need to insert into body field
+            if hasattr(self, '_last_compose_body_field') and self._last_compose_body_field:
+                current = self._last_compose_body_field.value or ""
+                self._last_compose_body_field.value = current + emoji
+                try:
+                    self._page.update()
+                except Exception:
+                    pass
+
+        # Create buttons for each emoji
+        emoji_buttons = []
+        for emoji in all_emojis:
+            emoji_buttons.append(
+                ft.Container(
+                    content=ft.Text(emoji, size=22),
+                    width=40,
+                    height=40,
+                    on_click=lambda ev, em=emoji: insert_emoji(em),
+                    alignment=ft.alignment.Alignment(0, 0),
+                    border_radius=8,
+                )
+            )
+
+        dlg = ft.AlertDialog(
+            title=ft.Text("Emoji", weight=ft.FontWeight.BOLD),
+            content=ft.Container(
+                width=350,
+                height=400,
+                content=ft.GridView(
+                    runs_count=8,
+                    spacing=2,
+                    run_spacing=2,
+                    controls=emoji_buttons,
+                ),
+            ),
+            actions=[ft.TextButton("Close", on_click=close_dlg)]
+        )
+
+        self._page.show_dialog(dlg)
+
+    # ==================== Message Search ====================
+    def _show_message_search(self, e=None):
+        """Show message search dialog"""
+        def close_dlg(ev=None):
+            try:
+                self._page.pop_dialog()
+                self._page.update()
+            except Exception:
+                pass
+
+        search_field = ft.TextField(
+            hint_text="Search emails...",
+            border_color=TEAMS_BLUE,
+            prefix_icon=ft.Icons.SEARCH,
+            on_change=lambda ev: perform_search(ev.control.value),
+        )
+
+        results_list = ft.ListView(
+            expand=True,
+            spacing=4,
+        )
+
+        def perform_search(query):
+            results_list.controls.clear()
+            if not query or not self.emails:
+                results_list.controls.append(
+                    ft.Container(
+                        content=ft.Text("Enter a search term",
+                                        color=TEAMS_SUBTEXT),
+                        padding=20,
+                    )
+                )
+                try:
+                    self._page.update()
+                except Exception:
+                    pass
+                return
+
+            query_lower = query.lower()
+            for email in self.emails:
+                subject = getattr(email, 'subject', '')
+                body = getattr(email, 'body', '')
+                sender = getattr(email, 'sender', None)
+                sender_name = getattr(sender, 'username',
+                                      'Unknown') if sender else 'Unknown'
+
+                if query_lower in subject.lower() or query_lower in body.lower() or query_lower in sender_name.lower():
+                    # Create result item
+                    preview = body[:80] + ("..." if len(body) > 80 else "")
+                    created_at = getattr(email, 'created_at', datetime.now())
+
+                    result_item = ft.Container(
+                        padding=ft.padding.all(8),
+                        bgcolor="#F5F5F5",
+                        border_radius=8,
+                        on_click=lambda ev, em=email: (
+                            close_dlg(), self._show_email_popup(em)),
+                        content=ft.Column(
+                            spacing=4,
+                            controls=[
+                                ft.Text(
+                                    sender_name,
+                                    size=12,
+                                    weight=ft.FontWeight.W_600,
+                                    color=TEAMS_BLUE,
+                                ),
+                                ft.Text(
+                                    subject,
+                                    size=13,
+                                    weight=ft.FontWeight.W_500,
+                                    color=TEAMS_TEXT,
+                                ),
+                                ft.Text(
+                                    preview,
+                                    size=12,
+                                    color=TEAMS_SUBTEXT,
+                                    max_lines=2,
+                                    overflow=ft.TextOverflow.ELLIPSIS,
+                                ),
+                                ft.Text(
+                                    created_at.strftime(
+                                        "%b %d, %Y") if created_at else "",
+                                    size=10,
+                                    color=TEAMS_SUBTEXT,
+                                ),
+                            ],
+                        ),
+                    )
+                    results_list.controls.append(result_item)
+
+            if not results_list.controls:
+                results_list.controls.append(
+                    ft.Container(
+                        content=ft.Text("No emails found",
+                                        color=TEAMS_SUBTEXT),
+                        padding=20,
+                    )
+                )
+
+            try:
+                self._page.update()
+            except Exception:
+                pass
+
+        dlg = ft.AlertDialog(
+            title=ft.Text("Search Emails", weight=ft.FontWeight.BOLD),
+            content=ft.Container(
+                width=450,
+                height=400,
+                content=ft.Column(
+                    spacing=10,
+                    controls=[
+                        search_field,
+                        ft.Container(
+                            expand=True,
+                            content=results_list,
+                        ),
+                    ],
+                ),
+            ),
+            actions=[
+                ft.TextButton("Close", on_click=close_dlg),
+            ]
+        )
+
+        # Initialize with empty results
+        perform_search("")
+
+        self._page.show_dialog(dlg)
+
+    # ==================== Date Separator ====================
+    def _build_date_separator(self, msg_date: date) -> ft.Container:
+        """Build a date separator for email list"""
+        today = date.today()
+        yesterday = today.replace(
+            day=today.day - 1) if today.day > 1 else today
+
+        if msg_date == today:
+            date_text = "Today"
+        elif msg_date == yesterday:
+            date_text = "Yesterday"
+        else:
+            date_text = msg_date.strftime("%B %d, %Y")
+
+        return ft.Container(
+            content=ft.Container(
+                bgcolor=TEAMS_GRAY,
+                padding=ft.padding.symmetric(horizontal=12, vertical=6),
+                border_radius=12,
+                content=ft.Text(
+                    date_text, size=12, color=TEAMS_SUBTEXT, weight=ft.FontWeight.W_500),
+            ),
+            padding=ft.padding.symmetric(vertical=8),
+            alignment=ft.alignment.Alignment(0, 0),
+        )
+
+    # ==================== Message Context Menu ====================
+    def _show_email_context_menu(self, email, e=None):
+        """Show context menu for email"""
+        def close_dlg(ev=None):
+            try:
+                self._page.pop_dialog()
+                self._page.update()
+            except Exception:
+                pass
+
+        email_id = getattr(email, 'id', 0)
+        subject = getattr(email, 'subject', 'No Subject')
+
+        def copy_subject(ev):
+            self._show_success(f"Subject copied: {subject[:30]}...")
+            close_dlg(ev)
+
+        def mark_unread(ev):
+            try:
+                db = get_db_session()
+                # Mark as unread
+                mark_email_as_read(
+                    db, email_id, self.current_user_id, is_read=False)
+                db.close()
+                self._show_success("Marked as unread")
+                self._load_emails()
+                self.content = self._build_content()
+                self._page.update()
+            except Exception as ex:
+                print(f"[Mail] Error marking unread: {ex}")
+            close_dlg(ev)
+
+        options = [
+            ft.ListTile(
+                leading=ft.Icon(ft.Icons.REPLY, color=TEAMS_BLUE),
+                title=ft.Text("Reply"),
+                on_click=lambda e: (close_dlg(e), self._reply_to_email(email)),
+            ),
+            ft.ListTile(
+                leading=ft.Icon(ft.Icons.FORWARD, color=TEAMS_BLUE),
+                title=ft.Text("Forward"),
+                on_click=lambda e: (close_dlg(e), self._forward_email(email)),
+            ),
+            ft.ListTile(
+                leading=ft.Icon(ft.Icons.CONTENT_COPY, color=TEAMS_BLUE),
+                title=ft.Text("Copy Subject"),
+                on_click=copy_subject,
+            ),
+            ft.ListTile(
+                leading=ft.Icon(ft.Icons.MARK_EMAIL_UNREAD, color=WARNING),
+                title=ft.Text("Mark as Unread"),
+                on_click=mark_unread,
+            ),
+            ft.ListTile(
+                leading=ft.Icon(ft.Icons.DELETE, color=ERROR),
+                title=ft.Text("Delete"),
+                on_click=lambda e: (close_dlg(e), self._delete_email(email)),
+            ),
+        ]
+
+        dlg = ft.AlertDialog(
+            content=ft.Column(
+                controls=options,
+                spacing=0,
+                tight=True,
+            ),
+            actions=[],
+        )
+        self._page.show_dialog(dlg)
+
+    def _reply_to_email(self, email):
+        """Reply to an email"""
+        self.reply_to_email = email
+        self.current_folder = "reply"
+        self.content = self._build_content()
+        self._page.update()
+
+    def _forward_email(self, email):
+        """Forward an email"""
+        self.forward_email = email
+        self.current_folder = "forward"
+        self.content = self._build_content()
+        self._page.update()
+
+    def _delete_email(self, email):
+        """Delete an email"""
+        email_id = getattr(email, 'id', 0)
+        try:
+            db = get_db_session()
+            delete_email(db, email_id)
+            db.close()
+            self._show_success("Deleted")
+            self._load_emails()
+            self.content = self._build_content()
+            self._page.update()
+        except Exception as ex:
+            print(f"[Mail] Error deleting: {ex}")
 
     def _build_content(self):
         return ft.Container(
@@ -837,6 +1299,9 @@ class MailScreen(ft.Container):
             expand=True,
         )
 
+        # Store reference to body field for emoji picker
+        self._last_compose_body_field = body_field
+
         category_opts = [
             ft.dropdown.Option("general", "General"),
             ft.dropdown.Option("hr_communication", "HR"),
@@ -953,6 +1418,12 @@ class MailScreen(ft.Container):
                         ft.Row([
                             category_dropdown,
                             ft.Container(expand=True),
+                            ft.IconButton(
+                                icon=ft.Icons.EMOJI_EMOTIONS,
+                                tooltip="Add Emoji",
+                                on_click=self._show_emoji_picker,
+                                icon_color=TEAMS_BLUE,
+                            ),
                             ft.IconButton(
                                 icon=ft.Icons.ATTACH_FILE,
                                 tooltip="Attach File",
@@ -1275,6 +1746,9 @@ class MailScreen(ft.Container):
                                 size=12, color=TEAMS_SUBTEXT),
                         ft.Container(expand=True),
                         search,
+                        ft.Container(width=8),
+                        ft.Container(on_click=lambda e: self._show_message_search(), padding=6, bgcolor=TEAMS_GRAY, border_radius=4,
+                                     content=ft.Icon(ft.Icons.SEARCH, size=16, color=TEAMS_TEXT)),
                         ft.Container(width=8),
                         ft.Container(on_click=refresh, padding=6, bgcolor=TEAMS_GRAY, border_radius=4,
                                      content=ft.Icon(ft.Icons.REFRESH, size=16, color=TEAMS_TEXT)),
@@ -1970,6 +2444,20 @@ class MailScreen(ft.Container):
         snack = ft.SnackBar(content=ft.Text(msg), bgcolor=SUCCESS)
         self._page.overlay.append(snack)
         snack.open = True
+
+    def _show_snackbar(self, message: str) -> None:
+        try:
+            snack = ft.SnackBar(
+                content=ft.Text(message),
+                behavior=ft.SnackBarBehavior.FLOATING,
+                margin=10,
+                bgcolor=TEAMS_TEXT,
+            )
+            self._page.overlay.append(snack)
+            snack.open = True
+            self._page.update()
+        except Exception as exc:
+            print(f"[MailScreen] Snackbar failed: {exc}")
 
     def _show_create_email_group_dialog(self):
         """Show dialog to create a new email group"""

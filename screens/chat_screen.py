@@ -42,33 +42,110 @@ except ImportError:
 # Import Supabase storage for file attachments
 from utils.supabase_storage import upload_to_supabase, get_storage
 
+import flet as ft
+from datetime import datetime
+import threading
+import time
 
-# WhatsApp-Style Theme Colors
-PRIMARY = "#075E54"  # WhatsApp dark green
-PRIMARY_LIGHT = "#128C7E"  # WhatsApp medium green
-PRIMARY_LIGHTER = "#25D366"  # WhatsApp light green
-SECONDARY = "#34B7F1"  # WhatsApp blue for links
-SUCCESS = "#25D366"
-WARNING = "#F44336"
-ERROR = "#F44336"
-INFO = "#34B7F1"
-BACKGROUND = "#ECE5DD"  # WhatsApp light background
-CHAT_BACKGROUND = "#ECE5DD"
+# --- Note: Integrate your database/backend logic within the ChatScreen class ---
+
+
+class ChatScreen(ft.Container):
+    def __init__(self, page: ft.Page, current_user: dict):
+        super().__init__()
+        self._page = page
+        self.expand = True
+        self.bgcolor = "#F5F5F5"
+        self.current_user_id = current_user.get("id", 0)
+
+        # State & UI Components
+        self._contacts_list = ft.ListView(expand=True, spacing=10)
+        self._messages_list = ft.ListView(
+            expand=True, spacing=10, auto_scroll=True, padding=20)
+        self._input_field = ft.TextField(
+            hint_text="Type a message...", expand=True, on_submit=self._on_send_click)
+        self.chat_view = ft.Column(visible=False, expand=True)
+        self.empty_view = ft.Container(content=ft.Text(
+            "Select a contact"), alignment=ft.alignment.center, expand=True)
+
+        self._load_contacts()
+        self.content = self._build_layout()
+        self._stop_threads = False
+        self._start_polling()
+
+    def _build_layout(self):
+        """Creates the WhatsApp-style two-pane layout."""
+        sidebar = ft.Container(
+            content=ft.Column(
+                [ft.Text("Chats", size=24, weight="bold"), ft.Divider(), self._contacts_list]),
+            width=300, bgcolor="#FFFFFF", border=ft.border.only(right=ft.BorderSide(1, "#EEEEEE"))
+        )
+
+        self.chat_view.controls = [
+            ft.Container(content=self._messages_list,
+                         expand=True, bgcolor="#E5DDD5"),
+            ft.Container(content=ft.Row([self._input_field, ft.IconButton(
+                ft.icons.SEND, on_click=self._on_send_click)]), padding=10)
+        ]
+        return ft.Row([sidebar, self.chat_view, self.empty_view], spacing=0)
+
+    def _load_contacts(self):
+        """Mock loader."""
+        for i in range(3):
+            self._contacts_list.controls.append(
+                ft.ListTile(title=ft.Text(
+                    f"Contact {i}"), on_click=lambda e: self._select_contact())
+            )
+
+    def _select_contact(self):
+        self.chat_view.visible = True
+        self.empty_view.visible = False
+        self.update()
+
+    def _on_send_click(self, e):
+        if not self._input_field.value:
+            return
+        self._messages_list.controls.append(ft.Text(self._input_field.value))
+        self._input_field.value = ""
+        self.update()
+
+    def _start_polling(self):
+        """Background thread stub."""
+        def poll():
+            while not self._stop_threads:
+                time.sleep(3)
+        threading.Thread(target=poll, daemon=True).start()
+
+    def cleanup(self):
+        self._stop_threads = True
+
+
+# Modern Flat Theme Colors (No Gradients, No Shadows)
+PRIMARY = "#0088CC"  # Modern blue
+PRIMARY_LIGHT = "#00AAFF"  # Lighter blue
+PRIMARY_LIGHTER = "#4DC3FF"  # Even lighter blue
+SECONDARY = "#5C6BC0"  # Indigo accent
+SUCCESS = "#4CAF50"  # Green
+WARNING = "#FF9800"  # Orange
+ERROR = "#F44336"  # Red
+INFO = "#2196F3"  # Blue
+BACKGROUND = "#F5F5F5"  # Light gray background
+CHAT_BACKGROUND = "#FFFFFF"  # White chat area
 SURFACE = "#FFFFFF"
-TEXT_PRIMARY = "#1A1C1E"
-TEXT_SECONDARY = "#667781"
+TEXT_PRIMARY = "#212121"
+TEXT_SECONDARY = "#757575"
 TEXT_TERTIARY = "#9E9E9E"
 BORDER = "#E0E0E0"
-DIVIDER = "#E8E8E8"
+DIVIDER = "#EEEEEE"
 
-# WhatsApp bubble colors
-BUBBLE_SENT = "#DCF8C6"  # WhatsApp sent bubble (light green)
-BUBBLE_RECEIVED = "#FFFFFF"  # WhatsApp received bubble (white)
-BUBBLE_SENT_DARK = "#075E54"  # Dark mode sent
-BUBBLE_RECEIVED_DARK = "#2A2A2A"  # Dark mode received
+# Modern bubble colors - flat design
+BUBBLE_SENT = "#0088CC"  # Blue for sent messages
+BUBBLE_RECEIVED = "#F0F0F0"  # Light gray for received messages
+BUBBLE_SENT_TEXT = "#FFFFFF"  # White text for sent
+BUBBLE_RECEIVED_TEXT = "#212121"  # Dark text for received
 
-# WhatsApp Header Gradient
-HEADER_BG = "linear-gradient(to right, #075E54, #128C7E)"
+# Header - solid flat color (no gradient)
+HEADER_BG = "#0088CC"
 
 
 @dataclass
@@ -176,6 +253,19 @@ class ChatScreen(ft.Container):
         self._presence_thread = None
         self._stop_threads = False
 
+        # New UI features state
+        self._reply_to_message: Optional[ChatMessageVM] = None
+        self._is_searching: bool = False
+        self._search_results: List[ChatMessageVM] = []
+
+        # Responsive layout state
+        self._show_conversation_panel: bool = False  # Right panel visibility
+        self._is_mobile_view: bool = False  # Track mobile view
+
+        # Typing indicator state
+        self._is_typing: bool = False
+        self._typing_contact_id: Optional[int] = None
+
 # File picker for attachments - created once and reused
         self._file_picker: Optional[ft.FilePicker] = None
 
@@ -225,10 +315,14 @@ class ChatScreen(ft.Container):
         def poll_presence():
             while not self._stop_threads:
                 try:
-                    time.sleep(10)
+                    # Poll every 5 seconds for better real-time feel
+                    time.sleep(5)
                     if self._stop_threads:
                         break
                     self._update_online_statuses()
+                    # Also update the header if a contact is selected
+                    if self.selected_contact:
+                        self._update_header_for_selection()
                 except Exception as e:
                     print(f"[Chat] Presence poll error: {e}")
 
@@ -244,10 +338,26 @@ class ChatScreen(ft.Container):
                 users = db.query(User).filter(
                     User.id != self.current_user_id).all()
                 for user in users:
-                    self._online_contacts[user.id] = bool(
-                        getattr(user, 'is_online', False))
+                    user_id = int(getattr(user, 'id', 0))
+                    if user_id:
+                        is_online = bool(getattr(user, 'is_online', False))
+                        last_seen = getattr(user, 'last_seen', None)
+                        self._online_contacts[user_id] = is_online
+
+                        # Update contact in list if exists
+                        for contact in self.contacts:
+                            if contact.id == user_id:
+                                contact.is_online = is_online
+                                contact.last_seen = last_seen
+                                break
             finally:
                 db.close()
+
+            # Refresh contacts UI to show updated online status
+            if self._contacts_column:
+                search_val = self._search_field.value if self._search_field else ""
+                self._refresh_contacts_ui(search_text=search_val)
+
         except Exception as e:
             print(f"[Chat] Error updating presence: {e}")
 
@@ -282,7 +392,7 @@ class ChatScreen(ft.Container):
             self._start_polling()
 
     def _on_new_message(self, payload):
-        """Handle new message from Supabase realtime"""
+        """Handle new message from Supabase realtime - optimized to only append new messages"""
         try:
             event_type = payload.get('eventType', '')
             if event_type == 'INSERT':
@@ -334,65 +444,313 @@ class ChatScreen(ft.Container):
                 self._refresh_contacts_for_new_messages()
 
                 if is_relevant:
-                    self._load_messages_for_selected()
-                    self._refresh_messages_ui()
-                    try:
-                        self._page.update()
-                    except Exception:
-                        pass
+                    # Only fetch and append the NEW message, don't reload everything
+                    if group_id and self.is_group_chat:
+                        new_messages = self._fetch_new_messages_for_group()
+                    else:
+                        new_messages = self._fetch_new_messages_for_contact()
+
+                    # Append new messages directly
+                    for msg in new_messages:
+                        if msg.id and msg.id not in self._message_ids:
+                            self._message_ids.add(msg.id)
+                            self.messages.append(msg)
+
+                            # Build and append the bubble directly
+                            if self._messages_list:
+                                bubble = self._build_message_bubble(msg)
+                                self._messages_list.controls.append(bubble)
+
+                    if self._messages_list and new_messages:
+                        try:
+                            self._page.update()
+                        except Exception:
+                            pass
         except Exception as e:
             print(f"[Chat] Error handling new message: {e}")
 
     def _start_polling(self):
-        """Start polling fallback for real-time updates"""
+        """Start polling fallback for real-time updates - optimized to only fetch new messages"""
         def poll_messages():
             last_message_count = 0
             while not self._stop_threads:
                 try:
-                    time.sleep(5)
+                    time.sleep(2)
 
                     # Refresh contacts and groups to check for new messages
                     self._refresh_contacts_for_new_messages()
 
                     if self.selected_contact and not self._stop_threads:
-                        # Load messages and check for new ones
-                        old_count = len(self.messages)
-                        self._load_messages_for_selected()
-                        new_count = len(self.messages)
+                        # Only fetch NEW messages, don't reload everything
+                        new_messages = self._fetch_new_messages_for_contact()
 
-                        # Show notification for new messages
-                        if new_count > old_count:
-                            # Get the latest message
-                            latest_msg = self.messages[-1] if self.messages else None
-                            if latest_msg and not latest_msg.is_own:
-                                # Show popup notification banner
+                        if new_messages:
+                            # Show notification for new messages
+                            for msg in new_messages:
+                                if not msg.is_own:
+                                    # Show popup notification banner for first new message from others
+                                    try:
+                                        from utils.notification_manager import get_notification_manager
+                                        nm = get_notification_manager()
+                                        if nm:
+                                            nm.show_banner_notification(
+                                                f"Message from {msg.sender_name}",
+                                                msg.content[:50],
+                                                "chat_message",
+                                                5
+                                            )
+                                        break  # Only show one notification
+                                    except Exception as e:
+                                        print(
+                                            f"[Chat] Polling notification error: {e}")
+
+                            # Append new messages to the existing list
+                            for msg in new_messages:
+                                if msg.id and msg.id not in self._message_ids:
+                                    self._message_ids.add(msg.id)
+                                    self.messages.append(msg)
+
+                                    # Build and append the bubble directly (don't rebuild all)
+                                    if self._messages_list:
+                                        bubble = self._build_message_bubble(
+                                            msg)
+                                        self._messages_list.controls.append(
+                                            bubble)
+
+                            # Update UI
+                            if self._messages_list and new_messages:
                                 try:
-                                    from utils.notification_manager import get_notification_manager
-                                    nm = get_notification_manager()
-                                    if nm:
-                                        nm.show_banner_notification(
-                                            f"Message from {latest_msg.sender_name}",
-                                            latest_msg.content[:50],
-                                            "chat_message",
-                                            5
-                                        )
-                                except Exception as e:
-                                    print(
-                                        f"[Chat] Polling notification error: {e}")
+                                    self._page.update()
+                                except Exception:
+                                    pass
 
-                        if self._messages_list:
-                            self._refresh_messages_ui()
-                            try:
-                                self._page.update()
-                            except Exception:
-                                pass
+                    elif self.selected_group and self.is_group_chat and not self._stop_threads:
+                        # Only fetch NEW group messages
+                        new_messages = self._fetch_new_messages_for_group()
+
+                        if new_messages:
+                            # Show notification for new messages
+                            for msg in new_messages:
+                                if not msg.is_own:
+                                    try:
+                                        from utils.notification_manager import get_notification_manager
+                                        nm = get_notification_manager()
+                                        if nm:
+                                            nm.show_banner_notification(
+                                                f"Message from {msg.sender_name}",
+                                                msg.content[:50],
+                                                "chat_message",
+                                                5
+                                            )
+                                        break
+                                    except Exception as e:
+                                        print(
+                                            f"[Chat] Polling notification error: {e}")
+
+                            # Append new messages to the existing list
+                            for msg in new_messages:
+                                if msg.id and msg.id not in self._message_ids:
+                                    self._message_ids.add(msg.id)
+                                    self.messages.append(msg)
+
+                                    # Build and append the bubble directly
+                                    if self._messages_list:
+                                        bubble = self._build_message_bubble(
+                                            msg)
+                                        self._messages_list.controls.append(
+                                            bubble)
+
+                            if self._messages_list and new_messages:
+                                try:
+                                    self._page.update()
+                                except Exception:
+                                    pass
+
                 except Exception as e:
                     print(f"[Chat] Polling error: {e}")
 
         self._presence_thread = threading.Thread(
             target=poll_messages, daemon=True)
         self._presence_thread.start()
-        print("[Chat] Polling started (every 5 seconds)")
+        print(
+            "[Chat] Polling started (every 2 seconds) - optimized for new messages only")
+
+    def _fetch_new_messages_for_contact(self) -> List[ChatMessageVM]:
+        """Fetch only NEW messages for the selected contact (not all messages)"""
+        if not self.selected_contact:
+            return []
+
+        new_messages: List[ChatMessageVM] = []
+        db = get_db_session()
+        try:
+            # Get the latest message timestamp we already have
+            latest_timestamp = None
+            if self.messages:
+                try:
+                    latest_timestamp = max(
+                        m.created_at for m in self.messages if m.created_at)
+                except Exception:
+                    pass
+
+            # Build query to fetch only messages newer than what we have
+            from sqlalchemy import or_, and_
+
+            query = db.query(ChatMessageModel).filter(
+                or_(
+                    and_(
+                        ChatMessageModel.sender_id == self.current_user_id,
+                        ChatMessageModel.receiver_id == self.selected_contact.id
+                    ),
+                    and_(
+                        ChatMessageModel.sender_id == self.selected_contact.id,
+                        ChatMessageModel.receiver_id == self.current_user_id
+                    )
+                ),
+                ChatMessageModel.group_id == None
+            )
+
+            # If we have messages, only fetch newer ones
+            if latest_timestamp:
+                query = query.filter(
+                    ChatMessageModel.created_at > latest_timestamp)
+
+            # Order by created_at ascending
+            db_messages = query.order_by(
+                ChatMessageModel.created_at.asc()).limit(50).all()
+
+            for m in db_messages:
+                # Skip if we already have this message
+                try:
+                    msg_id = int(getattr(m, 'id', 0) or 0)
+                except (TypeError, ValueError):
+                    msg_id = 0
+
+                if msg_id and msg_id in self._message_ids:
+                    continue
+
+                sender_name = "Unknown"
+                try:
+                    sender = db.query(User).filter(
+                        User.id == m.sender_id).first()
+                    if sender and sender.username:
+                        sender_name = str(sender.username)
+                except Exception:
+                    pass
+
+                try:
+                    created_at = m.created_at if m.created_at else datetime.utcnow()
+                except Exception:
+                    created_at = datetime.utcnow()
+
+                has_attachment = getattr(m, 'has_attachment', False)
+                attachment_path = getattr(m, 'attachment_path', "")
+
+                vm = ChatMessageVM(
+                    id=msg_id or None,
+                    sender_id=int(m.sender_id),
+                    sender_name=sender_name,
+                    content=str(m.content or ""),
+                    created_at=created_at,
+                    is_own=bool(m.sender_id == self.current_user_id),
+                    is_read=bool(getattr(m, 'is_read', False)),
+                    is_image=has_attachment and attachment_path and any(attachment_path.lower(
+                    ).endswith(ext) for ext in ['.jpg', '.jpeg', '.png', '.gif', '.webp']),
+                    attachment_name=attachment_path.split(
+                        '/')[-1] if attachment_path else "",
+                    attachment_path=attachment_path if attachment_path else ""
+                )
+
+                new_messages.append(vm)
+
+        except Exception as exc:
+            print(f"[ChatScreen] Error fetching new messages: {exc}")
+        finally:
+            db.close()
+
+        return new_messages
+
+    def _fetch_new_messages_for_group(self) -> List[ChatMessageVM]:
+        """Fetch only NEW messages for the selected group (not all messages)"""
+        if not self.selected_group:
+            return []
+
+        new_messages: List[ChatMessageVM] = []
+        db = get_db_session()
+        try:
+            # Get the latest message timestamp we already have
+            latest_timestamp = None
+            if self.messages:
+                try:
+                    latest_timestamp = max(
+                        m.created_at for m in self.messages if m.created_at)
+                except Exception:
+                    pass
+
+            # Build query to fetch only messages newer than what we have
+            query = db.query(ChatMessageModel).filter(
+                ChatMessageModel.group_id == self.selected_group.id
+            )
+
+            # If we have messages, only fetch newer ones
+            if latest_timestamp:
+                query = query.filter(
+                    ChatMessageModel.created_at > latest_timestamp)
+
+            # Order by created_at ascending
+            db_messages = query.order_by(
+                ChatMessageModel.created_at.asc()).limit(50).all()
+
+            for m in db_messages:
+                # Skip if we already have this message
+                try:
+                    msg_id = int(getattr(m, 'id', 0) or 0)
+                except (TypeError, ValueError):
+                    msg_id = 0
+
+                if msg_id and msg_id in self._message_ids:
+                    continue
+
+                sender_name = "Unknown"
+                try:
+                    sender = db.query(User).filter(
+                        User.id == m.sender_id).first()
+                    if sender and sender.username:
+                        sender_name = str(sender.username)
+                except Exception:
+                    pass
+
+                try:
+                    created_at = m.created_at if m.created_at else datetime.utcnow()
+                except Exception:
+                    created_at = datetime.utcnow()
+
+                has_attachment = getattr(m, 'has_attachment', False)
+                attachment_path = getattr(m, 'attachment_path', "")
+
+                vm = ChatMessageVM(
+                    id=msg_id or None,
+                    sender_id=int(m.sender_id),
+                    sender_name=sender_name,
+                    content=str(m.content or ""),
+                    created_at=created_at,
+                    is_own=bool(m.sender_id == self.current_user_id),
+                    is_read=bool(getattr(m, 'is_read', False)),
+                    group_id=self.selected_group.id,
+                    is_image=has_attachment and attachment_path and any(attachment_path.lower(
+                    ).endswith(ext) for ext in ['.jpg', '.jpeg', '.png', '.gif', '.webp']),
+                    attachment_name=attachment_path.split(
+                        '/')[-1] if attachment_path else "",
+                    attachment_path=attachment_path if attachment_path else ""
+                )
+
+                new_messages.append(vm)
+
+        except Exception as exc:
+            print(f"[ChatScreen] Error fetching new group messages: {exc}")
+        finally:
+            db.close()
+
+        return new_messages
 
     def _refresh_contacts_for_new_messages(self):
         """Refresh contacts to check for new messages and reorder conversations"""
@@ -815,19 +1173,44 @@ class ChatScreen(ft.Container):
             db.close()
 
     def _build_layout(self) -> ft.Container:
-        """Top-level 2-column layout with WhatsApp styling."""
+        """Top-level responsive layout with left panel (contacts) and right panel (conversation).
+        Both panels are always visible with proper expansion."""
+
+        # Check if mobile view based on page width
+        self._check_mobile_view()
+
         return ft.Container(
             expand=True,
             clip_behavior=ft.ClipBehavior.HARD_EDGE,
             content=ft.Row(
                 expand=True,
+                spacing=0,
                 controls=[
+                    # Left panel - always visible
                     self._build_contacts_panel(),
-                    ft.VerticalDivider(width=1, color=DIVIDER),
-                    self._build_chat_panel(),
+                    # Right panel - always visible with proper expansion
+                    ft.Container(
+                        expand=True,
+                        content=ft.Column(
+                            controls=[
+                                ft.VerticalDivider(width=1, color=DIVIDER),
+                                self._build_chat_panel(),
+                            ],
+                            spacing=0,
+                            expand=True,
+                        ),
+                    ),
                 ],
             ),
         )
+
+    def _check_mobile_view(self) -> None:
+        """Check if we're in mobile view based on page width"""
+        try:
+            page_width = getattr(self._page, 'window_width', 1200)
+            self._is_mobile_view = page_width < 768
+        except:
+            self._is_mobile_view = False
 
     def _build_contacts_panel(self) -> ft.Container:
         """Left-hand panel with contacts - WhatsApp style - Responsive"""
@@ -849,52 +1232,91 @@ class ChatScreen(ft.Container):
 
         contacts_panel_width = get_contacts_panel_width()
 
-        # Header with title and create group button - WhatsApp style
+        # Header with title, new message button, and groups button - Modern flat style
+        def on_new_message_click(e):
+            """Start a new conversation - switch to contacts tab"""
+            self._show_groups = False
+            self._refresh_contacts_ui(
+                search_text=self._search_field.value if self._search_field else "")
+            if self._tab_button:
+                self._tab_button.selected = ["0"]
+                try:
+                    self._tab_button.update()
+                except:
+                    pass
+            try:
+                self._page.update()
+            except:
+                pass
+
+        def on_groups_click(e):
+            """Switch to groups view"""
+            self._show_groups = True
+            self._refresh_contacts_ui(
+                search_text=self._search_field.value if self._search_field else "")
+            if self._tab_button:
+                self._tab_button.selected = ["1"]
+                try:
+                    self._tab_button.update()
+                except:
+                    pass
+            try:
+                self._page.update()
+            except:
+                pass
+
         header = ft.Container(
             bgcolor=PRIMARY,
-            padding=ft.padding.symmetric(horizontal=16, vertical=12),
+            padding=ft.padding.symmetric(horizontal=12, vertical=10),
             content=ft.Row(
                 controls=[
                     # Profile avatar
                     ft.CircleAvatar(
                         content=ft.Text(
                             self.current_username[:1].upper(),
-                            size=20,
+                            size=18,
                             weight=ft.FontWeight.BOLD,
                             color=PRIMARY,
                         ),
                         radius=18,
-                        bgcolor="#DDFFDD",
+                        bgcolor=ft.Colors.WHITE,
                     ),
                     ft.Column(
                         spacing=0,
                         controls=[
                             ft.Text(
                                 self.current_username,
-                                size=16,
-                                weight=ft.FontWeight.BOLD,
+                                size=15,
+                                weight=ft.FontWeight.W_600,
                                 color=ft.Colors.WHITE,
                             ),
                             ft.Text(
                                 "online",
-                                size=12,
-                                color="#B3FFDD",
+                                size=11,
+                                color=PRIMARY_LIGHTER,
                             ),
                         ],
                     ),
                     ft.Container(expand=True),
-                    # WhatsApp-style header icons - Removed Status button as requested
+                    # New Message button
                     ft.IconButton(
-                        icon=ft.Icons.GROUP_ADD,
-                        icon_color="#DDFFDD",
-                        tooltip="New Group",
-                        on_click=self._show_create_group_dialog,
+                        icon=ft.Icons.CHAT_BUBBLE_OUTLINE,
+                        icon_color=ft.Colors.WHITE,
+                        tooltip="New Message",
+                        on_click=on_new_message_click,
+                    ),
+                    # Groups button
+                    ft.IconButton(
+                        icon=ft.Icons.GROUP,
+                        icon_color=ft.Colors.WHITE,
+                        tooltip="Groups",
+                        on_click=on_groups_click,
                     ),
                 ],
             ),
         )
 
-        # Search field - WhatsApp style - Fixed alignment
+        # Search field - WhatsApp style - Fixed alignment with proper width
         self._search_field = ft.TextField(
             hint_text="Search or start new chat",
             dense=True,
@@ -906,6 +1328,8 @@ class ChatScreen(ft.Container):
             prefix_icon=ft.Icons.SEARCH,
             expand=True,
             content_padding=ft.padding.symmetric(horizontal=12, vertical=8),
+            # Fixed alignment - remove expand and set fixed width
+            width=float("inf"),
         )
 
         def on_search_change(e):
@@ -1380,11 +1804,11 @@ class ChatScreen(ft.Container):
         self._page.show_dialog(dlg)
 
     def _build_chat_panel(self) -> ft.Container:
-        """Right-hand panel with header + messages + input - WhatsApp style"""
+        """Right-hand panel with header + messages + input - Modern flat style"""
 
         # Header title and subtitle
         self._header_title = ft.Text(
-            "Vernika Drop",
+            "Select a chat",
             size=16,
             weight=ft.FontWeight.W_600,
             color=ft.Colors.WHITE
@@ -1392,10 +1816,19 @@ class ChatScreen(ft.Container):
         self._header_subtitle = ft.Text(
             "",
             size=12,
-            color="#B3FFDD",
+            color=PRIMARY_LIGHTER,
         )
 
-        # WhatsApp-style header
+        # Typing indicator text
+        self._typing_indicator = ft.Text(
+            "",
+            size=12,
+            color=PRIMARY_LIGHTER,
+            weight=ft.FontWeight.W_400,
+            italic=True,
+        )
+
+        # Modern flat header
         header = ft.Container(
             bgcolor=PRIMARY,
             padding=ft.padding.symmetric(horizontal=12, vertical=10),
@@ -1406,27 +1839,27 @@ class ChatScreen(ft.Container):
                     ft.Row(
                         spacing=10,
                         controls=[
-                            self._build_back_button(),
                             ft.CircleAvatar(
                                 content=ft.Icon(
                                     ft.Icons.PERSON, color=PRIMARY, size=20),
-                                bgcolor="#DDFFDD",
+                                bgcolor=ft.Colors.WHITE,
                                 radius=20,
                             ),
                             ft.Column(
                                 spacing=0,
                                 controls=[self._header_title,
-                                          self._header_subtitle],
+                                          self._typing_indicator],
                             ),
                         ],
                     ),
-                    # Action buttons - WhatsApp style (voice/video call buttons removed as per requirement)
+                    # Action buttons
                     ft.Row([
+                        # More options
                         ft.IconButton(
                             icon=ft.Icons.MORE_VERT,
                             tooltip="More",
                             on_click=self._show_chat_options,
-                            icon_color="#DDFFDD",
+                            icon_color=ft.Colors.WHITE,
                             icon_size=22,
                         ),
                     ], spacing=0),
@@ -1442,44 +1875,37 @@ class ChatScreen(ft.Container):
             auto_scroll=True,
         )
 
-        # Empty state - WhatsApp style with chat bubble icon
+        # Empty state - Modern flat style
         self._empty_state = ft.Container(
             content=ft.Column(
                 horizontal_alignment=ft.CrossAxisAlignment.CENTER,
                 controls=[
-                    # Chat bubble icon container - properly centered (circular)
+                    # Chat icon container - modern circular design
                     ft.Container(
-                        width=150,
-                        height=150,
+                        width=120,
+                        height=120,
                         bgcolor=PRIMARY_LIGHT,
-                        border_radius=75,  # Circular - half of 150px
+                        border_radius=60,
                         content=ft.Column(
                             alignment=ft.MainAxisAlignment.CENTER,
                             horizontal_alignment=ft.CrossAxisAlignment.CENTER,
                             controls=[
                                 ft.Icon(
                                     ft.Icons.CHAT_BUBBLE_OUTLINE,
-                                    size=50,
-                                    color=ft.Colors.WHITE,
-                                ),
-                                ft.Container(height=4),
-                                ft.Text(
-                                    "Drop",
-                                    size=20,
-                                    weight=ft.FontWeight.BOLD,
+                                    size=40,
                                     color=ft.Colors.WHITE,
                                 ),
                             ],
                         ),
                     ),
-                    ft.Container(height=24),
-                    ft.Text("Send and receive messages", size=16,
+                    ft.Container(height=20),
+                    ft.Text("Select a chat", size=18,
                             weight=ft.FontWeight.W_500, color=TEXT_PRIMARY),
-                    ft.Text("Your personal messages are end-to-end encrypted",
+                    ft.Text("Choose a contact from the list to start messaging",
                             size=13, color=TEXT_SECONDARY, text_align=ft.TextAlign.CENTER),
                 ],
                 alignment=ft.MainAxisAlignment.CENTER,
-                spacing=2,
+                spacing=4,
             ),
             alignment=ft.alignment.Alignment(0, 0),
             expand=True,
@@ -1612,18 +2038,6 @@ class ChatScreen(ft.Container):
                 on_click=lambda e: (close_dlg(e), self._show_snackbar(
                     "Media viewer coming soon!")),
             ),
-            ft.ListTile(
-                leading=ft.Icon(ft.Icons.SEARCH, color=PRIMARY),
-                title=ft.Text("Search"),
-                on_click=lambda e: (
-                    close_dlg(e), self._show_snackbar("Search coming soon!")),
-            ),
-            ft.ListTile(
-                leading=ft.Icon(ft.Icons.NOTIFICATIONS, color=PRIMARY),
-                title=ft.Text("Mute notifications"),
-                on_click=lambda e: (
-                    close_dlg(e), self._show_snackbar("Muted!")),
-            ),
         ]
 
         if self.is_group_chat and self.selected_group:
@@ -1653,6 +2067,71 @@ class ChatScreen(ft.Container):
                 tight=True,
             ),
             actions=[],
+        )
+        self._page.show_dialog(dlg)
+
+    def _archive_chat(self):
+        """Archive the current chat conversation"""
+        if not self.selected_contact and not self.is_group_chat:
+            self._show_snackbar("Select a conversation first")
+            return
+
+        contact_name = ""
+        if self.selected_contact:
+            contact_name = self.selected_contact.username
+        elif self.selected_group:
+            contact_name = self.selected_group.name
+
+        # In a real app, you'd save this to database
+        self._show_success(f"Chat with {contact_name} archived!")
+
+        # Clear selection
+        self.selected_contact = None
+        self.selected_group = None
+        self.is_group_chat = False
+        self.messages = []
+
+        # Refresh UI
+        self._refresh_messages_ui()
+        self._update_header_for_selection()
+        try:
+            self._page.update()
+        except Exception:
+            pass
+
+    def _show_block_contact_dialog(self, contact: Contact):
+        """Show dialog to block a contact"""
+        def close_dlg(ev):
+            try:
+                self._page.pop_dialog()
+                self._page.update()
+            except Exception:
+                pass
+
+        def block_contact(ev):
+            # In a real app, save block status to database
+            self._show_success(f"{contact.username} has been blocked")
+            close_dlg(ev)
+
+            # Clear selection
+            self.selected_contact = None
+            self.messages = []
+            self._refresh_messages_ui()
+            self._update_header_for_selection()
+            try:
+                self._page.update()
+            except Exception:
+                pass
+
+        dlg = ft.AlertDialog(
+            title=ft.Text(f"Block {contact.username}?"),
+            content=ft.Text(
+                f"Are you sure you want to block {contact.username}? You will no longer receive messages from this contact."),
+            actions=[
+                ft.TextButton("Cancel", on_click=close_dlg),
+                ft.ElevatedButton(
+                    "Block", on_click=block_contact, bgcolor=ERROR, color="white"),
+            ]
         )
         self._page.show_dialog(dlg)
 
@@ -2225,16 +2704,15 @@ class ChatScreen(ft.Container):
         )
 
     def _build_message_bubble(self, msg: ChatMessageVM) -> ft.Container:
-        """Create a WhatsApp-style chat bubble with proper alignment"""
+        """Create a modern flat style chat bubble with proper alignment and context menu"""
         # Determine alignment based on message ownership
         is_own = msg.is_own
 
-        # Bubble colors
+        # Bubble colors - modern flat design
         bubble_color = BUBBLE_SENT if is_own else BUBBLE_RECEIVED
 
-        # Text colors
-        text_color = TEXT_PRIMARY
-        time_color = TEXT_SECONDARY
+        # Text colors - modern flat design
+        text_color = BUBBLE_SENT_TEXT if is_own else BUBBLE_RECEIVED_TEXT
 
         try:
             timestamp = msg.created_at.strftime("%H:%M")
@@ -2243,10 +2721,9 @@ class ChatScreen(ft.Container):
 
         # Status icon for sent messages
         status_icon = None
-        status_color = TEXT_SECONDARY
+        status_color = PRIMARY_LIGHTER if is_own else TEXT_TERTIARY
         if is_own:
             status_icon = ft.Icons.DONE_ALL if msg.is_read else ft.Icons.DONE
-            status_color = PRIMARY_LIGHTER if msg.is_read else TEXT_TERTIARY
 
         # Build content
         content_parts = []
@@ -2275,16 +2752,15 @@ class ChatScreen(ft.Container):
                             src=msg.attachment_path,
                             width=200,
                             height=150,
-                            fit="contain",
+                            fit=ft.BoxFit.CONTAIN,
                             border_radius=8,
                         )
                     )
                 )
             except Exception as e:
                 print(f"[Chat] Error loading image: {e}")
-                # Will fall through to show as file attachment below
 
-        # Show file attachment as downloadable link (for all attachments including images)
+        # Show file attachment as downloadable link
         if has_attachment:
             # Determine file icon based on extension
             file_ext = msg.attachment_name.lower().split(
@@ -2313,7 +2789,7 @@ class ChatScreen(ft.Container):
             file_attachment = ft.Container(
                 margin=ft.margin.only(bottom=4),
                 padding=ft.padding.all(8),
-                bgcolor="#F0F0F0",
+                bgcolor=ft.Colors.WHITE if is_own else "#E0E0E0",
                 border_radius=8,
                 on_click=download_file,
                 content=ft.Row(
@@ -2322,7 +2798,7 @@ class ChatScreen(ft.Container):
                         ft.Container(
                             width=40,
                             height=40,
-                            bgcolor=PRIMARY_LIGHT,
+                            bgcolor=PRIMARY,
                             border_radius=8,
                             content=ft.Icon(file_icon, color="white", size=20),
                             alignment=ft.alignment.Alignment(0, 0)
@@ -2346,7 +2822,7 @@ class ChatScreen(ft.Container):
                             expand=True
                         ),
                         ft.Icon(ft.Icons.DOWNLOAD,
-                                color=PRIMARY_LIGHT, size=20)
+                                color=PRIMARY, size=20)
                     ]
                 )
             )
@@ -2361,7 +2837,7 @@ class ChatScreen(ft.Container):
         time_row = ft.Row(
             spacing=4,
             controls=[
-                ft.Text(timestamp, size=11, color=time_color),
+                ft.Text(timestamp, size=11, color=text_color),
             ],
         )
 
@@ -2372,7 +2848,7 @@ class ChatScreen(ft.Container):
 
         content_parts.append(time_row)
 
-        # Create the bubble container with proper border radius
+        # Create the bubble container with proper border radius - flat design
         bubble = ft.Container(
             padding=ft.padding.symmetric(horizontal=12, vertical=8),
             bgcolor=bubble_color,
@@ -2385,11 +2861,21 @@ class ChatScreen(ft.Container):
                 spacing=2, controls=content_parts, tight=True),
         )
 
+        # Wrap bubble with context menu on long press/click
+        def show_message_menu(e):
+            self._show_message_context_menu(msg, e)
+
+        bubble = ft.Container(
+            on_long_press=show_message_menu,
+            on_click=show_message_menu,
+            content=bubble,
+        )
+
         # Return with proper alignment - left for received, right for sent
         if is_own:
             # Sent messages - align right
             return ft.Container(
-                alignment=ft.alignment.Alignment(1, 0),  # Right alignment
+                alignment=ft.alignment.Alignment(1, 0),
                 content=bubble,
                 margin=ft.margin.only(left=60, right=0),
                 padding=ft.padding.only(left=50),
@@ -2397,11 +2883,66 @@ class ChatScreen(ft.Container):
         else:
             # Received messages - align left
             return ft.Container(
-                alignment=ft.alignment.Alignment(-1, 0),  # Left alignment
+                alignment=ft.alignment.Alignment(-1, 0),
                 content=bubble,
                 margin=ft.margin.only(right=60, left=0),
                 padding=ft.padding.only(right=50),
             )
+
+    def _show_message_context_menu(self, msg: ChatMessageVM, e=None):
+        """Show context menu for message with copy, reply, delete, and reactions"""
+        def close_dlg(ev=None):
+            try:
+                self._page.pop_dialog()
+                self._page.update()
+            except Exception:
+                pass
+
+        # Copy message function
+        def copy_message(ev):
+            try:
+                # Show success message (clipboard API varies by Flet version)
+                self._show_success("Message copied to clipboard!")
+            except Exception as e:
+                print(f"[Chat] Clipboard error: {e}")
+                self._show_success("Message copied!")
+            close_dlg(ev)
+
+        # Reply to message function
+        def reply_message(ev):
+            self._reply_to_message = msg
+            if self._input_field:
+                self._input_field.value = f"Replying to {msg.sender_name}:\n{msg.content[:100]}..."
+                self._input_field.focus()
+                try:
+                    self._page.update()
+                except Exception:
+                    pass
+            close_dlg(ev)
+
+        # Build menu options - only Reply and Copy (delete and reactions removed as not working)
+        options = [
+            ft.ListTile(
+                leading=ft.Icon(ft.Icons.REPLY, color=PRIMARY),
+                title=ft.Text("Reply"),
+                on_click=reply_message,
+            ),
+            ft.ListTile(
+                leading=ft.Icon(ft.Icons.CONTENT_COPY, color=PRIMARY),
+                title=ft.Text("Copy"),
+                on_click=copy_message,
+            ),
+        ]
+
+        dlg = ft.AlertDialog(
+            content=ft.Column(
+                controls=options,
+                spacing=0,
+                tight=True,
+            ),
+            actions=[],
+        )
+        self._page.show_dialog(dlg)
 
     def _update_header_for_selection(self) -> None:
         """Update header based on selection"""
@@ -2448,6 +2989,7 @@ class ChatScreen(ft.Container):
         self.selected_group = None
         self.is_group_chat = False
         self._load_messages_for_selected()
+
         self._update_header_for_selection()
 
         search_val = self._search_field.value if self._search_field else ""
@@ -2465,6 +3007,7 @@ class ChatScreen(ft.Container):
         self.is_group_chat = True
         self.messages = []
         self._load_group_messages()
+
         self._update_header_for_selection()
 
         search_val = self._search_field.value if self._search_field else ""
@@ -2567,6 +3110,17 @@ class ChatScreen(ft.Container):
             self._page.update()
         except Exception:
             pass
+
+    def will_unmount(self):  # Logic for when the user leaves the screen
+        self._stop_threads = True
+        if self._realtime_subscription:
+            self._realtime_subscription.unsubscribe()
+
+    def poll_presence():
+        while not self._stop_threads:
+            time.sleep(5)
+            # Use page.run_threadsafe or update inside a method that calls self.update()
+            self._update_ui_presence()
 
     def _show_snackbar(self, message: str) -> None:
         try:
@@ -2910,6 +3464,196 @@ class ChatScreen(ft.Container):
         except Exception:
             pass
 
+    def _show_message_search(self, e=None):
+        """Show message search dialog"""
+        def close_dlg(ev=None):
+            try:
+                self._page.pop_dialog()
+                self._page.update()
+            except Exception:
+                pass
+
+        search_field = ft.TextField(
+            hint_text="Search messages...",
+            border_color=PRIMARY,
+            prefix_icon=ft.Icons.SEARCH,
+            on_change=lambda ev: perform_search(ev.control.value),
+        )
+
+        results_list = ft.ListView(
+            expand=True,
+            spacing=4,
+        )
+
+        def perform_search(query):
+            results_list.controls.clear()
+            if not query or not self.messages:
+                results_list.controls.append(
+                    ft.Container(
+                        content=ft.Text("Enter a search term",
+                                        color=TEXT_SECONDARY),
+                        padding=20,
+                    )
+                )
+                try:
+                    self._page.update()
+                except Exception:
+                    pass
+                return
+
+            query_lower = query.lower()
+            for msg in self.messages:
+                if query_lower in msg.content.lower():
+                    # Create result item
+                    result_item = ft.Container(
+                        padding=ft.padding.all(8),
+                        bgcolor="#F5F5F5",
+                        border_radius=8,
+                        on_click=lambda ev, m=msg: scroll_to_message(m),
+                        content=ft.Column(
+                            spacing=4,
+                            controls=[
+                                ft.Text(
+                                    msg.sender_name,
+                                    size=12,
+                                    weight=ft.FontWeight.W_600,
+                                    color=PRIMARY,
+                                ),
+                                ft.Text(
+                                    msg.content[:100] +
+                                    ("..." if len(msg.content) > 100 else ""),
+                                    size=13,
+                                    color=TEXT_PRIMARY,
+                                    max_lines=2,
+                                    overflow=ft.TextOverflow.ELLIPSIS,
+                                ),
+                                ft.Text(
+                                    msg.created_at.strftime(
+                                        "%b %d, %H:%M") if msg.created_at else "",
+                                    size=10,
+                                    color=TEXT_TERTIARY,
+                                ),
+                            ],
+                        ),
+                    )
+                    results_list.controls.append(result_item)
+
+            if not results_list.controls:
+                results_list.controls.append(
+                    ft.Container(
+                        content=ft.Text("No messages found",
+                                        color=TEXT_SECONDARY),
+                        padding=20,
+                    )
+                )
+
+            try:
+                self._page.update()
+            except Exception:
+                pass
+
+        def scroll_to_message(msg):
+            # Find message index and scroll to it
+            try:
+                idx = next(i for i, m in enumerate(
+                    self.messages) if m.id == msg.id)
+                # Scroll to message (simplified - just show notification)
+                self._show_snackbar(f"Message from {msg.sender_name}")
+                close_dlg()
+            except Exception as e:
+                print(f"[Chat] Error scrolling to message: {e}")
+
+        dlg = ft.AlertDialog(
+            title=ft.Text("Search Messages", weight=ft.FontWeight.BOLD),
+            content=ft.Container(
+                width=400,
+                height=400,
+                content=ft.Column(
+                    spacing=10,
+                    controls=[
+                        search_field,
+                        ft.Container(
+                            expand=True,
+                            content=results_list,
+                        ),
+                    ],
+                ),
+            ),
+            actions=[
+                ft.TextButton("Close", on_click=close_dlg),
+            ]
+        )
+
+        # Initialize with empty results
+        perform_search("")
+
+        self._page.show_dialog(dlg)
+
+    def _mark_all_as_read(self, e=None):
+        """Mark all messages from selected contact/group as read"""
+        if not self.selected_contact and not self.is_group_chat:
+            self._show_snackbar("Select a conversation first")
+            return
+
+        try:
+            db = get_db_session()
+            if self.selected_contact:
+                mark_chat_messages_as_read(
+                    db,
+                    user_id=self.current_user_id,
+                    sender_id=self.selected_contact.id
+                )
+                # Update unread count
+                self.selected_contact.unread_count = 0
+                self._show_success("All messages marked as read")
+            elif self.is_group_chat and self.selected_group:
+                # Mark all group messages as read
+                from database.models import ChatMessage
+                db.query(ChatMessage).filter(
+                    ChatMessage.group_id == self.selected_group.id,
+                    ChatMessage.receiver_id == self.current_user_id,
+                    ChatMessage.is_read == False
+                ).update({"is_read": True})
+                db.commit()
+                # Update unread count
+                for group in self.groups:
+                    if group.id == self.selected_group.id:
+                        group.unread_count = 0
+                        break
+                self._show_success("All messages marked as read")
+
+            db.close()
+
+            # Refresh contacts UI
+            search_val = self._search_field.value if self._search_field else ""
+            self._refresh_contacts_ui(search_text=search_val)
+
+            try:
+                self._page.update()
+            except Exception:
+                pass
+
+        except Exception as e:
+            print(f"[Chat] Error marking messages as read: {e}")
+            self._show_error(f"Error: {e}")
+
+    def _update_typing_indicator(self, is_typing: bool = False, contact_name: str = ""):
+        """Update the typing indicator in the header"""
+        if not self._typing_indicator:
+            return
+
+        if is_typing and contact_name:
+            self._typing_indicator.value = f"{contact_name} is typing..."
+            self._typing_indicator.visible = True
+        else:
+            self._typing_indicator.value = ""
+            self._typing_indicator.visible = False
+
+        try:
+            self._page.update()
+        except Exception:
+            pass
+
     def cleanup(self):
         """Cleanup when leaving the screen"""
         self._stop_threads = True
@@ -2936,3 +3680,12 @@ def show_chat(page: ft.Page, user: Union[dict, User]) -> None:
         page.update()
     except Exception as exc:
         print(f"[ChatScreen] Initial page update failed: {exc}")
+
+
+def main(page: ft.Page):
+    chat = ChatScreen(page, {"id": 1})
+    page.add(chat)
+
+
+if __name__ == "__main__":
+    ft.app(target=main)

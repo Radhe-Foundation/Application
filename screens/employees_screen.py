@@ -2771,31 +2771,40 @@ class EmployeesScreen(ft.Container):
             return
 
         def confirm_delete(e):
-            """Delete employee using PostgreSQL"""
+            """Delete employee with all related records using PostgreSQL"""
+            from database.operations import delete_employee_complete
+
             db = None
             try:
                 db = get_db_session()
 
-                # Get employee to delete
-                emp_to_delete = db.query(Employee).filter(
-                    Employee.id == emp_id).first()
-                if emp_to_delete:
-                    user_id_to_delete = emp_to_delete.user_id
+                # Use the comprehensive delete function
+                result = delete_employee_complete(db, emp_id)
 
-                    # Delete employee first
-                    db.delete(emp_to_delete)
+                if result.get("success"):
+                    # Build success message with deleted counts
+                    counts = result.get("deleted_counts", {})
+                    deleted_items = []
+                    for key, value in counts.items():
+                        if value > 0:
+                            deleted_items.append(
+                                f"{key.replace('_', ' ').title()}: {value}")
 
-                    # Then delete user if exists
-                    if user_id_to_delete:
-                        user_to_delete = db.query(User).filter(
-                            User.id == user_id_to_delete).first()
-                        if user_to_delete:
-                            db.delete(user_to_delete)
+                    if deleted_items:
+                        self._close_dialog()
+                        self._show_success(
+                            f"Employee '{emp_name}' deleted successfully with all related records!")
+                    else:
+                        self._close_dialog()
+                        self._show_success(
+                            f"Employee '{emp_name}' deleted successfully!")
 
-                db.commit()
-                self._close_dialog()
-                self._show_success("Employee deleted successfully!")
-                self._refresh()
+                    # Refresh the employee list to reflect changes
+                    self._refresh()
+                else:
+                    self._show_error(
+                        f"Error: {result.get('message', 'Unknown error')}")
+
             except Exception as ex:
                 self._show_error(f"Error: {str(ex)}")
                 if db:

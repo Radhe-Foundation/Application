@@ -355,6 +355,214 @@ def delete_employee(db: Session, emp_id: int):
     return False
 
 
+def delete_employee_complete(db: Session, emp_id: int):
+    """
+    Delete an employee and ALL their related records including:
+    - Employee profile
+    - User account (login credentials)
+    - Attendance records
+    - Leave requests and leave balances
+    - Tasks (created by and assigned to)
+    - Task comments
+    - Messages (sent and received)
+    - Time off requests
+    - Team memberships
+    - Project memberships
+    - Organization hierarchy entries
+    - Screen access permissions
+    - Button access permissions
+    - Notifications (received and sent)
+    - Chat group memberships
+    - Chat messages
+    - Meeting participations
+    - Email group memberships
+
+    Args:
+        db: Database session
+        emp_id: Employee ID to delete
+
+    Returns:
+        dict: Summary of deleted records
+    """
+    from database.models import (
+        Attendance, LeaveRequest, LeaveBalance, Task, TaskComment,
+        Message, TimeOff, TeamMember, ProjectMember, OrgHierarchy,
+        ScreenAccess, ButtonAccess, AppNotification, ChatGroupMember,
+        ChatMessage, MeetingParticipant, EmailGroupMember, User
+    )
+
+    employee = get_employee_by_id(db, emp_id)
+    if not employee:
+        return {"success": False, "message": "Employee not found"}
+
+    user_id = employee.user_id
+    deleted_counts = {
+        "employee": 0,
+        "user": 0,
+        "attendance": 0,
+        "leave_requests": 0,
+        "leave_balances": 0,
+        "tasks_assigned": 0,
+        "tasks_created": 0,
+        "task_comments": 0,
+        "messages_sent": 0,
+        "messages_received": 0,
+        "time_off_requests": 0,
+        "team_memberships": 0,
+        "project_memberships": 0,
+        "org_hierarchy": 0,
+        "screen_access": 0,
+        "button_access": 0,
+        "notifications_received": 0,
+        "notifications_sent": 0,
+        "chat_group_memberships": 0,
+        "chat_messages": 0,
+        "meeting_participations": 0,
+        "email_group_memberships": 0,
+    }
+
+    try:
+        # Delete related records in correct order (respecting foreign keys)
+
+        # 1. Delete attendance records
+        deleted_counts["attendance"] = db.query(Attendance).filter(
+            Attendance.employee_id == emp_id
+        ).delete()
+
+        # 2. Delete leave requests
+        deleted_counts["leave_requests"] = db.query(LeaveRequest).filter(
+            LeaveRequest.employee_id == emp_id
+        ).delete()
+
+        # 3. Delete leave balances
+        deleted_counts["leave_balances"] = db.query(LeaveBalance).filter(
+            LeaveBalance.employee_id == emp_id
+        ).delete()
+
+        # 4. Delete tasks where employee is assigned to
+        deleted_counts["tasks_assigned"] = db.query(Task).filter(
+            Task.assigned_to_id == emp_id
+        ).delete()
+
+        # 5. Delete tasks created by employee
+        deleted_counts["tasks_created"] = db.query(Task).filter(
+            Task.created_by_id == emp_id
+        ).delete()
+
+        # 6. Delete task comments
+        deleted_counts["task_comments"] = db.query(TaskComment).filter(
+            TaskComment.employee_id == emp_id
+        ).delete()
+
+        # 7. Delete messages sent by employee
+        deleted_counts["messages_sent"] = db.query(Message).filter(
+            Message.sender_id == emp_id
+        ).delete()
+
+        # 8. Delete messages received by employee
+        deleted_counts["messages_received"] = db.query(Message).filter(
+            Message.receiver_id == emp_id
+        ).delete()
+
+        # 9. Delete time off requests (linked via user_id)
+        if user_id:
+            deleted_counts["time_off_requests"] = db.query(TimeOff).filter(
+                TimeOff.user_id == user_id
+            ).delete()
+
+        # 10. Delete team memberships
+        deleted_counts["team_memberships"] = db.query(TeamMember).filter(
+            TeamMember.employee_id == emp_id
+        ).delete()
+
+        # 11. Delete project memberships
+        deleted_counts["project_memberships"] = db.query(ProjectMember).filter(
+            ProjectMember.employee_id == emp_id
+        ).delete()
+
+        # 12. Delete organization hierarchy entries
+        deleted_counts["org_hierarchy"] = db.query(OrgHierarchy).filter(
+            (OrgHierarchy.employee_id == emp_id) |
+            (OrgHierarchy.reports_to_id == emp_id)
+        ).delete()
+
+        # 13. Delete screen access permissions (via user_id)
+        if user_id:
+            deleted_counts["screen_access"] = db.query(ScreenAccess).filter(
+                ScreenAccess.user_id == user_id
+            ).delete()
+
+        # 14. Delete button access permissions (via user_id)
+        if user_id:
+            deleted_counts["button_access"] = db.query(ButtonAccess).filter(
+                ButtonAccess.user_id == user_id
+            ).delete()
+
+        # 15. Delete notifications received by user
+        if user_id:
+            deleted_counts["notifications_received"] = db.query(AppNotification).filter(
+                AppNotification.user_id == user_id
+            ).delete()
+
+        # 16. Delete notifications sent by user
+        if user_id:
+            deleted_counts["notifications_sent"] = db.query(AppNotification).filter(
+                AppNotification.sender_id == user_id
+            ).delete()
+
+        # 17. Delete chat group memberships
+        if user_id:
+            deleted_counts["chat_group_memberships"] = db.query(ChatGroupMember).filter(
+                ChatGroupMember.user_id == user_id
+            ).delete()
+
+        # 18. Delete chat messages
+        if user_id:
+            deleted_counts["chat_messages"] = db.query(ChatMessage).filter(
+                ChatMessage.sender_id == user_id
+            ).delete()
+
+        # 19. Delete meeting participations
+        if user_id:
+            deleted_counts["meeting_participations"] = db.query(MeetingParticipant).filter(
+                MeetingParticipant.user_id == user_id
+            ).delete()
+
+        # 20. Delete email group memberships
+        if user_id:
+            deleted_counts["email_group_memberships"] = db.query(EmailGroupMember).filter(
+                EmailGroupMember.user_id == user_id
+            ).delete()
+
+        # 21. Delete the employee profile
+        db.delete(employee)
+        deleted_counts["employee"] = 1
+
+        # 22. Delete the user account (login credentials)
+        if user_id:
+            user = get_user_by_id(db, user_id)
+            if user:
+                db.delete(user)
+                deleted_counts["user"] = 1
+
+        # Commit all deletions
+        db.commit()
+
+        return {
+            "success": True,
+            "message": "Employee and all related records deleted successfully",
+            "deleted_counts": deleted_counts
+        }
+
+    except Exception as e:
+        db.rollback()
+        return {
+            "success": False,
+            "message": f"Error deleting employee: {str(e)}",
+            "deleted_counts": deleted_counts
+        }
+
+
 def get_employees_by_department(db: Session, department_id: int):
     """Get all employees in a department"""
     return db.query(Employee).filter(Employee.department_id == department_id).all()
