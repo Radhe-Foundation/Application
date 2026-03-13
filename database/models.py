@@ -1597,6 +1597,13 @@ class CalendarEvent(Base):
     location = Column(String(200))
     organizer_id = Column(Integer, ForeignKey("users.id"))
     attendees = Column(Text)  # Comma-separated employee IDs
+    lead_id = Column(Integer, ForeignKey("crm_leads.id"), nullable=True)
+    contact_id = Column(Integer, ForeignKey("crm_contacts.id"), nullable=True)
+    agenda = Column(Text, nullable=True)
+    related_contract_id = Column(
+        Integer, ForeignKey("contracts.id"), nullable=True)
+    related_invoice_id = Column(
+        Integer, ForeignKey("invoices.id"), nullable=True)
     is_all_day = Column(Boolean, default=False)
     reminder_minutes = Column(Integer, default=15)
     created_at = Column(DateTime, default=datetime.utcnow)
@@ -1604,6 +1611,12 @@ class CalendarEvent(Base):
                         onupdate=datetime.utcnow)
 
     organizer = relationship("User", foreign_keys=[organizer_id])
+    lead = relationship("Lead", backref="events")
+    contact = relationship("Contact", backref="events")
+    related_contract = relationship("Contract", foreign_keys=[
+                                    related_contract_id], backref="linked_events")
+    related_invoice = relationship("Invoice", foreign_keys=[
+                                   related_invoice_id], backref="linked_events")
 
 
 class Warehouse(Base):

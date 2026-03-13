@@ -101,6 +101,7 @@ def main(page: ft.Page):
             ]))
             return
 
+
 # Initialize navigation manager
         from core.navigation_v2 import init_navigation
         init_navigation(page)

@@ -9,6 +9,7 @@ This module provides:
 - Common database operations
 """
 
+
 from database.connection import Base
 from database.session_manager import get_session, get_db_session
 import logging
@@ -380,7 +381,11 @@ class TaskRepository(BaseRepository):
             ).scalar() or 0
 
 
+# ==================== CRM Repository ====================
+
+
 # ==================== Dashboard Stats ====================
+
 
 def get_dashboard_stats() -> Dict[str, Any]:
     """Get dashboard statistics - optimized single query version"""

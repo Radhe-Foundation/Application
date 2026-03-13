@@ -1,36 +1,35 @@
-"""Database module for Vernika HRA"""
-from database.connection import get_engine, Base, init_db
+"""
+Central Database Module - Model Registry & Safe Imports
+Prevents circular import issues across CRM screens/repos
+"""
 
-# Import models with error handling to prevent duplicate table definition errors
+# Force model registry order to prevent circular imports
 try:
-    from database.models import *
-    from database.operations import *
-except Exception as e:
-    # Handle case where tables are already defined
-    import logging
-    logging.getLogger(__name__).warning(
-        f"Database import issue (may be expected): {e}")
+    from database.connection import Base
+    from database.models import (
+        User, Employee, Lead, Contact, CalendarEvent, Supplier,
+        Warehouse, Asset, Contract, Invoice, InvoiceItem
+    )
+except ImportError as e:
+    print(f"Model import warning (safe): {e}")
 
-# Import new session management
-from database.session_manager import (
-    get_session,
-    get_db_session,
-    get_db_health,
-    check_db_connection,
-    with_session,
-    query,
-    execute,
-    close_db_connection
-)
+# Export key symbols for safe imports
+__all__ = [
+    'Base', 'engine', 'User', 'Employee', 'Lead', 'Contact',
+    'CalendarEvent', 'Supplier', 'Warehouse', 'Asset',
+    'Contract', 'Invoice', 'InvoiceItem'
+]
 
-# Import repositories
-from database.repositories import (
-    BaseRepository,
-    UserRepository,
-    EmployeeRepository,
-    DepartmentRepository,
-    AttendanceRepository,
-    LeaveRepository,
-    TaskRepository,
-    get_dashboard_stats
-)
+# Verify critical CRM models available
+
+
+def verify_crm_models():
+    """Verify CRM models are registered (called by fix script)"""
+    required = ['User', 'Lead', 'Contact']
+    missing = []
+    for model in required:
+        if model not in globals():
+            missing.append(model)
+    if missing:
+        raise ImportError(f"Missing CRM models: {missing}")
+    print("✅ All CRM models registered successfully")
