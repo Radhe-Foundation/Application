@@ -363,9 +363,7 @@ def delete_employee_complete(db: Session, emp_id: int) -> dict:
     """
     deleted_counts = {
         'employees': 0, 'users': 0, 'attendance': 0, 'leaves': 0, 'tasks': 0,
-        'emails': 0,
-        'org_hierarchy': 0,
-        'chat_members': 0
+        'messages': 0, 'notifications': 0, 'call_logs': 0, 'permissions': 0, 'documents': 0, 'emails': 0
     }
 
     try:
@@ -499,36 +497,6 @@ def delete_employee_complete(db: Session, emp_id: int) -> dict:
             deleted_counts['email_recipients'] = total_email_recipients
             logger.info(
                 f"Email cleanup complete: recipients={total_email_recipients}, emails={deleted_counts['sent_emails']}")
-
-        # 8.5 Team Memberships (CRITICAL FIX - NOT NULL VIOLATION)
-        from database.models import TeamMember, ProjectMember, OrgHierarchy
-        from sqlalchemy import or_
-        team_member_count = db.query(TeamMember).filter(
-            TeamMember.employee_id == emp_id).delete(synchronize_session=False)
-        deleted_counts['team_members'] = team_member_count
-        logger.info(f"Team cleanup complete: members={team_member_count}")
-
-        # 8.6 Project Memberships
-        project_member_count = db.query(ProjectMember).filter(
-            ProjectMember.employee_id == emp_id).delete(synchronize_session=False)
-        deleted_counts['project_members'] = project_member_count
-        logger.info(
-            f"Project cleanup complete: members={project_member_count}")
-
-        # 8.7 Org Hierarchy (safer cleanup both directions)
-        org_count = db.query(OrgHierarchy).filter(
-            or_(OrgHierarchy.employee_id == emp_id,
-                OrgHierarchy.reports_to_id == emp_id)
-        ).delete(synchronize_session=False)
-        deleted_counts['org_hierarchy'] = org_count
-        logger.info(f"Org hierarchy cleanup complete: records={org_count}")
-
-        # 8.8 Chat Group Memberships (NEW: FK violation fix)
-        chat_member_count = db.query(ChatGroupMember).filter(
-            ChatGroupMember.user_id == user_id).delete(synchronize_session=False)
-        deleted_counts['chat_members'] = chat_member_count
-        logger.info(
-            f"Chat group cleanup complete: members={chat_member_count}")
 
         # 10. Delete Employee & User
         db.delete(employee)

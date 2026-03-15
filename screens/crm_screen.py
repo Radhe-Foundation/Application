@@ -1698,6 +1698,34 @@ class CRMScreen(ft.Container):
         dlg.open = True
         self._page.update()
 
+    def _delete_contract(self, contract_id):
+        def confirm(e):
+            try:
+                with get_session() as db:
+                    db.query(Contract).filter(Contract.id == contract_id).update(
+                        {Contract.status: "terminated"})
+                    db.commit()
+                    self._show_success("Contract terminated!")
+                    self._close_dialog()
+                    self._refresh()
+            except Exception as ex:
+                self._show_error(f"Delete failed: {str(ex)[:100]}")
+
+        dlg = ft.AlertDialog(
+            title=ft.Text("Terminate Contract?"),
+            content=ft.Text(
+                "This will mark the contract as terminated (soft delete)."),
+            actions=[
+                ft.TextButton(
+                    "Cancel", on_click=lambda _: self._close_dialog()),
+                ft.ElevatedButton("Terminate", on_click=confirm,
+                                  bgcolor=ERROR, color="white")
+            ]
+        )
+        self._page.overlay.append(dlg)
+        dlg.open = True
+        self._page.update()
+
     def _get_all_invoices(self):
         """Get all invoices."""
         try:

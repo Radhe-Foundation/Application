@@ -1010,47 +1010,43 @@ class TimeTrackingScreen(ft.Container):
             session.close()
 
     def _delete_timesheet(self, timesheet):
-        """Delete timesheet"""
-        def confirm_delete(e):
-            session = self._get_db()
+        """Delete timesheet - PROVEN PATTERN FROM INVENTORY SCREEN"""
+        def confirm(e):
+            db = get_db_session()
             try:
-                # Delete entries first
-                session.query(TimeEntry).filter_by(
+                # Delete related TimeEntry records first (cascade)
+                db.query(TimeEntry).filter_by(
                     timesheet_id=timesheet.id).delete()
 
                 # Delete timesheet
-                t = session.query(Timesheet).get(timesheet.id)
-                if t:
-                    session.delete(t)
+                ts = db.query(Timesheet).get(timesheet.id)
+                if ts:
+                    db.delete(ts)
+                    db.commit()
+                    self._show_success("Timesheet deleted successfully!")
+                else:
+                    self._show_error("Timesheet not found!")
 
-                session.commit()
-                self._page.snack_bar = ft.SnackBar(
-                    content=ft.Text("Timesheet deleted"), bgcolor=SUCCESS)
-                self._page.snack_bar.open = True
-                self._page.update()
-                self._page.close(dialog)
+                self._close_dialog()
                 self.refresh()
             except Exception as ex:
-                session.rollback()
-                self._page.snack_bar = ft.SnackBar(
-                    content=ft.Text(f"Error: {str(ex)}"), bgcolor=ERROR)
-                self._page.snack_bar.open = True
-                self._page.update()
+                db.rollback()
+                self._show_error(f"Delete failed: {str(ex)}")
             finally:
-                session.close()
+                db.close()
 
-        dialog = ft.AlertDialog(
-            title=ft.Text("Delete Timesheet"),
-            content=ft.Text("Are you sure you want to delete this timesheet?"),
+        dlg = ft.AlertDialog(
+            title=ft.Text("Delete Timesheet", color=ERROR),
+            content=ft.Text("Are you sure? This cannot be undone."),
             actions=[
                 ft.TextButton(
-                    "Cancel", on_click=lambda e: self._page.close(dialog)),
-                ft.FilledButton("Delete", on_click=confirm_delete,
-                                bgcolor=ERROR, color="WHITE"),
-            ],
+                    "Cancel", on_click=lambda _: self._close_dialog()),
+                ft.ElevatedButton("Delete", on_click=confirm,
+                                  bgcolor=ERROR, color="WHITE")
+            ]
         )
-        self._page.dialog = dialog
-        dialog.open = True
+        self._page.overlay.append(dlg)
+        dlg.open = True
         self._page.update()
 
     def _approve_timesheet(self, timesheet):
@@ -1117,6 +1113,31 @@ class TimeTrackingScreen(ft.Container):
         if hasattr(self, '_total_hours_text'):
             self._total_hours_text.value = f"{total:.1f} hours"
             self._total_hours_text.update()
+
+    def _close_dialog(self):
+        """Close current dialog"""
+        for overlay in self._page.overlay:
+            if hasattr(overlay, 'open'):
+                overlay.open = False
+        self._page.update()
+
+    def _show_success(self, message):
+        """Show success snackbar"""
+        self._page.snack_bar = ft.SnackBar(
+            content=ft.Text(message),
+            bgcolor=SUCCESS
+        )
+        self._page.snack_bar.open = True
+        self._page.update()
+
+    def _show_error(self, message):
+        """Show error snackbar"""
+        self._page.snack_bar = ft.SnackBar(
+            content=ft.Text(message),
+            bgcolor=ERROR
+        )
+        self._page.snack_bar.open = True
+        self._page.update()
 
     def _go_back(self, e):
         """Navigate back to home screen"""

@@ -4,7 +4,8 @@ Vernika HRA - Enhanced Employees Screen with ID/PASS Creation, Full Details, and
 
 from utils.supabase_storage import upload_to_supabase
 from components.forms import DatePickerField
-from database.operations import get_all_employees, get_employee_by_id
+from database.operations import get_all_employees, get_employee_by_id, delete_employee_complete
+from database.session_manager import get_db_session
 from database.models import Employee, User, Department, Position, Role
 from database.session_manager import get_session, get_db_session, check_db_connection
 import os
@@ -2771,47 +2772,30 @@ class EmployeesScreen(ft.Container):
             return
 
         def confirm_delete(e):
-            """Delete employee with all related records using PostgreSQL"""
-            from database.operations import delete_employee_complete
-
-            db = None
+            """Delete employee - FIXED WITH PROVEN PATTERN"""
+            db = get_db_session()
             try:
-                db = get_db_session()
-
-                # Use the comprehensive delete function
                 result = delete_employee_complete(db, emp_id)
-
                 if result.get("success"):
-                    # Build success message with deleted counts
+                    counts_str = ""
                     counts = result.get("deleted_counts", {})
-                    deleted_items = []
-                    for key, value in counts.items():
-                        if value > 0:
-                            deleted_items.append(
-                                f"{key.replace('_', ' ').title()}: {value}")
-
-                    if deleted_items:
-                        self._close_dialog()
-                        self._show_success(
-                            f"Employee '{emp_name}' deleted successfully with all related records!")
-                    else:
-                        self._close_dialog()
-                        self._show_success(
-                            f"Employee '{emp_name}' deleted successfully!")
-
-                    # Refresh the employee list to reflect changes
+                    if any(counts.values()):
+                        counts_str = " + " + \
+                            ", ".join(
+                                [f"{k}: {v}" for k, v in counts.items() if v > 0])
+                    self._show_success(
+                        f"Employee '{emp_name}' deleted{counts_str}!")
+                    self._close_dialog()
                     self._refresh()
                 else:
                     self._show_error(
-                        f"Error: {result.get('message', 'Unknown error')}")
-
+                        f"Delete failed: {result.get('message', 'Unknown error')}")
             except Exception as ex:
+                db.rollback()
+                print(f"Employee delete error: {ex}")
                 self._show_error(f"Error: {str(ex)}")
-                if db:
-                    db.rollback()
             finally:
-                if db:
-                    db.close()
+                db.close()
 
         dialog = ft.AlertDialog(
             modal=True,
