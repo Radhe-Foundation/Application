@@ -1,5 +1,5 @@
 """
-Vernika HRA - Attendance Management Screen - Fixed with Check-Out Support
+RadheFoundation HRA - Attendance Management Screen - Fixed with Check-Out Support
 Updated with view_mode support: admin (manage all) or employee (self only)
 """
 

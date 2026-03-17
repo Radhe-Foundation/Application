@@ -1,5 +1,5 @@
 """
-Vernika HRA - Input Validators
+RadheFoundation HRA - Input Validators
 Industry-Level Human Resource Management System
 
 This module provides validation functions for various input types.

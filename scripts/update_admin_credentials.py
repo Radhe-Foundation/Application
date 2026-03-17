@@ -21,9 +21,9 @@ def update_admin_credentials():
     """Update admin username and password in the cloud database"""
 
     # New credentials
-    new_username = "Vernika"
-    new_password = "vernika8268"
-    admin_email = "admin@vernika.com"
+    new_username = "Radhefoundation"
+    new_password = "radhe832"
+    admin_email = "admin@RadheFoundation.com"
 
     # Generate bcrypt hash for the new password
     password_hash = bcrypt.hashpw(

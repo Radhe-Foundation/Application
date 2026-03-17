@@ -1,5 +1,5 @@
 """
-Vernika HRA - Google Sheets Integration
+RadheFoundation HRA - Google Sheets Integration
 Export data to Google Sheets for cloud collaboration.
 """
 
@@ -112,7 +112,7 @@ class GoogleSheetsExporter:
     def generate_sheets_import_format(
         self,
         data: Dict[str, List[Dict]],
-        filename: str = "vernika_export"
+        filename: str = "RadheFoundation_export"
     ) -> str:
         """
         Generate data in a format easily imported to Google Sheets.
@@ -238,7 +238,7 @@ class GoogleSheetsExporter:
         """
         return '''#!/usr/bin/env python3
 """
-Vernika HRA - Google Sheets Sync Script
+RadheFoundation HRA - Google Sheets Sync Script
 Generated template for syncing data to Google Sheets.
 
 Instructions:
@@ -267,8 +267,8 @@ from google_auth_oauthlib.flow import InstalledAppFlow
 from googleapiclient.discovery import build
 
 
-class VernikaSheetsSync:
-    """Sync Vernika data to Google Sheets"""
+class RadheFoundationSheetsSync:
+    """Sync RadheFoundation data to Google Sheets"""
     
     SCOPES = [
         'https://www.googleapis.com/auth/spreadsheets',
@@ -361,7 +361,7 @@ class VernikaSheetsSync:
         """Sync all data to Google Sheets"""
         if not self.spreadsheet_id:
             self.spreadsheet_id = self.create_spreadsheet(
-                f'Vernika HRA Export - {datetime.now().strftime("%Y-%m-%d")}'
+                f'RadheFoundation HRA Export - {datetime.now().strftime("%Y-%m-%d")}'
             )
         
         print("\\nSyncing data...")
@@ -376,7 +376,7 @@ class VernikaSheetsSync:
 
 
 def main():
-    sync = VernikaSheetsSync()
+    sync = RadheFoundationSheetsSync()
     
     # Authenticate
     sync.authenticate()
@@ -431,7 +431,7 @@ class CloudDatabaseConfig:
         return {
             'host': os.environ.get(cls.ENV_VARS['postgresql']['host'], 'localhost'),
             'port': int(os.environ.get(cls.ENV_VARS['postgresql']['port'], 5432)),
-            'database': os.environ.get(cls.ENV_VARS['postgresql']['database'], 'vernika'),
+            'database': os.environ.get(cls.ENV_VARS['postgresql']['database'], 'RadheFoundation'),
             'user': os.environ.get(cls.ENV_VARS['postgresql']['user'], 'postgres'),
             'password': os.environ.get(cls.ENV_VARS['postgresql']['password'], ''),
             'sslmode': os.environ.get(cls.ENV_VARS['postgresql']['ssl'], 'prefer'),
@@ -444,7 +444,7 @@ class CloudDatabaseConfig:
         return {
             'host': os.environ.get(cls.ENV_VARS['mysql']['host'], 'localhost'),
             'port': int(os.environ.get(cls.ENV_VARS['mysql']['port'], 3306)),
-            'database': os.environ.get(cls.ENV_VARS['mysql']['database'], 'vernika'),
+            'database': os.environ.get(cls.ENV_VARS['mysql']['database'], 'RadheFoundation'),
             'user': os.environ.get(cls.ENV_VARS['mysql']['user'], 'root'),
             'password': os.environ.get(cls.ENV_VARS['mysql']['password'], ''),
         }
@@ -461,7 +461,7 @@ class CloudDatabaseConfig:
             Database URL string
         """
         if db_type == 'sqlite':
-            return 'sqlite:///vernika.db'
+            return 'sqlite:///RadheFoundation.db'
         elif db_type == 'postgresql':
             config = cls.get_postgresql_config()
             return (

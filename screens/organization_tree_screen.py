@@ -1,5 +1,5 @@
 """
-Vernika HRA - Organization Tree Screen
+RadheFoundation HRA - Organization Tree Screen
 Visual hierarchical organization chart with proper connections and improved UI
 """
 
@@ -710,7 +710,7 @@ class OrganizationTreeScreen(ft.Container):
                     ft.Container(height=8),
                     # Company Name
                     ft.Text(
-                        "Vernika Technologies",
+                        "RadheFoundation Technologies",
                         size=14, weight=ft.FontWeight.BOLD,
                         color=PRIMARY, text_align=ft.TextAlign.CENTER
                     ),

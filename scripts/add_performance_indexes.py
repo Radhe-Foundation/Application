@@ -1,5 +1,5 @@
 """
-Vernika - Database Indexes for Performance
+RadheFoundation - Database Indexes for Performance
 Creates indexes to improve query performance for 200+ users
 Run this script to add performance indexes to the database
 """

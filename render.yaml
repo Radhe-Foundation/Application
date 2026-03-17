@@ -1,6 +1,6 @@
 services:
   - type: web
-    name: vernika-hra
+    name: RadheFoundation-hra
     env: python
     buildCommand: pip install -r requirements-web.txt
     startCommand: python web_main.py
@@ -14,7 +14,7 @@ services:
       - key: SUPABASE_KEY
         value: "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InRib2Zqenp1ZnhxYndmbWZhcHhoIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzE5NTAwMDQsImV4cCI6MjA4NzUyNjAwNH0.lzMhQNeNYhXK42id-AH0A4tGxcnbeSPNra6ObOLW-lk"
       - key: SECRET_KEY
-        value: "vernika-hra-sb_secret_bKuUv8x4IB_h2IScg42xUQ_8XqYC-8H"
+        value: "RadheFoundation-hra-sb_secret_bKuUv8x4IB_h2IScg42xUQ_8XqYC-8H"
       - key: CORS_ORIGINS
         value: "*"
       - key: ENVIRONMENT

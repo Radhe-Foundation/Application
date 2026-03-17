@@ -1,5 +1,5 @@
 """
-Vernika HRA - Base Screen Class
+RadheFoundation HRA - Base Screen Class
 Industry-Level Human Resource Management System
 
 This module provides the base screen class that all screens should inherit from.
@@ -240,7 +240,7 @@ class BaseScreen(ft.Column):
 @dataclass
 class ScreenConfig:
     """Configuration dataclass for screen properties"""
-    title: str = "Vernika HRA"
+    title: str = "RadheFoundation HRA"
     icon: str = "apps"
     show_nav: bool = True
     require_auth: bool = True

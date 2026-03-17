@@ -19,12 +19,12 @@ sql = """
 -- Allow authenticated users to upload
 DROP POLICY IF EXISTS "Allow authenticated uploads" ON storage.objects;
 CREATE POLICY "Allow authenticated uploads" ON storage.objects
-FOR INSERT WITH CHECK (bucket_id = 'vernika-files' AND auth.role() = 'authenticated');
+FOR INSERT WITH CHECK (bucket_id = 'RadheFoundation-files' AND auth.role() = 'authenticated');
 
 -- Allow public read access
 DROP POLICY IF EXISTS "Allow public read" ON storage.objects;
 CREATE POLICY "Allow public read" ON storage.objects
-FOR SELECT USING (bucket_id = 'vernika-files');
+FOR SELECT USING (bucket_id = 'RadheFoundation-files');
 """
 
 print("Adding RLS policies...")

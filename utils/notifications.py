@@ -1,5 +1,5 @@
 """
-Vernika HRA - Notification System
+RadheFoundation HRA - Notification System
 In-app notification system for various events
 """
 

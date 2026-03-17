@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Vernika Database Migration Management Script
+RadheFoundation Database Migration Management Script
 
 This script provides commands to:
 1. Run all necessary migrations
@@ -559,7 +559,7 @@ def get_executed_migrations(session):
 def run_migrations():
     """Run all necessary migrations"""
     print("\n" + "="*60)
-    print("Running Vernika Database Migrations")
+    print("Running RadheFoundation Database Migrations")
     print("="*60 + "\n")
 
     engine = get_engine()
@@ -768,8 +768,8 @@ def seed_default_data():
         # Create default company
         if not session.query(Company).first():
             company = Company(
-                name="Vernika Technologies",
-                email="hr@vernika.com",
+                name="RadheFoundation Technologies",
+                email="hr@RadheFoundation.com",
                 phone="+91-XXXX-XXXXXX",
                 address="India"
             )
@@ -794,10 +794,10 @@ def seed_default_data():
             admin_role = session.query(Role).filter_by(name="admin").first()
             if admin_role:
                 admin_user = User(
-                    username="Vernika",
-                    email="admin@vernika.com",
+                    username="Radhefoundation",
+                    email="admin@RadheFoundation.com",
                     password_hash=bcrypt.hashpw(
-                        "vernika8268".encode(), bcrypt.gensalt()).decode(),
+                        "radhe832".encode(), bcrypt.gensalt()).decode(),
                     role_id=admin_role.id
                 )
                 session.add(admin_user)
@@ -851,7 +851,7 @@ def seed_default_data():
 
         session.commit()
         print("\n✅ Default data seeded successfully!")
-        print("   Login: Vernika / vernika8268")
+        print("   Login: RadheFoundation / radhe832")
 
     except Exception as e:
         session.rollback()
@@ -864,7 +864,7 @@ def seed_default_data():
 
 def main():
     parser = argparse.ArgumentParser(
-        description="Vernika Database Migration Manager")
+        description="RadheFoundation Database Migration Manager")
     parser.add_argument("command", choices=["run", "status", "reset", "cleanup", "seed"],
                         help="Command to execute")
 

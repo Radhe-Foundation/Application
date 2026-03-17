@@ -11,7 +11,7 @@ import sys
 from pathlib import Path
 
 # Add parent directory to path (required for imports)
-sys.path.insert(0, '/Users/shashankrajput/Desktop/Vernika')
+sys.path.insert(0, '/Users/shashankrajput/Desktop/RadheFoundation')
 
 
 def apply_enum_fix():
@@ -109,7 +109,7 @@ $$ LANGUAGE plpgsql;
 
 if __name__ == "__main__":
     print("="*60)
-    print("Vernika - User Status Enum Fix Migration")
+    print("RadheFoundation - User Status Enum Fix Migration")
     print("="*60)
 
     success = apply_enum_fix()

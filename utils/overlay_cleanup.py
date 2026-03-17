@@ -1,5 +1,5 @@
 """
-Vernika HRA - Page Overlay Cleanup Utilities
+RadheFoundation HRA - Page Overlay Cleanup Utilities
 Provides functions to clean up FilePickers and other overlay elements
 when navigating between screens to prevent stale component errors.
 """

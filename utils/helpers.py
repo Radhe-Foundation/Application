@@ -1,4 +1,4 @@
-# Vernika Application - Utility Functions
+# RadheFoundation Application - Utility Functions
 # Helper functions for common operations
 
 import re
@@ -148,7 +148,7 @@ def truncate_text(text: str, max_length: int = 50) -> str:
 class Logger:
     """Simple logger class"""
 
-    def __init__(self, name: str = "Vernika"):
+    def __init__(self, name: str = "RadheFoundation"):
         self.name = name
 
     def info(self, message: str):

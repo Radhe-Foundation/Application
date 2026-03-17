@@ -1,4 +1,4 @@
-# Vernika Application - Role Check
+# RadheFoundation Application - Role Check
 # Decorators and utilities for role-based access control
 
 import flet as ft

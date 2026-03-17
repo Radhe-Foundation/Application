@@ -1,5 +1,5 @@
 -- ===================================================================
--- Vernika HR Application - Performance Optimization Migration
+-- RadheFoundation HR Application - Performance Optimization Migration
 -- This migration disables RLS and adds comprehensive indexes
 -- for maximum database performance
 -- ===================================================================

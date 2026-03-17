@@ -1,5 +1,5 @@
 """
-Vernika HRA - Enhanced Departments Screen
+RadheFoundation HRA - Enhanced Departments Screen
 PostgreSQL/SQLAlchemy based departments management
 """
 
@@ -83,7 +83,7 @@ class DepartmentsScreen(ft.Container):
             content=ft.Row([
                 ft.Container(width=10),
                 ft.Icon(ft.Icons.BUSINESS, color="WHITE", size=28),
-                ft.Text("Vernika HRA - Departments Management", size=18,
+                ft.Text("RadheFoundation HRA - Departments Management", size=18,
                         color="WHITE", weight=ft.FontWeight.BOLD),
                 ft.Container(expand=True),
                 # Add Department button in header

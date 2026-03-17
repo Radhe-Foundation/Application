@@ -1,5 +1,5 @@
 """
-Vernika HRA - Login Screen - Updated
+RadheFoundation HRA - Login Screen - Updated
 Proper user handling and navigation with responsive design
 """
 
@@ -23,10 +23,10 @@ def get_logo_src() -> str:
     # Flet web serves assets from web_assets folder at root
     if is_web or os.name != 'nt':
         # Web mode - use web_assets path
-        return "/web_assets/assets/logo/Vernikalogo.png"
+        return "/web_assets/assets/logo/Radhefoundation.jpeg"
     else:
         # Desktop mode - use relative path
-        return "assets/logo/Vernikalogo.png"
+        return "assets/logo/Radhefoundation.jpeg"
 
 
 class LoginScreen(ft.Container):
@@ -133,9 +133,9 @@ class LoginScreen(ft.Container):
         # Logo - use Supabase bucket URL with proper fit for full fit
         # Use config values instead of hardcoded URL
         if SUPABASE_URL and SUPABASE_STORAGE_BUCKET:
-            logo_src = f"{SUPABASE_URL}/storage/v1/object/public/{SUPABASE_STORAGE_BUCKET}/logo/Vernikalogo.png"
+            logo_src = f"{SUPABASE_URL}/storage/v1/object/public/{SUPABASE_STORAGE_BUCKET}/logo/Radhefoundation.jpeg"
         else:
-            logo_src = "assets/logo/Vernikalogo.png"  # Fallback to local
+            logo_src = "assets/logo/Radhefoundation.jpeg"  # Fallback to local
 
         self.logo = ft.Container(
             width=logo_size,
@@ -151,11 +151,11 @@ class LoginScreen(ft.Container):
             ),
         )
 
-        # App title - VERNIKASTORE - responsive size
+        # App title - RadheFoundation - responsive size
         # For mobile, use dark color since background will be white
         is_mobile_init = window_width < 1100
         self.app_title = ft.Text(
-            "VERNIKASTORE",
+            "Radhe Foundation",
             size=title_size,
             weight=ft.FontWeight.W_900,
             color=ft.Colors.WHITE if not is_mobile_init else "#1A1C1E",
@@ -239,7 +239,7 @@ class LoginScreen(ft.Container):
         self.demo_card = ft.Container(visible=False)
 
         # Footer
-        self.footer = ft.Text("© 2024 Vernika HRA",
+        self.footer = ft.Text("© 2024 RadheFoundation HRA",
                               size=10, color=ft.Colors.GREY_500)
 
     def _on_forgot_password(self, e):
@@ -555,9 +555,9 @@ class LoginScreen(ft.Container):
 
         # Recreate logo with correct size (not reduced)
         if SUPABASE_URL and SUPABASE_STORAGE_BUCKET:
-            logo_src = f"{SUPABASE_URL}/storage/v1/object/public/{SUPABASE_STORAGE_BUCKET}/logo/Vernikalogo.png"
+            logo_src = f"{SUPABASE_URL}/storage/v1/object/public/{SUPABASE_STORAGE_BUCKET}/logo/Radhefoundation.jpeg"
         else:
-            logo_src = "assets/logo/Vernikalogo.png"
+            logo_src = "assets/logo/Radhefoundation.jpeg"
 
         logo = ft.Container(
             width=logo_size,
@@ -575,7 +575,7 @@ class LoginScreen(ft.Container):
 
         # Company title - responsive size
         app_title = ft.Text(
-            "VERNIKASTORE",
+            "Radhe Foundation",
             size=title_size,
             weight=ft.FontWeight.W_900,
             color="#1A1C1E",

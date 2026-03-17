@@ -1,5 +1,5 @@
 """
-Vernika HRA - Announcements Screen
+RadheFoundation HRA - Announcements Screen
 PostgreSQL/SQLAlchemy based announcements management
 """
 

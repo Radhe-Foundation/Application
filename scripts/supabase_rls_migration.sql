@@ -1,5 +1,5 @@
 -- =============================================================================
--- VERNIKA HRA - RLS (Row Level Security) Migration Script
+-- RadheFoundation HRA - RLS (Row Level Security) Migration Script
 -- =============================================================================
 -- This script enables RLS on all tables and creates security policies
 -- Run this in Supabase SQL Editor: https://supabase.com/dashboard/sql

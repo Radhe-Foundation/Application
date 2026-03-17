@@ -1,5 +1,5 @@
 """
-Vernika HRA - Screen Access Management
+RadheFoundation HRA - Screen Access Management
 PostgreSQL/SQLAlchemy based screen access control for employees
 """
 

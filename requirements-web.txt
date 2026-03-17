@@ -1,4 +1,4 @@
-# Vernika HRA - Web Deployment Dependencies
+# RadheFoundation HRA - Web Deployment Dependencies
 # For Deta Space, Vercel, Render, Railway
 
 # GUI Framework with web support

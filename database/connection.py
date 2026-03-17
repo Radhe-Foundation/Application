@@ -1,5 +1,5 @@
 """
-Vernika - Database Connection Module
+RadheFoundation - Database Connection Module
 Industry-Level Human Resource Management System
 
 This module handles database connection management, session creation,
@@ -59,7 +59,7 @@ def get_engine() -> Engine:
             "keepalives_idle": 30,
             "keepalives_interval": 5,
             "keepalives_count": 5,
-            "application_name": "Vernika_HRA",
+            "application_name": "RadheFoundation_HRA",
             "options": "-c statement_timeout=30000 -c work_mem=16MB"
         }
 

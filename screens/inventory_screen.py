@@ -1,5 +1,5 @@
 """
-Vernika HRA - Inventory/Stock Management Screen (Redesigned)
+RadheFoundation HRA - Inventory/Stock Management Screen (Redesigned)
 Multi-Tab Professional Interface with Advanced Features
 """
 

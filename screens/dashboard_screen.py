@@ -1,5 +1,5 @@
 """
-Vernika HRA - Dashboard Screen
+RadheFoundation HRA - Dashboard Screen
 Modern dashboard with sidebar navigation matching admin_screen style
 """
 
@@ -144,7 +144,7 @@ class DashboardScreen(ft.Container):
         header = ft.Container(
             content=ft.Row([
                 ft.Text(
-                    "Vernika HRA - Dashboard",
+                    "RadheFoundation HRA - Dashboard",
                     size=18,
                     weight=ft.FontWeight.BOLD,
                     color=PRIMARY

@@ -1,5 +1,5 @@
 """
-Vernika HRA - Audit Logging System
+RadheFoundation HRA - Audit Logging System
 Tracks all user activities and system changes
 """
 

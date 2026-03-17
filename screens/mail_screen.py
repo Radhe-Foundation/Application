@@ -1,5 +1,5 @@
 """
-Vernika HRA - Internal Mail Screen
+RadheFoundation HRA - Internal Mail Screen
 Improved UI with compact cards, popup modals, and better UX
 Fixed: Multiple CC/BCC, Bulk Send, Professional Compose UI, Improved Recipient Picker
 """
@@ -873,7 +873,7 @@ class MailScreen(ft.Container):
             current_recipients = self._bcc_recipients
 
         user_list = [
-            (u.id, u.username, u.email or f"{u.username}@vernika.local")
+            (u.id, u.username, u.email or f"{u.username}@RadheFoundation.local")
             for u in self._all_users
             if u.id != self.current_user_id
         ]

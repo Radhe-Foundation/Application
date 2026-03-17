@@ -1,4 +1,4 @@
--- Vernika HRA - Notifications Database Migration
+-- RadheFoundation HRA - Notifications Database Migration
 -- Run this SQL in your Supabase SQL Editor to enable notifications
 
 -- ==================== NOTIFICATION TABLES ====================
@@ -47,7 +47,7 @@ CREATE INDEX IF NOT EXISTS idx_notifications_priority ON app_notifications(prior
 -- Enable Row Level Security (RLS)
 ALTER TABLE app_notifications ENABLE ROW LEVEL SECURITY;
 
--- RLS Policy: Allow all access (simplified for Vernika since we handle auth in app)
+-- RLS Policy: Allow all access (simplified for RadheFoundation since we handle auth in app)
 -- For production, you'd want to implement proper user-based policies
 CREATE POLICY "Allow all access to notifications" ON app_notifications
     FOR ALL USING (true) WITH CHECK (true);
@@ -67,7 +67,7 @@ END $$;
 
 -- Insert sample notification for testing (optional)
 -- INSERT INTO app_notifications (user_id, title, message, notification_type, priority)
--- SELECT id, 'Welcome to Vernika!', 'Your account is now active. Start exploring the features.', 'system', 'medium'
+-- SELECT id, 'Welcome to RadheFoundation!', 'Your account is now active. Start exploring the features.', 'system', 'medium'
 -- FROM users WHERE username = 'admin' LIMIT 1;
 
 -- Function to get unread notification count for a user

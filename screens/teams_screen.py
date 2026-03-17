@@ -1,5 +1,5 @@
 """
-Vernika HRA - Teams Management Screen
+RadheFoundation HRA - Teams Management Screen
 Enhanced with employee members, roles, work status, and task assignment
 """
 

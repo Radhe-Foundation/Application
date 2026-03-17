@@ -1,5 +1,5 @@
 """
-Vernika - Supabase Environment Setup Script
+RadheFoundation - Supabase Environment Setup Script
 Run this script to generate .env file with Supabase connection
 """
 
@@ -17,7 +17,7 @@ CONNECTION_STRINGS = {
 }
 
 # Generate .env file content
-ENV_CONTENT = f"""# Vernika - Environment Configuration
+ENV_CONTENT = f"""# RadheFoundation - Environment Configuration
 # Generated for Supabase + Vercel Deployment
 
 # ==================== DATABASE CONFIGURATION ====================
@@ -42,10 +42,10 @@ DB_ECHO=false
 # ==================== SUPABASE CONFIGURATION ====================
 SUPABASE_URL={SUPABASE_URL}
 SUPABASE_KEY={SUPABASE_KEY}
-SUPABASE_STORAGE_BUCKET=vernika-files
+SUPABASE_STORAGE_BUCKET=RadheFoundation-files
 
 # ==================== SECURITY ====================
-SECRET_KEY=vernika-hra-secret-key-change-in-production-2024-always-change
+SECRET_KEY=RadheFoundation-hra-secret-key-change-in-production-2024-always-change
 ACCESS_TOKEN_EXPIRE_MINUTES=480
 REFRESH_TOKEN_EXPIRE_DAYS=7
 BCRYPT_ROUNDS=12
@@ -53,12 +53,12 @@ SESSION_TIMEOUT_MINUTES=30
 
 # ==================== APPLICATION ====================
 ENVIRONMENT=production
-APP_NAME=Vernika
+APP_NAME=RadheFoundation
 APP_VERSION=1.0.0
 
 # ==================== COMPANY ====================
-COMPANY_NAME=Vernika Technologies
-COMPANY_EMAIL=hr@vernika.com
+COMPANY_NAME=RadheFoundation Technologies
+COMPANY_EMAIL=hr@RadheFoundation.com
 
 # ==================== THEME ====================
 THEME_MODE=light
@@ -69,8 +69,8 @@ VERCEL_ENV = f"""
 DATABASE_URL={CONNECTION_STRINGS["transaction"]}
 SUPABASE_URL={SUPABASE_URL}
 SUPABASE_KEY={SUPABASE_KEY}
-SUPABASE_STORAGE_BUCKET=vernika-files
-SECRET_KEY=vernika-hra-secret-key-change-in-production-2024-always-change
+SUPABASE_STORAGE_BUCKET=RadheFoundation-files
+SECRET_KEY=RadheFoundation-hra-secret-key-change-in-production-2024-always-change
 ENVIRONMENT=production
 """
 
@@ -81,7 +81,7 @@ if __name__ == "__main__":
     env_file_path = os.path.join(os.path.dirname(__file__), "..", ".env")
 
     print("=" * 60)
-    print("Vernika - Supabase + Vercel Setup")
+    print("RadheFoundation - Supabase + Vercel Setup")
     print("=" * 60)
     print("\n📋 Connection Strings:")
     print("\n🔷 Transaction Pooler (Recommended for Vercel):")

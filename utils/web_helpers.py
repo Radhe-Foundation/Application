@@ -1,5 +1,5 @@
 """
-Vernika HRA - Web Helpers
+RadheFoundation HRA - Web Helpers
 Helper functions for web deployment including asset handling and responsive design
 """
 
@@ -39,8 +39,8 @@ def get_asset_path(relative_path: str) -> str:
 
 
 def get_logo_path() -> str:
-    """Get the Vernika logo path - works in both desktop and web"""
-    return get_asset_path("assets/logo/Vernikalogo.png")
+    """Get the RadheFoundation logo path - works in both desktop and web"""
+    return get_asset_path("assets/logo/Radhefoundation.jpeg")
 
 
 def get_profile_photo_path(filename: str) -> str:

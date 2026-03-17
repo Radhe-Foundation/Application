@@ -1,4 +1,4 @@
--- Performance Indexes for Vernika HR Application
+-- Performance Indexes for RadheFoundation HR Application
 -- This script safely creates indexes only for existing tables
 -- Run this in Supabase SQL Editor
 

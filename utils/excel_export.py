@@ -1,5 +1,5 @@
 """
-Vernika HRA - Excel Export Utilities
+RadheFoundation HRA - Excel Export Utilities
 Export data to Excel format with proper ordering for Google Sheets compatibility.
 """
 

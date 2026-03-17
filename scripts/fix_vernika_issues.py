@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Fix script for Vernika issues
+Fix script for RadheFoundation issues
 Run this to fix the identified issues
 """
 
@@ -10,7 +10,7 @@ import sys
 
 def fix_announcements_dropdown():
     """Fix on_change to on_select for Dropdown in announcements_screen.py"""
-    file_path = "/Users/shashankrajput/Desktop/Vernika/screens/announcements_screen.py"
+    file_path = "/Users/shashankrajput/Desktop/RadheFoundation/screens/announcements_screen.py"
 
     try:
         with open(file_path, 'r') as f:
@@ -42,7 +42,7 @@ def verify_button_access_config():
     ]
 
     try:
-        sys.path.insert(0, '/Users/shashankrajput/Desktop/Vernika')
+        sys.path.insert(0, '/Users/shashankrajput/Desktop/RadheFoundation')
         from utils.screen_access import BUTTON_ACCESS_CONFIG, is_admin_user
 
         for btn in critical_buttons:
@@ -62,7 +62,7 @@ def check_database_users():
     print("\n=== Checking Database Users ===")
 
     try:
-        sys.path.insert(0, '/Users/shashankrajput/Desktop/Vernika')
+        sys.path.insert(0, '/Users/shashankrajput/Desktop/RadheFoundation')
         from database.session_manager import get_db_session
         from database.models import User
 
@@ -79,7 +79,7 @@ def check_database_users():
 
 
 def main():
-    print("Running Vernika fixes...")
+    print("Running RadheFoundation fixes...")
     print("=" * 50)
 
     fix_announcements_dropdown()

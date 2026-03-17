@@ -1,5 +1,5 @@
 """
-Vernika HRA - Enhanced Employees Screen with ID/PASS Creation, Full Details, and Document Generation
+RadheFoundation HRA - Enhanced Employees Screen with ID/PASS Creation, Full Details, and Document Generation
 """
 
 from utils.supabase_storage import upload_to_supabase
@@ -125,7 +125,7 @@ class EmployeesScreen(ft.Container):
             content=ft.Row([
                 ft.Container(width=10),
                 ft.Icon(ft.Icons.BADGE, color="WHITE", size=28),
-                ft.Text("Vernika HRA - Employees Management", size=18,
+                ft.Text("RadheFoundation HRA - Employees Management", size=18,
                         color="WHITE", weight=ft.FontWeight.BOLD),
                 ft.Container(expand=True),
                 # Add Employee button in header
@@ -1288,7 +1288,7 @@ class EmployeesScreen(ft.Container):
                                 ft.Icons.BADGE, color="#2E86AB", size=24)
                         ),
                         ft.Column([
-                            ft.Text("VERNIKA TECHNOLOGIES", size=14,
+                            ft.Text("RadheFoundation TECHNOLOGIES", size=14,
                                     color="WHITE", weight=ft.FontWeight.BOLD),
                             ft.Text("Employee Identity Card",
                                     size=9, color="WHITE"),
@@ -1404,7 +1404,7 @@ class EmployeesScreen(ft.Container):
                 project_root = os.path.dirname(
                     os.path.dirname(os.path.abspath(__file__)))
                 logo_path = os.path.join(
-                    project_root, "assets", "logo", "Vernikalogo.png")
+                    project_root, "assets", "logo", "Radhefoundation.jpeg")
                 logo_x = 8
                 logo_y = height - header_height + 6
                 logo_size = 22
@@ -1420,7 +1420,7 @@ class EmployeesScreen(ft.Container):
                 c.setFillColor(colors.white)
                 c.setFont("Helvetica-Bold", 11)
                 c.drawString(logo_x + logo_size + 6, height -
-                             16, "VERNIKA TECHNOLOGIES")
+                             16, "RadheFoundation TECHNOLOGIES")
                 c.setFont("Helvetica", 6)
                 c.drawString(logo_x + logo_size + 6, height -
                              23, "Employee Identity Card")
@@ -1839,7 +1839,7 @@ class EmployeesScreen(ft.Container):
                         ft.Row([
                             ft.Icon(ft.Icons.BUSINESS, color="WHITE", size=36),
                             ft.Column([
-                                ft.Text("VERNIKA TECHNOLOGIES", size=22,
+                                ft.Text("RadheFoundation TECHNOLOGIES", size=22,
                                         color="WHITE", weight=ft.FontWeight.BOLD),
                                 ft.Text("Registered Office: India",
                                         size=11, color="WHITE"),
@@ -2131,7 +2131,8 @@ class EmployeesScreen(ft.Container):
                                     "____________________________", size=10),
                                 ft.Text("Authorized Signatory",
                                         size=9, color="#424242"),
-                                ft.Text("For Vernika Technologies", size=9),
+                                ft.Text(
+                                    "For RadheFoundation Technologies", size=9),
                             ], horizontal_alignment=ft.CrossAxisAlignment.END, spacing=5),
                         ], spacing=10),
                     ], spacing=5)
@@ -2177,7 +2178,8 @@ class EmployeesScreen(ft.Container):
 
                 c.setFillColor(colors.white)
                 c.setFont("Helvetica-Bold", 18)
-                c.drawString(20*mm, height - 25*mm, "VERNIKA TECHNOLOGIES")
+                c.drawString(20*mm, height - 25*mm,
+                             "RadheFoundation TECHNOLOGIES")
                 c.setFont("Helvetica", 9)
                 c.drawString(20*mm, height - 32*mm, "Registered Office: India")
                 c.setFont("Helvetica", 8)
@@ -2438,7 +2440,8 @@ class EmployeesScreen(ft.Container):
                 c.drawRightString(width - 20*mm, y, "Authorized Signatory")
                 y -= 5*mm
                 c.drawString(20*mm, y, "Date: ________________")
-                c.drawRightString(width - 20*mm, y, "For Vernika Technologies")
+                c.drawRightString(width - 20*mm, y,
+                                  "For RadheFoundation Technologies")
 
                 # Footer
                 c.setFont("Helvetica", 8)
@@ -2541,7 +2544,7 @@ class EmployeesScreen(ft.Container):
                     bgcolor="#1976D2",
                     padding=padding.all(12),
                     content=ft.Row([
-                        ft.Text("VERNIKA TECHNOLOGIES", size=14,
+                        ft.Text("RadheFoundation TECHNOLOGIES", size=14,
                                 color="WHITE", weight=ft.FontWeight.BOLD),
                         ft.Container(expand=True),
                         ft.Text("Salary Slip", size=12, color="WHITE"),
@@ -2638,7 +2641,7 @@ class EmployeesScreen(ft.Container):
                 c.setFillColor(colors.white)
                 c.setFont("Helvetica-Bold", 18)
                 c.drawCentredString(width/2, height - 30,
-                                    "VERNIKA TECHNOLOGIES")
+                                    "RadheFoundation TECHNOLOGIES")
                 c.setFont("Helvetica", 12)
                 c.drawCentredString(width/2, height - 42, "Salary Slip")
 

@@ -1,5 +1,5 @@
 """
-Vernika - Database Session Manager
+RadheFoundation - Database Session Manager
 Fixed version with proper session handling and connection pooling
 
 This module provides centralized database session management with:
@@ -63,7 +63,7 @@ def get_engine() -> Engine:
             "keepalives_idle": 30,
             "keepalives_interval": 5,
             "keepalives_count": 5,
-            "application_name": "Vernika_HRA",
+            "application_name": "RadheFoundation_HRA",
             "options": "-c statement_timeout=30000"  # 30 second timeout
         }
 

@@ -1,5 +1,5 @@
 """
-Vernika HRA - Transactions/Payments Screen
+RadheFoundation HRA - Transactions/Payments Screen
 Financial transactions recording with attachments
 """
 

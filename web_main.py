@@ -1,5 +1,5 @@
 """
-Vernika HRA - Web Entry Point
+RadheFoundation HRA - Web Entry Point
 For deployment on Deta Space / Vercel / Render
 """
 import flet as ft
@@ -47,7 +47,7 @@ def main(page: ft.Page):
         # Set up assets for web - list of asset paths
         # These will be served from the web_assets folder when deployed
         page.assets = [
-            "/assets/logo/Vernikalogo.png",
+            "/assets/logo/Radhefoundation.jpeg",
             "/assets/profile_photos/",
             "/assets/documents/",
         ]
@@ -122,6 +122,6 @@ def main(page: ft.Page):
 if __name__ == "__main__":
     import sys
     port = int(os.getenv("PORT", "8080"))
-    logger.info(f"Starting Vernika HRA on port {port}")
+    logger.info(f"Starting RadheFoundation HRA on port {port}")
     # Use run() for Flet 0.80.0+ (main as positional argument)
     ft.run(main, host="0.0.0.0", port=port)

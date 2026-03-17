@@ -1,5 +1,5 @@
 """
-Vernika - Database Utility Module
+RadheFoundation - Database Utility Module
 Centralized database operations with proper session management.
 
 This module provides:

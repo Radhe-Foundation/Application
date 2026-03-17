@@ -1,5 +1,5 @@
 """
-Vernika HRA - UI Helper Utilities
+RadheFoundation HRA - UI Helper Utilities
 Common utilities for UI improvements including debounce, loading states, and helpers
 """
 

@@ -1,5 +1,5 @@
 """
-Vernika HRA - Main Entry Point
+RadheFoundation HRA - Main Entry Point
 Fixed version with proper session management and performance optimizations
 """
 from utils.notification_manager import init_notification_manager

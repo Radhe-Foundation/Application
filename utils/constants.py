@@ -1,4 +1,4 @@
-# Vernika Application - Constants
+# RadheFoundation Application - Constants
 # Application-wide constants and enums
 
 from enum import Enum

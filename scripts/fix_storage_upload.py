@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Vernika - Fix Storage Upload Issue
+RadheFoundation - Fix Storage Upload Issue
 Updates RLS policies to allow file uploads with anon key
 """
 
@@ -14,7 +14,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 load_dotenv()
 
 DATABASE_URL = os.getenv("DATABASE_URL")
-BUCKET_NAME = os.getenv("SUPABASE_STORAGE_BUCKET", "vernika-files")
+BUCKET_NAME = os.getenv("SUPABASE_STORAGE_BUCKET", "RadheFoundation-files")
 
 
 def fix_storage_policies():
@@ -91,7 +91,7 @@ def fix_storage_policies():
         print("\n" + "="*60)
         print("✅ All RLS policies updated successfully!")
         print("="*60)
-        print("\nYou can now upload files in Vernika!")
+        print("\nYou can now upload files in RadheFoundation!")
         return True
 
     except Exception as e:

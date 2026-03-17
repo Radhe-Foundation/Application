@@ -86,7 +86,7 @@ def is_polling_active() -> bool:
 
 # Alternative: Simple file-based notification (for same-machine multi-user)
 
-ACCESS_FILE = "/tmp/vernika_access_change.json"
+ACCESS_FILE = "/tmp/RadheFoundation_access_change.json"
 
 
 def notify_access_change(user_id: int, access_data: Dict):

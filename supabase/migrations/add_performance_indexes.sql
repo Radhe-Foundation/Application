@@ -1,4 +1,4 @@
--- Performance Indexes for Vernika HR Application
+-- Performance Indexes for RadheFoundation HR Application
 -- Run this in Supabase SQL Editor to improve query performance
 -- This will significantly reduce the 831ms response time
 

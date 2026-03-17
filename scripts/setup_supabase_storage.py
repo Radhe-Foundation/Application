@@ -1,5 +1,5 @@
 """
-Vernika - Supabase Storage Setup
+RadheFoundation - Supabase Storage Setup
 Creates the storage bucket for file uploads
 """
 
@@ -13,7 +13,7 @@ sys.path.insert(0, script_dir)
 
 # Import config with explicit path to avoid package conflict
 spec = importlib.util.spec_from_file_location(
-    "vernika_config", os.path.join(script_dir, "config.py"))
+    "RadheFoundation_config", os.path.join(script_dir, "config.py"))
 config = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(config)
 
@@ -23,7 +23,7 @@ SUPABASE_STORAGE_BUCKET = config.SUPABASE_STORAGE_BUCKET
 
 
 def setup_storage():
-    """Create storage bucket for Vernika"""
+    """Create storage bucket for RadheFoundation"""
 
     if not SUPABASE_KEY:
         print("❌ Error: SUPABASE_KEY not configured in config.py")
@@ -117,7 +117,7 @@ def setup_storage():
 
 if __name__ == "__main__":
     print("=" * 60)
-    print("Vernika - Supabase Storage Setup")
+    print("RadheFoundation - Supabase Storage Setup")
     print("=" * 60)
     print()
 

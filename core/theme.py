@@ -1,5 +1,5 @@
 """
-Vernika HRA - Theme Configuration
+RadheFoundation HRA - Theme Configuration
 Industry-Level Human Resource Management System
 
 This module provides theme configuration and color utilities for Flet.

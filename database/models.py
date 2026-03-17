@@ -1,5 +1,5 @@
 """
-Vernika HRA - Database Models
+RadheFoundation HRA - Database Models
 Industry-Level Human Resource Management System
 """
 
@@ -904,8 +904,8 @@ def init_database():
         # Create default company
         if not session.query(Company).first():
             company = Company(
-                name="Vernika Technologies",
-                email="hr@vernika.com",
+                name="RadheFoundation Technologies",
+                email="hr@RadheFoundation.com",
                 phone="+91-XXXX-XXXXXX",
                 address="India"
             )
@@ -937,10 +937,10 @@ def init_database():
             admin_role = session.query(Role).filter_by(name="admin").first()
             if admin_role:
                 admin_user = User(
-                    username="Vernika",
-                    email="admin@vernika.com",
+                    username="Radhefoundation",
+                    email="admin@RadheFoundation.com",
                     password_hash=bcrypt.hashpw(
-                        "vernika8268".encode(), bcrypt.gensalt()).decode(),
+                        "radhe832".encode(), bcrypt.gensalt()).decode(),
                     role_id=admin_role.id
                 )
                 session.add(admin_user)
@@ -990,7 +990,7 @@ def init_database():
 
         session.commit()
         print("✅ Database initialized successfully!")
-        print("   Login: Vernika / vernika8268")
+        print("   Login: RadheFoundation / radhe832")
 
     except Exception as e:
         session.rollback()

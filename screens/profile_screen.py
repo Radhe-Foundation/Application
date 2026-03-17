@@ -1,5 +1,5 @@
 """
-Vernika HRA - Profile Screen
+RadheFoundation HRA - Profile Screen
 Simple profile screen for non-admin users with screen access management
 """
 
@@ -352,7 +352,7 @@ class ProfileScreen(ft.Container):
         role = "Employee"
         department = "Not assigned"
         position = "Not assigned"
-        email = f"{username}@vernika.com"
+        email = f"{username}@RadheFoundation.com"
         phone = "Not provided"
         date_of_joining = "N/A"
         profile_photo = None

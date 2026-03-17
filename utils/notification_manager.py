@@ -1,5 +1,5 @@
 """
-Notification Manager for Vernika HRA
+Notification Manager for RadheFoundation HRA
 Handles in-app notifications and badges across the application
 Supports both per-screen notifications and global notifications
 Includes banner popup bubbles, notification bell, and queue management

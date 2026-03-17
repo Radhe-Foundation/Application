@@ -1,5 +1,5 @@
 """
-Vernika HRA - Auth Models
+RadheFoundation HRA - Auth Models
 Industry-Level Human Resource Management System
 
 This module provides authentication-related models and utilities.

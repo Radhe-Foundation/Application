@@ -1,5 +1,5 @@
 """
-Vernika HRA - Meetings Screen
+RadheFoundation HRA - Meetings Screen
 Fixed version with working dialogs and calendar
 Modern design with enhanced date visibility
 """

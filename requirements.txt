@@ -1,4 +1,4 @@
-# Vernika HRA - Application Requirements
+# RadheFoundation HRA - Application Requirements
 # Industry-Level Human Resource Management System
 
 # GUI Framework

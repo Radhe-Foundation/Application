@@ -1,5 +1,5 @@
 """
-Global Keyboard Shortcuts Manager for Vernika HRA
+Global Keyboard Shortcuts Manager for RadheFoundation HRA
 Handles keyboard shortcuts across the application
 """
 

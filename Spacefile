@@ -1,9 +1,9 @@
 # Deta Space Configuration
 # https://deta.space/docs/en/basics/builder
 
-name: vernika-hra
-description: Vernika HRA - Human Resource Management System
-icon: ./assets/logo/Vernikalogo.png
+name: RadheFoundation-hra
+description: RadheFoundation HRA - Human Resource Management System
+icon: ./assets/logo/Radhefoundation.jpeg
 
 # Builder configuration
 builder: python

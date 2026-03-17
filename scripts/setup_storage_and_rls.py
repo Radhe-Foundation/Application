@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Vernika - Complete Storage Setup
+RadheFoundation - Complete Storage Setup
 Creates the storage bucket and enables RLS policies for secure file sharing
 """
 
@@ -27,7 +27,7 @@ DATABASE_URL = os.getenv("DATABASE_URL")
 # If not set, we'll try to use the anon key but it might fail for admin operations
 SERVICE_KEY = SUPABASE_SERVICE_KEY or SUPABASE_KEY
 
-BUCKET_NAME = os.getenv("SUPABASE_STORAGE_BUCKET", "vernika-files")
+BUCKET_NAME = os.getenv("SUPABASE_STORAGE_BUCKET", "RadheFoundation-files")
 
 
 def create_storage_bucket():
@@ -246,7 +246,7 @@ def update_config():
 
 def main():
     print("="*60)
-    print("Vernika - Storage & RLS Setup")
+    print("RadheFoundation - Storage & RLS Setup")
     print("="*60)
     print(f"Supabase URL: {SUPABASE_URL}")
     print(f"Bucket Name: {BUCKET_NAME}")
@@ -267,7 +267,7 @@ def main():
     print("🎉 Storage Setup Complete!")
     print("="*60)
     print("\nNext steps:")
-    print("1. Restart the Vernika app")
+    print("1. Restart the RadheFoundation app")
     print("2. Try sharing a file in Chat or Mail screen")
     print("3. Files will be uploaded to Supabase cloud storage")
 

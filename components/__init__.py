@@ -1,4 +1,4 @@
-"""Components module for Vernika HRA"""
+"""Components module for RadheFoundation HRA"""
 from components.dialogs import (
     ConfirmDialog, AlertDialog, InputDialog,
     LoadingDialog, SelectionDialog, FormDialog,

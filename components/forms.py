@@ -1,5 +1,5 @@
 """
-Vernika HRA - Form Components
+RadheFoundation HRA - Form Components
 Industry-Level Human Resource Management System
 
 This module provides reusable form components for the application.
@@ -152,9 +152,9 @@ class TimePickerField(ft.Container):
         self.text_field.value = val if val else ""
 
 
-class VernikaTextField(TextField):
+class RadheFoundationTextField(TextField):
     """
-    Custom text field with Vernika styling.
+    Custom text field with RadheFoundation styling.
     """
 
     def __init__(
@@ -193,7 +193,7 @@ class VernikaTextField(TextField):
             self.hint_text = placeholder
 
 
-class VernikaPasswordField(VernikaTextField):
+class RadheFoundationPasswordField(RadheFoundationTextField):
     """
     Password field with show/hide functionality.
     """
@@ -215,9 +215,9 @@ class VernikaPasswordField(VernikaTextField):
         )
 
 
-class VernikaDropdown(Dropdown):
+class RadheFoundationDropdown(Dropdown):
     """
-    Custom dropdown with Vernika styling.
+    Custom dropdown with RadheFoundation styling.
     """
 
     def __init__(
@@ -246,9 +246,9 @@ class VernikaDropdown(Dropdown):
                     self.options.append(ft.dropdown.Option(opt))
 
 
-class VernikaCheckbox(Checkbox):
+class RadheFoundationCheckbox(Checkbox):
     """
-    Custom checkbox with Vernika styling.
+    Custom checkbox with RadheFoundation styling.
     """
 
     def __init__(
@@ -268,9 +268,9 @@ class VernikaCheckbox(Checkbox):
         )
 
 
-class VernikaButton(ElevatedButton):
+class RadheFoundationButton(ElevatedButton):
     """
-    Custom elevated button with Vernika styling.
+    Custom elevated button with RadheFoundation styling.
     """
 
     def __init__(
@@ -300,9 +300,9 @@ class VernikaButton(ElevatedButton):
         )
 
 
-class VernikaOutlinedButton(OutlinedButton):
+class RadheFoundationOutlinedButton(OutlinedButton):
     """
-    Custom outlined button with Vernika styling.
+    Custom outlined button with RadheFoundation styling.
     """
 
     def __init__(

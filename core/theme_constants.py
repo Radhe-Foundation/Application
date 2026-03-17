@@ -1,5 +1,5 @@
 """
-Vernika HRA - Centralized Theme Constants
+RadheFoundation HRA - Centralized Theme Constants
 Use these constants throughout the application for consistent UI
 """
 

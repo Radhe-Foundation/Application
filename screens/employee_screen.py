@@ -1,5 +1,5 @@
 """
-Vernika HRA - Employee Dashboard Screen
+RadheFoundation HRA - Employee Dashboard Screen
 Employee personal dashboard with NavigationRail navigation
 """
 
@@ -16,9 +16,9 @@ from config import SUPABASE_URL, SUPABASE_STORAGE_BUCKET
 
 
 def get_logo_path():
-    """Get the absolute path to the Vernikalogo - works in both desktop and web"""
+    """Get the absolute path to the RadheFoundationlogo - works in both desktop and web"""
     # For web deployment, use absolute path from root
-    return "/assets/logo/Vernikalogo.png"
+    return "/assets/logo/Radhefoundation.jpeg"
 
 
 # Color constants - Match Admin Screen
@@ -223,9 +223,9 @@ class EmployeeScreen(ft.Container):
 
         # Supabase bucket URL for logo - use config values
         if SUPABASE_URL and SUPABASE_STORAGE_BUCKET:
-            logo_url = f"{SUPABASE_URL}/storage/v1/object/public/{SUPABASE_STORAGE_BUCKET}/logo/Vernikalogo.png"
+            logo_url = f"{SUPABASE_URL}/storage/v1/object/public/{SUPABASE_STORAGE_BUCKET}/logo/Radhefoundation.jpeg"
         else:
-            logo_url = "/assets/logo/Vernikalogo.png"  # Fallback to local
+            logo_url = "/assets/logo/Radhefoundation.jpeg"  # Fallback to local
 
         sidebar = ft.Container(
             width=compact_width,
@@ -329,7 +329,7 @@ class EmployeeScreen(ft.Container):
                 self.nav_toggle_btn,
                 ft.Container(width=10),
                 ft.Text(
-                    "Vernika HRA - Employee Portal",
+                    "RadheFoundation HRA - Employee Portal",
                     size=18,
                     weight=ft.FontWeight.BOLD,
                     color=PRIMARY
@@ -783,7 +783,7 @@ class EmployeeScreen(ft.Container):
                         ft.Container(width=10),
                         # Screen title
                         ft.Text(
-                            f"Vernika HRA - {screen_title}",
+                            f"RadheFoundation HRA - {screen_title}",
                             size=18,
                             weight=ft.FontWeight.BOLD,
                             color=PRIMARY

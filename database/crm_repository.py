@@ -1,4 +1,4 @@
-# Vernika CRM Repository - Optimized CRM Operations
+# RadheFoundation CRM Repository - Optimized CRM Operations
 
 import logging
 from typing import Dict, List, Optional

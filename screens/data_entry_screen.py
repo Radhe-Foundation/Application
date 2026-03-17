@@ -1,5 +1,5 @@
 """
-Vernika HRA - Data Entry Screen (Professional UI Redesign)
+RadheFoundation HRA - Data Entry Screen (Professional UI Redesign)
 Modern, clean interface - Compatible with older Flet versions
 """
 

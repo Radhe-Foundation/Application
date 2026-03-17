@@ -1,4 +1,4 @@
-# Vernika Application - Login Logic
+# RadheFoundation Application - Login Logic
 # Authentication handling for multi-user login
 
 from database.connection import get_session

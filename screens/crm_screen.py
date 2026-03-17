@@ -1,5 +1,5 @@
 """
-Vernika HRA - CRM Screen (Unified Tabbed Interface)
+RadheFoundation HRA - CRM Screen (Unified Tabbed Interface)
 Comprehensive CRM with Leads, Contacts, Calendar, Events, Vendors, Warehouses, Assets, Contracts, Invoices
 """
 

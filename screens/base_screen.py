@@ -1,5 +1,5 @@
 """
-Vernika HRA - Base Screen Classes
+RadheFoundation HRA - Base Screen Classes
 Provides base functionality for all screens including loading states and common operations
 """
 

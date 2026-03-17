@@ -47,7 +47,7 @@ name_mapping = {
 }
 
 # Connect to SQLite
-sqlite_conn = sqlite3.connect('vernika.db')
+sqlite_conn = sqlite3.connect('RadheFoundation.db')
 sqlite_cursor = sqlite_conn.cursor()
 
 # Get SQLite tables

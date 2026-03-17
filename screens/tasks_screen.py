@@ -1,5 +1,5 @@
 """
-Vernika HRA - Enhanced Tasks Screen - Fixed for Flet 0.80+
+RadheFoundation HRA - Enhanced Tasks Screen - Fixed for Flet 0.80+
 Updated to use SQLAlchemy operations instead of direct SQLite
 """
 

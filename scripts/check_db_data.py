@@ -5,7 +5,7 @@ Database diagnostic script to check current data
 from database.models import Employee, User
 from database.session_manager import get_db_session
 import sys
-sys.path.insert(0, '/Users/shashankrajput/Desktop/Vernika')
+sys.path.insert(0, '/Users/shashankrajput/Desktop/RadheFoundation')
 
 
 def check_profile_photos():

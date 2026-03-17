@@ -1,5 +1,5 @@
 """
-Vernika HRA - Shared Navigation Utilities
+RadheFoundation HRA - Shared Navigation Utilities
 Centralized navigation functions to replace duplicate code across screens
 """
 

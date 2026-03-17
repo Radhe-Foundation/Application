@@ -1,5 +1,5 @@
 """
-Vernika HRA - Role-Based Access Control Decorators
+RadheFoundation HRA - Role-Based Access Control Decorators
 Industry-Level Human Resource Management System
 
 This module provides decorators for role-based access control.

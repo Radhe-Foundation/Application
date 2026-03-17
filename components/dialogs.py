@@ -1,5 +1,5 @@
 """
-Vernika HRA - Dialog Components
+RadheFoundation HRA - Dialog Components
 Industry-Level Human Resource Management System
 
 This module provides reusable dialog components for the application.

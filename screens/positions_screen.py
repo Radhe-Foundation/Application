@@ -1,5 +1,5 @@
 """
-Vernika HRA - Positions Screen
+RadheFoundation HRA - Positions Screen
 PostgreSQL/SQLAlchemy based positions management
 """
 
@@ -94,7 +94,7 @@ class PositionsScreen(ft.Container):
             content=ft.Row([
                 ft.Container(width=10),
                 ft.Icon(ft.Icons.WORK, color="WHITE", size=28),
-                ft.Text("Vernika HRA - Positions Management", size=18,
+                ft.Text("RadheFoundation HRA - Positions Management", size=18,
                         color="WHITE", weight=ft.FontWeight.BOLD),
                 ft.Container(expand=True),
                 # Add Position button

@@ -1,5 +1,5 @@
 
-# Vernika Application - Database Operations
+# RadheFoundation Application - Database Operations
 # Complete CRUD operations for HR Management System
 from database.models import (
     User, Role, Employee, Department, Position,
@@ -1654,7 +1654,7 @@ def create_meeting(db: Session, title: str, organizer_id: int,
         description=description,
         is_recurring=is_recurring,
         recurrence_pattern=recurrence_pattern,
-        meeting_link=f"https://vernika.local/meeting/{organizer_id}_{int(start_time.timestamp())}"
+        meeting_link=f"https://RadheFoundation.local/meeting/{organizer_id}_{int(start_time.timestamp())}"
     )
     db.add(meeting)
     db.flush()
@@ -1982,13 +1982,13 @@ def initialize_user_permissions(db: Session, user_id: int):
 
 def get_internal_email(username: str) -> str:
     """Get internal email address for a username"""
-    return f"{username}@vernika.local"
+    return f"{username}@RadheFoundation.local"
 
 
 def get_username_from_email(email: str) -> str:
     """Extract username from internal email"""
-    if email.endswith("@vernika.local"):
-        return email.replace("@vernika.local", "")
+    if email.endswith("@RadheFoundation.local"):
+        return email.replace("@RadheFoundation.local", "")
     return email
 
 

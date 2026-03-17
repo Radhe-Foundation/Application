@@ -1,5 +1,5 @@
 """
-Vernika HRA - Performance Cache Module
+RadheFoundation HRA - Performance Cache Module
 Provides in-memory caching for frequently accessed data
 """
 

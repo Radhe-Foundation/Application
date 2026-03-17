@@ -36,7 +36,7 @@ DANGER_COLOR = "#DC3545"
 INFO_COLOR = "#2196F3"
 
 
-def make_logo_block(logo_image: str | None = None, company_name: str = "Vernika"):
+def make_logo_block(logo_image: str | None = None, company_name: str = "RadheFoundation"):
     img = Image(src=logo_image, height=48) if logo_image else None
     items = [img, Text(company_name, weight="bold", size=16)] if img else [
         Text(company_name, weight="bold", size=18)]
@@ -77,7 +77,7 @@ def inject_back_button(header_container, page):
         pass
 
 
-def make_app_shell(page, main_content, nav_items=None, logo_image=None, company_name="Vernika", collapsed=False):
+def make_app_shell(page, main_content, nav_items=None, logo_image=None, company_name="RadheFoundation", collapsed=False):
     if nav_items is None:
         nav_items = []
     header = Row([Text("")], alignment="spaceBetween")

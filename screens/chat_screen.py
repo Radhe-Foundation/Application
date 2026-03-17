@@ -1,5 +1,5 @@
 """
-Vernika HRA - Chat Screen with WhatsApp-Style UI
+RadheFoundation HRA - Chat Screen with WhatsApp-Style UI
 Real-time messaging with beautiful, modern WhatsApp-like interface
 """
 
@@ -209,7 +209,7 @@ class ChatScreen(ft.Container):
                 current_user.get("username", "User"))
             self.current_email: str = str(
                 current_user.get(
-                    "email", f"{self.current_username}@vernika.local")
+                    "email", f"{self.current_username}@RadheFoundation.local")
             )
         else:
             self.current_user_id = int(getattr(current_user, "id", 0))
@@ -217,7 +217,7 @@ class ChatScreen(ft.Container):
                 getattr(current_user, "username", "User"))
             email = getattr(current_user, "email", None)
             self.current_email = str(
-                email or f"{self.current_username}@vernika.local")
+                email or f"{self.current_username}@RadheFoundation.local")
 
         # In-memory view state
         self.contacts: List[Contact] = []
@@ -908,7 +908,7 @@ class ChatScreen(ft.Container):
                         id=int(user.id),
                         username=str(user.username or "User"),
                         email=str(
-                            user.email or f"{user.username}@vernika.local"),
+                            user.email or f"{user.username}@RadheFoundation.local"),
                         is_online=is_online,
                         last_seen=last_seen,
                         avatar_color=self._get_avatar_color(

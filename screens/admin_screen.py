@@ -1,5 +1,5 @@
 """
-Vernika Application - Admin Screen
+RadheFoundation Application - Admin Screen
 Admin dashboard with full management capabilities for all modules
 """
 
@@ -362,7 +362,7 @@ class AdminScreen(ft.Container):
                         ft.Container(width=5),
                         # Screen title
                         ft.Text(
-                            f"Vernika HRA - {screen_title}",
+                            f"RadheFoundation HRA - {screen_title}",
                             size=18,
                             weight=ft.FontWeight.BOLD,
                             color=PRIMARY
@@ -662,7 +662,7 @@ class AdminScreen(ft.Container):
                 self.nav_toggle_btn,
                 ft.Container(width=10),
                 ft.Text(
-                    "Vernika HRA - Admin Dashboard",
+                    "RadheFoundation HRA - Admin Dashboard",
                     size=20,
                     weight=ft.FontWeight.BOLD,
                     color=PRIMARY
@@ -2352,7 +2352,7 @@ class AdminScreen(ft.Container):
                     os.makedirs(backup_dir)
 
                 timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-                filename = f"{backup_dir}/vernika_backup_{timestamp}.json"
+                filename = f"{backup_dir}/RadheFoundation_backup_{timestamp}.json"
 
                 # Export all critical data to JSON
                 import json

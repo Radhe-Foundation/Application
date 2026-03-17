@@ -1,15 +1,15 @@
 # ================================================
-# Vernika HRA - Complete Environment Variables
+# RadheFoundation HRA - Complete Environment Variables
 # ================================================
 # Copy the variables you need to your .env file
 
 # ==================== DATABASE CONFIGURATION ====================
 # PostgreSQL connection string (format: postgresql://user:password@host:port/database)
-DATABASE_URL=postgresql://user:password@localhost:5432/vernika
+DATABASE_URL=postgresql://user:password@localhost:5432/RadheFoundation
 # Or individual components:
 DB_HOST=localhost
 DB_PORT=5432
-DB_NAME=vernika
+DB_NAME=RadheFoundation
 DB_USER=your_db_user
 DB_PASSWORD=your_db_password
 DB_SSL_MODE=require
@@ -35,7 +35,7 @@ LOCKOUT_DURATION_MINUTES=15
 # Required for file storage and realtime features
 SUPABASE_URL=https://your-project.supabase.co
 SUPABASE_KEY=your-anon-key
-SUPABASE_STORAGE_BUCKET=vernika-files
+SUPABASE_STORAGE_BUCKET=RadheFoundation-files
 
 # ==================== WINDOW CONFIGURATION ====================
 WINDOW_WIDTH=1400
@@ -49,10 +49,10 @@ WINDOW_MAXIMIZED=true
 THEME_MODE=light
 
 # ==================== COMPANY ====================
-COMPANY_NAME=Vernika Technologies
+COMPANY_NAME=RadheFoundation Technologies
 COMPANY_ADDRESS=
 COMPANY_PHONE=
-COMPANY_EMAIL=hr@vernika.com
+COMPANY_EMAIL=hr@RadheFoundation.com
 COMPANY_WEBSITE=
 
 # ==================== WORKING HOURS ====================
@@ -77,7 +77,7 @@ DEFAULT_REPORT_FORMAT=pdf
 
 # ==================== LOGGING ====================
 LOG_LEVEL=INFO
-LOG_FILE=vernika.log
+LOG_FILE=RadheFoundation.log
 LOG_FILE_MAX_SIZE_MB=10
 LOG_BACKUP_COUNT=5
 
@@ -103,11 +103,11 @@ FEATURE_ANNOUNCEMENTS=true
 FEATURE_ATTENDANCE_GPS=false
 
 # ==================== DEFAULT ACCOUNTS ====================
-DEFAULT_ADMIN_USERNAME=Vernika
-DEFAULT_ADMIN_EMAIL=admin@vernika.com
-DEFAULT_ADMIN_PASSWORD=vernika8268  # Change in production!
+DEFAULT_ADMIN_USERNAME=Radhefoundation
+DEFAULT_ADMIN_EMAIL=admin@RadheFoundation.com
+DEFAULT_ADMIN_PASSWORD=radhe832  # Change in production!
 DEFAULT_HR_USERNAME=hr
-DEFAULT_HR_EMAIL=hr@vernika.com
+DEFAULT_HR_EMAIL=hr@RadheFoundation.com
 DEFAULT_HR_PASSWORD=hr123  # Change in production!
 
 # ==================== ENVIRONMENT ====================

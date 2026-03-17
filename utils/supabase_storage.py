@@ -1,5 +1,5 @@
 """
-Vernika - Supabase Storage Utility
+RadheFoundation - Supabase Storage Utility
 Handles file uploads to Supabase Storage for documents, images, and other files
 Updated to use REST API directly for more reliable uploads
 """

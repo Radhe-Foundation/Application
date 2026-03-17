@@ -1,5 +1,5 @@
 """
-Vernika - Session Fix Utility
+RadheFoundation - Session Fix Utility
 Utility to fix session leaks in existing screens.
 
 This module provides:

@@ -1,5 +1,5 @@
 """
-Vernika HRA - Leaves Management Screen - Fixed for Flet 0.80+
+RadheFoundation HRA - Leaves Management Screen - Fixed for Flet 0.80+
 Updated with view_mode support: admin (manage all) or employee (self only)
 """
 

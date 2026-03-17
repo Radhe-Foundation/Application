@@ -1,5 +1,5 @@
 """
-Vernika - Create Storage Bucket via Supabase API
+RadheFoundation - Create Storage Bucket via Supabase API
 """
 import requests
 
@@ -12,7 +12,7 @@ SUPABASE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJ
 def create_bucket():
     """Create storage bucket via Supabase API"""
     print("=" * 60)
-    print("Vernika - Storage Bucket Setup")
+    print("RadheFoundation - Storage Bucket Setup")
     print("=" * 60)
 
     headers = {
@@ -30,19 +30,19 @@ def create_bucket():
         buckets = response.json()
         print(f"Existing buckets: {buckets}")
 
-        # Check if vernika-files exists
+        # Check if RadheFoundation-files exists
         for bucket in buckets:
-            if bucket.get('id') == 'vernika-files':
-                print("✅ Bucket 'vernika-files' already exists!")
+            if bucket.get('id') == 'RadheFoundation-files':
+                print("✅ Bucket 'RadheFoundation-files' already exists!")
                 return True
 
     # Create bucket
-    print("📦 Creating bucket 'vernika-files'...")
+    print("📦 Creating bucket 'RadheFoundation-files'...")
     create_url = f"{SUPABASE_URL}/storage/v1/bucket"
 
     data = {
-        "id": "vernika-files",
-        "name": "vernika-files",
+        "id": "RadheFoundation-files",
+        "name": "RadheFoundation-files",
         "public": True
     }
 
@@ -56,7 +56,7 @@ def create_bucket():
         # Create folders
         folders = ["documents", "images", "profiles", "attachments", "reports"]
         for folder in folders:
-            folder_url = f"{SUPABASE_URL}/storage/v1/object/vernika-files/{folder}/.gitkeep"
+            folder_url = f"{SUPABASE_URL}/storage/v1/object/RadheFoundation-files/{folder}/.gitkeep"
             requests.post(folder_url, headers=headers)
 
         print(f"✅ Created folders: {', '.join(folders)}")

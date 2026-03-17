@@ -1,5 +1,5 @@
 """
-Vernika HRA - Projects Management Screen
+RadheFoundation HRA - Projects Management Screen
 Enhanced with employee members, roles, task assignment, and budget tracking
 """
 

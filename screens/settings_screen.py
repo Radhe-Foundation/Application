@@ -1,5 +1,5 @@
 """
-Vernika HRA - Settings Screen (Enhanced)
+RadheFoundation HRA - Settings Screen (Enhanced)
 Complete settings management with company profile, theme, notifications, and preferences
 """
 

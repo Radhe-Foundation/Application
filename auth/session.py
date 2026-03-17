@@ -1,4 +1,4 @@
-# Vernika Application - Session Management
+# RadheFoundation Application - Session Management
 # Handle user sessions and state
 
 from typing import Optional

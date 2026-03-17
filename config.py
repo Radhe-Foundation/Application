@@ -1,5 +1,5 @@
 """
-Vernika - Configuration Module
+RadheFoundation - Configuration Module
 Industry-Level Human Resource Management System
 
 This module contains all configuration settings for the application.
@@ -17,7 +17,7 @@ from dotenv import load_dotenv
 load_dotenv()
 
 # ==================== APPLICATION INFO ====================
-APP_NAME = "Vernika"
+APP_NAME = "RadheFoundation"
 APP_VERSION = "1.0.0"
 APP_DESCRIPTION = "Industry-Level Human Resource Management System"
 
@@ -51,7 +51,7 @@ DB_ECHO = os.getenv("DB_ECHO", "false").lower() == "true"
 
 # ==================== SECURITY CONFIGURATION ====================
 SECRET_KEY = os.getenv(
-    "SECRET_KEY", "vernika-hra-secret-key-change-in-production-2024")
+    "SECRET_KEY", "RadheFoundation-hra-secret-key-change-in-production-2024")
 
 # JWT settings
 ALGORITHM = "HS256"
@@ -98,10 +98,10 @@ THEME_DARK_SURFACE = "#1E1E1E"
 THEME_MODE = os.getenv("THEME_MODE", "light")
 
 # ==================== COMPANY CONFIGURATION ====================
-COMPANY_NAME = os.getenv("COMPANY_NAME", "Vernika Technologies")
+COMPANY_NAME = os.getenv("COMPANY_NAME", "RadheFoundation Technologies")
 COMPANY_ADDRESS = os.getenv("COMPANY_ADDRESS", "")
 COMPANY_PHONE = os.getenv("COMPANY_PHONE", "")
-COMPANY_EMAIL = os.getenv("COMPANY_EMAIL", "hr@vernika.com")
+COMPANY_EMAIL = os.getenv("COMPANY_EMAIL", "hr@RadheFoundation.com")
 COMPANY_WEBSITE = os.getenv("COMPANY_WEBSITE", "")
 
 # ==================== WORKING HOURS CONFIGURATION ====================
@@ -136,7 +136,7 @@ DEFAULT_REPORT_FORMAT = os.getenv(
 # ==================== LOGGING CONFIGURATION ====================
 LOG_LEVEL = os.getenv("LOG_LEVEL", "INFO")
 LOG_FORMAT = "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
-LOG_FILE = os.getenv("LOG_FILE", "vernika.log")
+LOG_FILE = os.getenv("LOG_FILE", "RadheFoundation.log")
 LOG_FILE_MAX_SIZE_MB = int(os.getenv("LOG_FILE_MAX_SIZE", "10"))
 LOG_BACKUP_COUNT = int(os.getenv("LOG_BACKUP_COUNT", "5"))
 
@@ -178,12 +178,12 @@ def _generate_secure_password():
 
 
 DEFAULT_ADMIN_USERNAME = os.getenv("DEFAULT_ADMIN_USERNAME", "admin")
-DEFAULT_ADMIN_EMAIL = os.getenv("DEFAULT_ADMIN_EMAIL", "admin@vernika.com")
+DEFAULT_ADMIN_EMAIL = os.getenv("DEFAULT_ADMIN_EMAIL", "admin@RadheFoundation.com")
 DEFAULT_ADMIN_PASSWORD = os.getenv(
     "DEFAULT_ADMIN_PASSWORD", _generate_secure_password())
 
 DEFAULT_HR_USERNAME = os.getenv("DEFAULT_HR_USERNAME", "hr")
-DEFAULT_HR_EMAIL = os.getenv("DEFAULT_HR_EMAIL", "hr@vernika.com")
+DEFAULT_HR_EMAIL = os.getenv("DEFAULT_HR_EMAIL", "hr@RadheFoundation.com")
 DEFAULT_HR_PASSWORD = os.getenv(
     "DEFAULT_HR_PASSWORD", _generate_secure_password())
 
@@ -209,7 +209,7 @@ SUPABASE_REALTIME_URL = f"{SUPABASE_URL}/realtime/v1" if SUPABASE_URL else ""
 
 # Supabase Storage Configuration
 SUPABASE_STORAGE_URL = f"{SUPABASE_URL}/storage/v1" if SUPABASE_URL else ""
-SUPABASE_STORAGE_BUCKET = os.getenv("SUPABASE_STORAGE_BUCKET", "vernika-files")
+SUPABASE_STORAGE_BUCKET = os.getenv("SUPABASE_STORAGE_BUCKET", "RadheFoundation-files")
 
 # Service role key - used for bucket creation and management (keep secret!)
 SUPABASE_SERVICE_KEY = os.getenv("SUPABASE_SERVICE_KEY", "")
