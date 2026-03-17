@@ -1,11 +1,11 @@
-# Vernika - Multi-User Business Management System
+# RadheFoundation - Multi-User Business Management System
 
 A professional multi-user desktop application built with **Python** and **Flet**, featuring Admin and Employee roles with secure authentication and database management.
 
 ## 🏗️ Architecture
 
 ```
-Vernika/
+RadheFoundation/
 ├── database/              # Database layer
 │   ├── connection.py       # Database connection management
 │   ├── models.py           # SQLAlchemy models
@@ -90,7 +90,7 @@ Vernika/
 
 1. **Clone or navigate to the project directory**
    ```bash
-   cd Vernika
+   cd RadheFoundation
    ```
 
 2. **Install dependencies**
@@ -161,3 +161,4 @@ This project is open source and available for personal and commercial use.
 
 Built with ❤️ using Python and Flet
 
+# Application
