@@ -1,5 +1,5 @@
 """
-RadheFoundation HRA - Organization Tree Screen
+Vernika HRA - Organization Tree Screen
 Visual hierarchical organization chart with proper connections and improved UI
 """
 
@@ -118,7 +118,8 @@ class OrganizationTreeScreen(ft.Container):
         return ft.Container(
             expand=True,
             content=ft.Column([
-                # Header - removed self._create_header(is_admin)
+                # Header
+                self._create_header(is_admin),
                 # Toolbar with search
                 self._create_toolbar(),
                 # Content area with tree - expand to fill available space
@@ -161,6 +162,14 @@ class OrganizationTreeScreen(ft.Container):
 
     def _create_header(self, is_admin):
         """Create header with navigation, company name, welcome text, and logout"""
+        # Back button to navigate to home
+        back_btn = ft.IconButton(
+            icon=ft.Icons.ARROW_BACK,
+            tooltip="Back to Dashboard",
+            on_click=lambda e: _safe_navigate_to_home(self._page, self.user),
+            icon_color="WHITE"
+        )
+
         # View toggle button (Hierarchy vs Department)
         view_toggle = ft.Container(
             content=ft.SegmentedButton(
@@ -195,6 +204,8 @@ class OrganizationTreeScreen(ft.Container):
                 # Left section - Back button and title
                 ft.Container(
                     content=ft.Row([
+                        back_btn,
+                        ft.Container(width=5),
                         ft.Icon(ft.Icons.ACCOUNT_TREE, color="WHITE", size=28),
                         ft.Container(width=10),
                         ft.Text("Organization Tree", size=18,
@@ -276,8 +287,8 @@ class OrganizationTreeScreen(ft.Container):
         """Refresh the tree view only (without rebuilding entire screen)"""
         # Rebuild tree view
         tree_view = self._build_org_tree()
-        # Update the tree container - layout is Column with [Toolbar, Content]
-        self.content.content.controls[1].content = tree_view
+        # Update the tree container - layout is now Column with [Header, Toolbar, Content]
+        self.content.content.controls[2].content = tree_view
         self._page.update()
 
     def _toggle_collapse(self, emp_id):
@@ -710,7 +721,7 @@ class OrganizationTreeScreen(ft.Container):
                     ft.Container(height=8),
                     # Company Name
                     ft.Text(
-                        "RadheFoundation Technologies",
+                        "Vernika Technologies",
                         size=14, weight=ft.FontWeight.BOLD,
                         color=PRIMARY, text_align=ft.TextAlign.CENTER
                     ),
