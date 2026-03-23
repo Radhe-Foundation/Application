@@ -6,6 +6,9 @@ Visual hierarchical organization chart with proper connections and improved UI
 import flet as ft
 from database.session_manager import get_session, get_db_session, check_db_connection
 from database.models import Employee, Department, Position, OrgHierarchy
+from utils.ui_helpers import resolve_profile_photo_path
+import os
+from pathlib import Path
 from sqlalchemy.orm import joinedload
 import threading
 import time
@@ -76,6 +79,165 @@ def _safe_navigate_to_home(page, user=None):
 
 class OrganizationTreeScreen(ft.Container):
     """Organization Tree/Chart Display Screen with improved UI"""
+
+    @staticmethod
+    def create_connection_line(color=PRIMARY, height=25):
+        """Create a vertical connection line"""
+        return ft.Container(width=3, height=height, bgcolor=color)
+
+    @staticmethod
+    def create_company_card(total_employees):
+        """Create company card - UNIVERSAL PARENT for ALL employees"""
+        from config import SUPABASE_URL, SUPABASE_STORAGE_BUCKET
+
+        if SUPABASE_URL and SUPABASE_STORAGE_BUCKET:
+            logo_src = f"{SUPABASE_URL}/storage/v1/object/public/{SUPABASE_STORAGE_BUCKET}/logo/Vernikalogo.png"
+        else:
+            logo_src = "/assets/logo/Vernikalogo.png"
+
+        logo_image = ft.Image(
+            src=logo_src,
+            width=70,
+            height=70,
+            fit=ft.BoxFit.COVER
+        )
+        return ft.Container(
+            width=240,
+            padding=16,
+            bgcolor=SURFACE,
+            border_radius=12,
+            border=ft.border.all(4, PRIMARY),
+            shadow=ft.BoxShadow(
+                spread_radius=3, blur_radius=12, color="rgba(46,134,171,0.4)"),
+            content=ft.Column([
+                ft.Container(
+                    content=logo_image,
+                    width=70,
+                    height=70,
+                    border_radius=35,
+                    alignment=ft.alignment.Alignment(0, 0)
+                ),
+                ft.Container(height=10),
+                ft.Text("VERNIKA TECHNOLOGIES", size=15, weight=ft.FontWeight.BOLD,
+                        color=PRIMARY, text_align=ft.TextAlign.CENTER),
+                ft.Text("Organization", size=12, color=TEXT_SECONDARY,
+                        text_align=ft.TextAlign.CENTER),
+                ft.Container(height=8),
+                ft.Divider(height=1),
+                ft.Container(height=8),
+                ft.Row([
+                    ft.Icon(ft.Icons.PEOPLE_OUTLINE,
+                            size=16, color=TEXT_SECONDARY),
+                    ft.Text(f"{total_employees} Total Employees",
+                            size=11, color=TEXT_SECONDARY)
+                ], alignment=ft.MainAxisAlignment.CENTER)
+            ], horizontal_alignment=ft.CrossAxisAlignment.CENTER, spacing=0)
+        )
+
+    @staticmethod
+    def create_emp_card(emp_data, emp_level=5, is_root=False, children_map=None, collapsed_nodes=None):
+        """
+        Unified employee card with photo support and collapse functionality.
+        """
+        emp = emp_data['employee'] if isinstance(emp_data, dict) else emp_data
+        h = emp_data.get('hierarchy') if isinstance(emp_data, dict) else None
+
+        color = LEVEL_COLORS.get(emp_level, "#4CAF50")
+        if is_root:
+            color = "#D32F2F"
+
+        position_title = getattr(
+            getattr(emp, 'position', None), 'title', None) or "Employee"
+        department_name = getattr(
+            getattr(emp, 'department', None), 'name', None) or ""
+
+        first_name = emp.first_name or ""
+        last_name = emp.last_name or ""
+        initials = f"{first_name[0:1]}{last_name[0:1]}".upper()
+        full_name = f"{first_name} {last_name}".strip()
+        display_name = full_name[:20] + \
+            "..." if len(full_name) > 20 else full_name
+
+        # Profile photo - web-safe paths, centered
+        profile_photo_url = getattr(emp, 'profile_photo', None)
+        profile_photo_path = resolve_profile_photo_path(
+            profile_photo_url or "")
+        photo_src = profile_photo_path or "/assets/profile_photos/shashank.jpg"
+
+        avatar_img = ft.Image(src=photo_src, width=52,
+                              height=52, fit=ft.BoxFit.COVER)
+
+        avatar_content = ft.Container(
+            width=52,
+            height=52,
+            border_radius=26,
+            content=avatar_img,
+            clip_behavior=ft.ClipBehavior.HARD_EDGE,
+        ) if photo_src else ft.Container(
+            width=52,
+            height=52,
+            bgcolor=color,
+            border_radius=26,
+            content=ft.Text(
+                initials if initials else "?", size=18, color="WHITE", weight=ft.FontWeight.BOLD
+            ),
+            alignment=ft.alignment.Alignment(0, 0),
+        )
+
+        # Check children for collapse button
+        has_children = children_map and hasattr(emp, 'id') and emp.id in children_map and len(
+            children_map[emp.id]) > 0 if children_map else False
+        collapse_btn = ft.Container(width=0, height=0)
+        if has_children and collapsed_nodes:
+            is_collapsed = emp.id in collapsed_nodes
+            collapse_btn = ft.IconButton(
+                icon=ft.Icons.EXPAND_MORE if is_collapsed else ft.Icons.EXPAND_LESS,
+                icon_size=16,
+                tooltip="Toggle subordinates",
+                style=ft.ButtonStyle(bgcolor="transparent", padding=0),
+            )
+
+        return ft.Container(
+            width=200,
+            padding=12,
+            bgcolor=SURFACE,
+            border_radius=12,
+            border=ft.border.all(2, color),
+            shadow=ft.BoxShadow(
+                spread_radius=2, blur_radius=8, color=color + "30"),
+
+            content=ft.Column([
+                ft.Row([
+                    ft.Container(
+                        content=avatar_content,
+                        alignment=ft.alignment.Alignment(0, 0),
+                        expand=True,
+                    ),
+                    collapse_btn
+                ], alignment=ft.MainAxisAlignment.SPACE_BETWEEN),
+                ft.Container(height=8),
+                ft.Text(display_name, size=12, weight=ft.FontWeight.BOLD,
+                        text_align=ft.TextAlign.CENTER),
+                ft.Text(
+                    position_title[:25] +
+                    "..." if len(position_title) > 25 else position_title,
+                    size=10,
+                    color=TEXT_SECONDARY,
+                    text_align=ft.TextAlign.CENTER,
+                ),
+                ft.Container(height=5),
+                ft.Divider(height=1),
+                ft.Container(height=5),
+                ft.Container(
+                    content=ft.Text(
+                        department_name[:18] if department_name else "No Dept", size=9, color="WHITE"),
+
+                    bgcolor=PRIMARY,
+                    padding=ft.padding.symmetric(horizontal=10, vertical=3),
+                    border_radius=8,
+                ) if department_name else ft.Container(height=0),
+            ], horizontal_alignment=ft.CrossAxisAlignment.CENTER, spacing=0),
+        )
 
     def __init__(self, page, user):
         super().__init__()
@@ -233,14 +395,14 @@ class OrganizationTreeScreen(ft.Container):
                         ft.ElevatedButton(
                             "Edit",
                             icon=ft.Icons.EDIT,
-                            on_click=self._show_edit_hierarchy,
+                            on_click=self._show_edit_hierarchy if is_admin else None,
                             style=ft.ButtonStyle(
                                 bgcolor="#FF9800",
                                 color="WHITE"
                             ),
                             visible=is_admin,
                             height=32,
-                        ) if is_admin else ft.Container(),
+                        ),
                         ft.Container(width=5),
                         ft.Text(
                             f"Welcome, {self.user.get('username', 'User') if isinstance(self.user, dict) else 'User'}",
@@ -534,10 +696,6 @@ class OrganizationTreeScreen(ft.Container):
             return role == 'admin'
         return False
 
-    def on_back(self, e):
-        """Handle back navigation"""
-        _safe_navigate_to_home(self._page, self.user)
-
     def _get_all_employees(self):
         """Get all employees for org tree"""
         db = get_db_session()
@@ -559,11 +717,60 @@ class OrganizationTreeScreen(ft.Container):
         try:
             hierarchy = db.query(OrgHierarchy).all()
             return {h.employee_id: h for h in hierarchy}
-        except Exception as e:
-            print(f"Error loading hierarchy: {e}")
-            return {}
         finally:
             db.close()
+
+    def _build_hierarchy_tree(self, employees, hierarchy):
+        """Build proper hierarchy tree recursively from reports_to_id"""
+        # Build children map: manager_id -> list of direct reports
+        children_map = {}
+        all_employee_ids = {emp.id for emp in employees}
+        has_hierarchy = {}
+
+        for emp in employees:
+            h = hierarchy.get(emp.id)
+            has_hierarchy[emp.id] = h is not None
+
+            if h and h.reports_to_id and h.reports_to_id in all_employee_ids:
+                manager_id = h.reports_to_id
+                if manager_id not in children_map:
+                    children_map[manager_id] = []
+                children_map[manager_id].append({
+                    'employee': emp,
+                    'hierarchy': h
+                })
+
+        # Find true roots
+        incoming_reports = set()
+        for manager_id in children_map:
+            incoming_reports.add(manager_id)
+
+        roots = []
+        orphans = []
+        for emp in employees:
+            h = hierarchy.get(emp.id)
+            is_manager = emp.id in children_map
+            has_incoming = emp.id in incoming_reports
+
+            # Root: has hierarchy record OR is manager, but no incoming reports
+            if (h or is_manager) and not has_incoming:
+                roots.append({
+                    'employee': emp,
+                    'hierarchy': h,
+                    'children': children_map.get(emp.id, [])
+                })
+            elif not h:  # No hierarchy record → orphan
+                orphans.append({
+                    'employee': emp,
+                    'hierarchy': None
+                })
+
+        return {
+            'roots': roots,
+            'orphans': orphans,
+            'children_map': children_map,
+            'has_hierarchy': has_hierarchy
+        }
 
     def _build_org_tree(self):
         """Build the organization tree visualization with proper connection lines"""
@@ -585,15 +792,14 @@ class OrganizationTreeScreen(ft.Container):
                     getattr(emp, 'department', None), 'name', '') or ''
                 pos_title = getattr(
                     getattr(emp, 'position', None), 'title', '') or ''
+                code = getattr(emp, 'employee_code', '') or ''
 
-                if (search_lower in full_name or
-                    search_lower in dept_name.lower() or
-                    search_lower in pos_title.lower() or
-                        search_lower in (emp.employee_code or '').lower()):
+                if (search_lower in full_name or search_lower in dept_name.lower() or
+                        search_lower in pos_title.lower() or search_lower in code.lower()):
                     filtered_employees.append(emp)
             employees = filtered_employees
 
-        # If department view is enabled, show department-based view
+        # If department view enabled, show department-based view
         if self._department_view:
             return self._build_department_view(employees, hierarchy)
 
@@ -610,673 +816,198 @@ class OrganizationTreeScreen(ft.Container):
                 expand=True
             )
 
-        # Build hierarchy tree - group employees by their manager
-        root_employees = []  # Employees at the top (CEO level)
-        children_map = {}   # manager_id -> list of employees
-        no_hierarchy_employees = []  # Employees without hierarchy defined
+        # Build hierarchy tree structure
+        tree_structure = self._build_hierarchy_tree(employees, hierarchy)
+        root_employees = tree_structure.get('roots', [])
+        children_map = tree_structure.get('children_map', {})
 
-        # First, try to use hierarchy data
-        has_hierarchy = False
-        for emp in employees:
-            h = hierarchy.get(emp.id)
-            if h and h.reports_to_id:
-                has_hierarchy = True
-                if h.reports_to_id not in children_map:
-                    children_map[h.reports_to_id] = []
-                children_map[h.reports_to_id].append({
-                    'employee': emp,
-                    'hierarchy': h
-                })
-            else:
-                # No hierarchy or no reports_to_id
-                no_hierarchy_employees.append({
-                    'employee': emp,
-                    'hierarchy': h
-                })
-
-        # If we have hierarchy data, find root employees (those who are managers but don't report to anyone)
-        if has_hierarchy:
-            # Find all employees who have someone reporting to them
-            manager_ids = set(children_map.keys())
-
-            # Root employees are those who have hierarchy but no reports_to_id
-            for emp_data in no_hierarchy_employees:
-                emp = emp_data['employee']
-                h = emp_data['hierarchy']
-                if h and h.reports_to_id is None:
-                    root_employees.append(emp_data)
-
-            # Also add employees who are managers but not in hierarchy as reports
-            for emp in employees:
-                h = hierarchy.get(emp.id)
-                if h and h.reports_to_id is None and emp.id not in manager_ids:
-                    # This is a root-level employee
-                    root_employees.append({
-                        'employee': emp,
-                        'hierarchy': h
-                    })
-
-        # If no hierarchy data or no root employees found, use department-based grouping
-        if not root_employees:
-            # Group by department head
-            dept_heads = {}
-            for emp in employees:
-                if emp.department and emp.department.head_id:
-                    if emp.department.head_id not in dept_heads:
-                        dept_heads[emp.department.head_id] = []
-                    dept_heads[emp.department.head_id].append(emp)
-
-            # Use department grouping if available
-            if dept_heads:
-                for head_id, dept_employees in dept_heads.items():
-                    head_emp = next(
-                        (e for e in employees if e.id == head_id), None)
-                    if head_emp:
-                        root_employees.append({
-                            'employee': head_emp,
-                            'hierarchy': None
-                        })
-                        # Add remaining employees as children
-                        for emp in dept_employees:
-                            if emp.id != head_id:
-                                if head_id not in children_map:
-                                    children_map[head_id] = []
-                                children_map[head_id].append({
-                                    'employee': emp,
-                                    'hierarchy': hierarchy.get(emp.id)
-                                })
-                has_hierarchy = True
-
-        # If still no hierarchy, treat all employees as having no hierarchy
-        if not root_employees and no_hierarchy_employees:
-            # All employees without hierarchy - will be shown under "Intern" node
-            pass
-
-        # ==================== COMPANY CARD ====================
-        def create_company_card():
-            """Create the company card at the top of the org tree"""
-            return ft.Container(
-                width=220,
-                padding=15,
-                bgcolor=SURFACE,
-                border_radius=12,
-                border=ft.border.all(3, PRIMARY),
-                shadow=ft.BoxShadow(
-                    spread_radius=2,
-                    blur_radius=8,
-                    color="rgba(46,134,171,0.3)"
-                ),
-                content=ft.Column([
-                    # Company Logo Icon
-                    ft.Container(
-                        width=60, height=60,
-                        bgcolor=PRIMARY,
-                        border_radius=30,
-                        content=ft.Icon(
-                            ft.Icons.BUSINESS,
-                            size=35, color="WHITE"
-                        ),
-                        alignment=ft.alignment.Alignment(0, 0),
-                    ),
-                    ft.Container(height=8),
-                    # Company Name
-                    ft.Text(
-                        "Vernika Technologies",
-                        size=14, weight=ft.FontWeight.BOLD,
-                        color=PRIMARY, text_align=ft.TextAlign.CENTER
-                    ),
-                    ft.Text(
-                        "Organization",
-                        size=11, color=TEXT_SECONDARY, text_align=ft.TextAlign.CENTER
-                    ),
-                    ft.Container(height=5),
-                    ft.Divider(height=1),
-                    ft.Container(height=5),
-                    # Employee count
-                    ft.Row([
-                        ft.Icon(ft.Icons.PEOPLE, size=14,
-                                color=TEXT_SECONDARY),
-                        ft.Text(f"{len(employees)} Employees",
-                                size=10, color=TEXT_SECONDARY),
-                    ], alignment=ft.MainAxisAlignment.CENTER),
-                ], horizontal_alignment=ft.CrossAxisAlignment.CENTER, spacing=0),
-            )
-
-        # ==================== CONNECTION LINE ====================
-        def create_connection_line(color=PRIMARY, height=25):
-            """Create a vertical connection line"""
-            return ft.Container(
-                width=3,
-                height=height,
-                bgcolor=color,
-            )
-
-        # ==================== EMPLOYEE CARD ====================
-        # DESIGNED TO MATCH COMPANY CARD STYLE
-        def create_emp_card(emp_data, emp_level=5, is_root=False, is_collapsed=False):
-            """Create a single employee card with proper connections and collapse button - MATCHING COMPANY CARD DESIGN"""
-            emp = emp_data['employee'] if isinstance(
-                emp_data, dict) else emp_data
-            h = emp_data.get('hierarchy') if isinstance(
-                emp_data, dict) else None
-
-            color = LEVEL_COLORS.get(emp_level, "#4CAF50")
-            label = LEVEL_LABELS.get(emp_level, "Employee")
-
-            if is_root:
-                color = "#D32F2F"  # Root nodes are red
-                label = "Root"
-
-            position_title = getattr(
-                getattr(emp, 'position', None), 'title', None) or "Employee"
-
-            department_name = getattr(
-                getattr(emp, 'department', None), 'name', None) or ""
-
-            # Get initials or profile photo
-            first_name = emp.first_name or ""
-            last_name = emp.last_name or ""
-            initials = f"{first_name[0:1]}{last_name[0:1]}".upper()
-
-            # Check for profile photo - validate path
-            import os
-            from pathlib import Path
-            profile_photo_url = getattr(emp, 'profile_photo', None) or None
-            profile_photo_valid = False
-            profile_photo_to_show = None
-
-            if profile_photo_url:
-                # Check if profile photo path is valid
-                if profile_photo_url.startswith('http'):
-                    profile_photo_valid = True
-                    profile_photo_to_show = profile_photo_url
-                else:
-                    # Check if local path exists as-is
-                    if os.path.exists(profile_photo_url):
-                        profile_photo_valid = True
-                        profile_photo_to_show = profile_photo_url
-                    else:
-                        # Try relative to assets/profile_photos directory
-                        base_dir = Path(__file__).parent.parent
-                        assets_path = base_dir / "assets" / "profile_photos" / \
-                            os.path.basename(profile_photo_url)
-                        if assets_path.exists():
-                            profile_photo_valid = True
-                            profile_photo_to_show = str(assets_path)
-                        else:
-                            # Try just the basename in profile_photos
-                            basename = os.path.basename(profile_photo_url)
-                            assets_path2 = base_dir / "assets" / "profile_photos" / basename
-                            if assets_path2.exists():
-                                profile_photo_valid = True
-                                profile_photo_to_show = str(assets_path2)
-
-            full_name = f"{first_name} {last_name}".strip()
-            display_name = full_name[:20] + \
-                "..." if len(full_name) > 20 else full_name
-
-            # Check if this employee has children
-            has_children = emp.id in children_map and len(
-                children_map.get(emp.id, [])) > 0
-
-            # Create collapse/expand button
-            collapse_btn = ft.Container()
-            if has_children:
-                is_node_collapsed = emp.id in self._collapsed_nodes
-                collapse_btn = ft.Container(
-                    content=ft.IconButton(
-                        icon=ft.Icons.EXPAND_MORE if is_node_collapsed else ft.Icons.EXPAND_LESS,
-                        icon_size=16,
-                        on_click=lambda e, emp_id=emp.id: self._toggle_collapse(
-                            emp_id),
-                        tooltip="Expand/Collapse" if not is_node_collapsed else "Click to expand",
-                        style=ft.ButtonStyle(
-                            bgcolor="transparent",
-                            padding=0,
-                        ),
-                    ),
-                    width=20,
-                    height=20,
-                )
-
-            # Create avatar - show profile photo if available and valid, otherwise initials
-            if profile_photo_valid and profile_photo_to_show:
-                avatar_content = ft.Container(
-                    width=50,
-                    height=50,
-                    border_radius=25,
-                    content=ft.Image(
-                        src=profile_photo_to_show,
-                        width=50,
-                        height=50,
-                        fit=ft.BoxFit.COVER,
-                    ),
-                    clip_behavior=ft.ClipBehavior.HARD_EDGE,
-                )
-            else:
-                avatar_content = ft.Container(
-                    width=50,
-                    height=50,
-                    bgcolor=color,
-                    border_radius=25,
-                    content=ft.Text(
-                        initials if initials else "?",
-                        size=16, color="WHITE", weight=ft.FontWeight.BOLD
-                    ),
-                    alignment=ft.alignment.Alignment(0, 0),
-                )
-
-            # Create employee card with COMPANY CARD STYLE DESIGN
-            # Matching the exact design of company card
-            return ft.Container(
-                width=200,
-                padding=12,
-                bgcolor=SURFACE,
-                border_radius=12,
-                border=ft.border.all(2, color),
-                shadow=ft.BoxShadow(
-                    spread_radius=2,
-                    blur_radius=8,
-                    color=color + "30"
-                ),
-                content=ft.Column([
-                    # Avatar - centered at top - matching company card style
-                    ft.Container(
-                        content=avatar_content,
-                        alignment=ft.alignment.Alignment(0, 0),
-                    ),
-                    ft.Container(height=8),
-                    # Name - centered - matching company card
-                    ft.Text(
-                        display_name,
-                        size=12, weight=ft.FontWeight.BOLD,
-                        text_align=ft.TextAlign.CENTER,
-                        overflow=ft.TextOverflow.ELLIPSIS
-                    ),
-                    # Position - centered below name - matching company card
-                    ft.Text(
-                        position_title[:25] +
-                        "..." if len(position_title) > 25 else position_title,
-                        size=10, color=TEXT_SECONDARY,
-                        text_align=ft.TextAlign.CENTER,
-                        overflow=ft.TextOverflow.ELLIPSIS
-                    ),
-                    ft.Container(height=5),
-                    # Divider - matching company card style
-                    ft.Divider(height=1),
-                    ft.Container(height=5),
-                    # Department badge - centered - matching company card style
-                    ft.Container(
-                        content=ft.Row([
-                            ft.Icon(ft.Icons.PEOPLE, size=10, color="WHITE"),
-                            ft.Text(
-                                department_name[:18] if department_name else "No Dept",
-                                size=8, color="WHITE"
-                            ),
-                        ], spacing=3, alignment=ft.MainAxisAlignment.CENTER),
-                        bgcolor=PRIMARY,
-                        padding=ft.padding.symmetric(horizontal=8, vertical=4),
-                        border_radius=10,
-                        alignment=ft.alignment.Alignment(0, 0),
-                    ) if department_name else ft.Container(height=0),
-                ], horizontal_alignment=ft.CrossAxisAlignment.CENTER, spacing=0),
-            )
-
-        def build_tree_recursive(emp_data, level=0, visited=None, parent_color=None):
-            """Recursively build tree with proper connection lines and collapsible branches"""
-            if visited is None:
-                visited = set()
-
-            emp = emp_data['employee'] if isinstance(
-                emp_data, dict) else emp_data
-            h = emp_data.get('hierarchy') if isinstance(
-                emp_data, dict) else None
-
-            # Prevent infinite recursion
-            if emp.id in visited:
-                return create_emp_card(emp_data, 5, True)
-            visited.add(emp.id)
-
-            emp_level = h.hierarchy_level if h else 5
-            children_list = children_map.get(emp.id, [])
-
-            # Check if this node is collapsed
-            is_collapsed = emp.id in self._collapsed_nodes
-
-            # Get color for this level
-            color = LEVEL_COLORS.get(emp_level, "#4CAF50")
-            if parent_color:
-                color = parent_color
-
-            emp_card = create_emp_card(
-                emp_data, emp_level, not children_list, is_collapsed)
-
-            if not children_list:
-                return emp_card
-
-            # If collapsed, show indicator
-            if is_collapsed:
-                collapsed_indicator = ft.Container(
-                    content=ft.Text(
-                        f"+{len(children_list)} more",
-                        size=9, color=TEXT_SECONDARY, weight=ft.FontWeight.W_500
-                    ),
-                    padding=ft.padding.symmetric(vertical=4),
-                )
-                return ft.Column([
-                    emp_card,
-                    collapsed_indicator
-                ], horizontal_alignment=ft.CrossAxisAlignment.CENTER, spacing=0)
-
-            # Build child cards
-            child_widgets = []
-            for child_data in children_list[:8]:  # Max 8 children
-                child_emp = child_data['employee']
-                if child_emp.id not in visited:
-                    child_widgets.append(
-                        build_tree_recursive(child_data, level + 1, visited, color))
-
-            if not child_widgets:
-                return emp_card
-
-            # Create proper connectors for multiple children
-            # Vertical line from parent
-            connector = ft.Container(
-                width=2,
-                height=20,
-                bgcolor=color
-            )
-
-            # Children container with proper alignment
-            if len(child_widgets) == 1:
-                # Single child - simple vertical connection
-                child_container = ft.Column([
-                    connector,
-                    child_widgets[0]
-                ], horizontal_alignment=ft.CrossAxisAlignment.CENTER, spacing=0)
-            else:
-                # Multiple children - proper tree-style connector
-                # Create individual vertical connectors for each child
-                child_columns = []
-                for child_widget in child_widgets:
-                    # Each child gets its own vertical connector from the horizontal bar
-                    child_columns.append(
-                        ft.Column([
-                            ft.Container(width=2, height=15, bgcolor=color),
-                            child_widget
-                        ], horizontal_alignment=ft.CrossAxisAlignment.CENTER, spacing=0)
-                    )
-
-                # Horizontal bar at the top of children
-                # Calculate proper spacing
-                total_width = len(child_columns) * 170
-                horizontal_bar = ft.Container(
-                    width=total_width,
-                    height=2,
-                    bgcolor=color
-                )
-
-                # Row with all children
-                children_row = ft.Row(
-                    child_columns,
-                    spacing=10,
-                    alignment=ft.MainAxisAlignment.CENTER
-                )
-
-                # Combine: connector from parent -> horizontal bar -> children
-                child_container = ft.Column([
-                    connector,
-                    horizontal_bar,
-                    children_row
-                ], horizontal_alignment=ft.CrossAxisAlignment.CENTER, spacing=0)
-
-            return ft.Column([
-                emp_card,
-                child_container
-            ], horizontal_alignment=ft.CrossAxisAlignment.CENTER, spacing=0)
-
-        # Build the main tree structure with Company Card at top
+        # Build tree nodes
         tree_nodes = []
+        for root_node in root_employees:
+            tree_nodes.append(self._build_tree_node_recursive(root_node, 0))
 
-        # First, add root employees with hierarchy
-        for emp_data in root_employees[:5]:  # Max 5 top-level nodes
-            tree_nodes.append(build_tree_recursive(emp_data, 0))
+        # Company card at top
+        company_card = self.create_company_card(len(employees))
 
-        # ==================== CREATE MAIN DISPLAY WITH COMPANY CARD ====================
-        # Company card at top with connection to hierarchy
-        company_card = create_company_card()
-
-        # If there are root employees, show connection line from company to them
+        # Connect company to roots
         if tree_nodes:
-            # Create horizontal connector bar from company to first level
             if len(tree_nodes) == 1:
-                # Single root - simple vertical connection
-                tree_with_company = ft.Column([
+                tree_display = ft.Column([
                     company_card,
-                    create_connection_line(height=20),
+                    self.create_connection_line(height=20),
                     tree_nodes[0]
                 ], horizontal_alignment=ft.CrossAxisAlignment.CENTER, spacing=0)
             else:
-                # Multiple roots - create proper horizontal connector bar
-                # Each root gets its own vertical connector from the main horizontal bar
-
-                # First, create a horizontal bar that spans all roots
                 root_spacing = 40
-                total_roots_width = len(
-                    tree_nodes) * 160 + (len(tree_nodes) - 1) * root_spacing
+                total_width = len(tree_nodes) * 160 + \
+                    (len(tree_nodes) - 1) * root_spacing
                 main_horizontal_bar = ft.Container(
-                    width=total_roots_width,
-                    height=2,
-                    bgcolor=PRIMARY
-                )
+                    width=total_width, height=2, bgcolor=PRIMARY)
 
-                # Create vertical connectors for each root node
                 root_columns = []
                 for tree_node in tree_nodes:
-                    root_columns.append(
-                        ft.Column([
-                            create_connection_line(height=15),
-                            tree_node
-                        ], horizontal_alignment=ft.CrossAxisAlignment.CENTER, spacing=0)
-                    )
+                    root_columns.append(ft.Column([
+                        self.create_connection_line(height=15),
+                        tree_node
+                    ], horizontal_alignment=ft.CrossAxisAlignment.CENTER, spacing=0))
 
-                # Row with all root nodes and their vertical connectors
                 roots_row = ft.Row(
-                    root_columns,
-                    spacing=root_spacing,
-                    alignment=ft.MainAxisAlignment.CENTER
-                )
-
-                # Vertical line from company to horizontal bar
-                main_connector = create_connection_line(height=20)
-
-                # Combine everything: company -> main -> horizontal bar -> roots
-                tree_with_company = ft.Column([
+                    root_columns, spacing=root_spacing, alignment=ft.MainAxisAlignment.CENTER)
+                tree_display = ft.Column([
                     company_card,
-                    main_connector,
+                    self.create_connection_line(height=20),
                     main_horizontal_bar,
                     roots_row
                 ], horizontal_alignment=ft.CrossAxisAlignment.CENTER, spacing=0)
         else:
-            # No root employees - show company card with interns/employees
-            tree_with_company = company_card
+            tree_display = company_card
 
-        # If we have employees without hierarchy, create "Intern" node
-        if no_hierarchy_employees:
-            # Filter out employees that are already in the tree
-            all_tree_emp_ids = set()
+        # Handle orphan employees
+        orphan_employees = tree_structure.get('orphans', [])
+        if orphan_employees:
+            orphan_cards = [self.create_emp_card(emp_data, 5, True, children_map, self._collapsed_nodes)
+                            for emp_data in orphan_employees[:10]]
 
-            def collect_emp_ids(emp_data):
-                emp = emp_data['employee'] if isinstance(
-                    emp_data, dict) else emp_data
-                all_tree_emp_ids.add(emp.id)
-                for child_data in children_map.get(emp.id, []):
-                    collect_emp_ids(child_data)
-
-            for root in root_employees:
-                collect_emp_ids(root)
-
-            # Get remaining employees not in tree
-            remaining_employees = [
-                e for e in no_hierarchy_employees
-                if e['employee'].id not in all_tree_emp_ids
-            ]
-
-            if remaining_employees:
-                # Create "Intern" node with remaining employees
-                intern_card = ft.Container(
-                    width=160,
-                    padding=8,
-                    bgcolor=SURFACE,
-                    border_radius=8,
-                    border=ft.border.all(2, LEVEL_COLORS[5]),
-                    shadow=ft.BoxShadow(
-                        spread_radius=1,
-                        blur_radius=4,
-                        color="rgba(0,0,0,0.2)"
+            # Distinct unassigned section with better hierarchy
+            unassigned_section = ft.Container(
+                padding=25,
+                bgcolor="#FFF3E0",
+                border_radius=16,
+                border=ft.border.all(3, "#FF9800"),
+                shadow=ft.BoxShadow(
+                    spread_radius=4, blur_radius=16, color="rgba(255,152,0,0.4)"),
+                content=ft.Column([
+                    ft.Container(
+                        padding=15,
+                        bgcolor="#FF9800",
+                        border_radius=12,
+                        content=ft.Row([
+                            ft.Icon(ft.Icons.WARNING_AMBER_ROUNDED,
+                                    size=32, color="WHITE"),
+                            ft.Container(width=12),
+                            ft.Column([
+                                ft.Text("Unassigned Employees", size=16,
+                                        weight=ft.FontWeight.BOLD, color="WHITE"),
+                                ft.Text(
+                                    f"{len(orphan_employees)} employees without hierarchy", size=12, color="WHITE70"),
+                            ])
+                        ], alignment=ft.MainAxisAlignment.START),
                     ),
-                    content=ft.Column([
-                        ft.Container(
-                            width=40, height=40,
-                            bgcolor=LEVEL_COLORS[5],
-                            border_radius=20,
-                            content=ft.Icon(
-                                ft.Icons.SCHOOL,
-                                size=20, color="WHITE"
-                            ),
-                            alignment=ft.alignment.Alignment(0, 0),
-                        ),
-                        ft.Text(
-                            "Interns",
-                            size=10, weight=ft.FontWeight.BOLD, text_align=ft.TextAlign.CENTER
-                        ),
-                        ft.Text(
-                            f"{len(remaining_employees)} Employees",
-                            size=8, color=TEXT_SECONDARY, text_align=ft.TextAlign.CENTER
-                        ),
-                    ], horizontal_alignment=ft.CrossAxisAlignment.CENTER, spacing=2),
-                )
+                    ft.Container(height=16),
+                    ft.Row(
+                        orphan_cards[:6],  # Show top 6
+                        spacing=16,
+                        alignment=ft.MainAxisAlignment.CENTER,
+                        wrap=True
+                    ),
+                    ft.Container(height=8),
+                    ft.Text(f"+{len(orphan_employees)-6} more..." if len(orphan_employees) > 6 else "",
+                            size=12, color=ORANGE, weight=ft.FontWeight.W_500),
+                ], horizontal_alignment=ft.CrossAxisAlignment.CENTER, spacing=0)
+            )
 
-                # Create cards for remaining employees
-                intern_children = []
-                for emp_data in remaining_employees[:8]:  # Max 8 shown
-                    intern_children.append(create_emp_card(emp_data, 5, False))
-
-                if intern_children:
-                    # Horizontal connector
-                    intern_connector = ft.Container(
-                        width=2,
-                        height=15,
-                        bgcolor=LEVEL_COLORS[5]
-                    )
-
-                    intern_row = ft.Row(
-                        intern_children,
-                        spacing=10,
-                        alignment=ft.MainAxisAlignment.CENTER
-                    )
-
-                    intern_node = ft.Column([
-                        intern_card,
-                        intern_connector,
-                        intern_row
-                    ], horizontal_alignment=ft.CrossAxisAlignment.CENTER, spacing=0)
-
-                    tree_nodes.append(intern_node)
-
-        # ==================== CREATE FINAL TREE DISPLAY ====================
-        # If only one root and has no children, show all employees in a grid with company card
-        if len(tree_nodes) == 1 and not children_map and not no_hierarchy_employees:
-            # Show all employees as a grid with company card at top
-            all_cards = []
-            for emp in employees:
-                all_cards.append(create_emp_card(
-                    {'employee': emp, 'hierarchy': hierarchy.get(emp.id)}, 4, True))
-
-            # Arrange in rows
-            card_rows = []
-            for i in range(0, len(all_cards), 4):
-                card_rows.append(
-                    ft.Row(all_cards[i:i+4], spacing=15, alignment=ft.MainAxisAlignment.CENTER))
-
-            # Grid with company card on top
-            grid_with_company = ft.Column([
-                company_card,
-                create_connection_line(height=20),
-                ft.Column(card_rows, spacing=20,
-                          horizontal_alignment=ft.CrossAxisAlignment.CENTER)
-            ], horizontal_alignment=ft.CrossAxisAlignment.CENTER, spacing=0)
-
-            tree_display = grid_with_company
-        else:
-            # Use tree with company card for other cases
             tree_display = ft.Column([
-                tree_with_company
-            ], horizontal_alignment=ft.CrossAxisAlignment.CENTER)
+                tree_display,
+                ft.Container(height=40),
+                unassigned_section
+            ], horizontal_alignment=ft.CrossAxisAlignment.CENTER, spacing=20)
 
-        # Add legend
+        # Legend
         legend = ft.Container(
             padding=12,
             bgcolor=SURFACE,
             border_radius=8,
             margin=ft.margin.only(bottom=10),
             content=ft.Row([
-                ft.Container(content=ft.Row([
-                    ft.Container(width=10, height=10,
-                                 bgcolor="#D32F2F", border_radius=2),
-                    ft.Text("CEO/Root", size=9),
-                ], spacing=3)),
-                ft.Container(content=ft.Row([
-                    ft.Container(width=10, height=10,
-                                 bgcolor="#FF9800", border_radius=2),
-                    ft.Text("Head", size=9),
-                ], spacing=3)),
-                ft.Container(content=ft.Row([
-                    ft.Container(width=10, height=10,
-                                 bgcolor="#2196F3", border_radius=2),
-                    ft.Text("Manager", size=9),
-                ], spacing=3)),
-                ft.Container(content=ft.Row([
-                    ft.Container(width=10, height=10,
-                                 bgcolor="#9C27B0", border_radius=2),
-                    ft.Text("Team Lead", size=9),
-                ], spacing=3)),
-                ft.Container(content=ft.Row([
-                    ft.Container(width=10, height=10,
-                                 bgcolor="#4CAF50", border_radius=2),
-                    ft.Text("Employee", size=9),
-                ], spacing=3)),
-                ft.Container(content=ft.Row([
-                    ft.Container(width=10, height=10,
-                                 bgcolor="#607D8B", border_radius=2),
-                    ft.Text("Intern", size=9),
-                ], spacing=3)),
+                *[ft.Container(content=ft.Row([ft.Container(width=10, height=10, bgcolor=c, border_radius=2),
+                                              ft.Text(label, size=9)], spacing=3)) for c, label in [
+                    ("#D32F2F", "CEO"), ("#FF9800",
+                                         "Head"), ("#2196F3", "Manager"),
+                    ("#9C27B0", "Team Lead"), ("#4CAF50", "Employee"), ("#607D8B", "Intern")]]
             ], spacing=20)
         )
 
-        # Employee count info
+        # Stats
+        orphan_count = len(orphan_employees)
+        hierarchy_count = len(
+            [emp for emp in employees if hierarchy.get(emp.id)])
         info_text = ft.Container(
             padding=10,
-            content=ft.Text(
-                f"Total Employees: {len(employees)} | With Hierarchy: {len([e for e in employees if hierarchy.get(e.id) and hierarchy.get(e.id).reports_to_id])} | Without Hierarchy: {len(no_hierarchy_employees)}",
-                size=11, color=TEXT_SECONDARY
-            )
+            content=ft.Text(f"Total: {len(employees)} | Hierarchy: {hierarchy_count} | Unassigned: {orphan_count} | Roots: {len(root_employees)}",
+                            size=11, color=TEXT_SECONDARY)
         )
 
-        # Wrap in scrollable container
         return ft.Column([
             legend,
             info_text,
-            ft.Container(
-                content=ft.ListView([
-                    tree_display
-                ], spacing=20, padding=20, expand=True),
-                expand=True
-            ),
+            ft.Container(content=ft.ListView(
+                [tree_display], spacing=20, padding=20, expand=True), expand=True)
         ], expand=True)
 
+    def _build_tree_node_recursive(self, node_data, level=0, visited=None, parent_color=None):
+        if visited is None:
+            visited = set()
+
+        if isinstance(node_data, dict) and 'employee' in node_data:
+            emp = node_data['employee']
+            h = node_data.get('hierarchy')
+            children = node_data.get('children', [])
+        else:
+            emp = node_data
+            h = None
+            children = []
+
+        emp_id = emp.id
+
+        if emp_id in visited:
+            return self.create_emp_card({'employee': emp, 'hierarchy': h}, 5, True)
+        visited.add(emp_id)
+
+        emp_level = h.hierarchy_level if h else 5
+        color = LEVEL_COLORS.get(emp_level, "#4CAF50") or parent_color
+
+        emp_card_widget = self.create_emp_card({'employee': emp, 'hierarchy': h}, emp_level,
+                                               children_map={}, collapsed_nodes=self._collapsed_nodes)
+
+        if not children:
+            return emp_card_widget
+
+        is_collapsed = emp_id in self._collapsed_nodes
+
+        if is_collapsed:
+            return ft.Column([
+                emp_card_widget,
+                ft.Container(content=ft.Text(f"+{len(children)} subordinates", size=9, color=TEXT_SECONDARY,
+                                             weight=ft.FontWeight.W_500), padding=ft.padding.symmetric(vertical=4))
+            ], horizontal_alignment=ft.CrossAxisAlignment.CENTER, spacing=0)
+
+        child_widgets = [self._build_tree_node_recursive(
+            child_data, level + 1, visited, color) for child_data in children[:12]]
+
+        if not child_widgets:
+            return emp_card_widget
+
+        connector = ft.Container(width=2, height=20, bgcolor=color)
+
+        if len(child_widgets) == 1:
+            child_container = ft.Column(
+                [connector, child_widgets[0]], horizontal_alignment=ft.CrossAxisAlignment.CENTER, spacing=0)
+        else:
+            total_width = len(child_widgets) * 170
+            horizontal_bar = ft.Container(
+                width=total_width, height=2, bgcolor=color)
+            child_columns = [ft.Column([ft.Container(width=2, height=15, bgcolor=color), child],
+                                       horizontal_alignment=ft.CrossAxisAlignment.CENTER, spacing=0)
+                             for child in child_widgets]
+            children_row = ft.Row(child_columns, spacing=10,
+                                  alignment=ft.MainAxisAlignment.CENTER)
+            child_container = ft.Column([connector, horizontal_bar, children_row],
+                                        horizontal_alignment=ft.CrossAxisAlignment.CENTER, spacing=0)
+
+        return ft.Column([emp_card_widget, child_container], horizontal_alignment=ft.CrossAxisAlignment.CENTER, spacing=0)
+
     def _show_edit_hierarchy(self, e):
-        """Show edit hierarchy dialog"""
+        """Show edit hierarchy dialog - FIX FOR AttributeError"""
         self._show_hierarchy_dialog()
 
     def _show_hierarchy_dialog(self):
@@ -1284,10 +1015,8 @@ class OrganizationTreeScreen(ft.Container):
         employees = self._get_all_employees()
         hierarchy = self._get_org_hierarchy()
 
-        emp_options = []
-        for emp in employees:
-            name = f"{emp.first_name or ''} {emp.last_name or ''} ({emp.employee_code or 'N/A'})"
-            emp_options.append(ft.dropdown.Option(str(emp.id), name))
+        emp_options = [ft.dropdown.Option(str(emp.id), f"{emp.first_name or ''} {emp.last_name or ''} ({emp.employee_code or 'N/A'})")
+                       for emp in employees]
 
         if not emp_options:
             self._show_error("No employees available")
@@ -1302,25 +1031,13 @@ class OrganizationTreeScreen(ft.Container):
         ]
 
         emp_dropdown = ft.Dropdown(
-            label="Select Employee",
-            options=emp_options,
-            width=300
-        )
-
+            label="Select Employee", options=emp_options, width=300)
         manager_options = [ft.dropdown.Option(
             "", "-- No Manager (Root) --")] + emp_options
         manager_dropdown = ft.Dropdown(
-            label="Reports To (Manager)",
-            options=manager_options,
-            width=300
-        )
-
+            label="Reports To", options=manager_options, width=300)
         level_dropdown = ft.Dropdown(
-            label="Hierarchy Level",
-            options=level_options,
-            width=200,
-            value="5"
-        )
+            label="Hierarchy Level", options=level_options, width=200, value="5")
 
         def save_hierarchy(e):
             if not emp_dropdown.value:
@@ -1330,78 +1047,27 @@ class OrganizationTreeScreen(ft.Container):
             emp_id = int(emp_dropdown.value)
             manager_id = int(
                 manager_dropdown.value) if manager_dropdown.value else None
-            level = int(level_dropdown.value) if level_dropdown.value else 5
+            level = int(level_dropdown.value) or 5
 
             db = get_db_session()
             try:
                 existing = db.query(OrgHierarchy).filter(
-                    OrgHierarchy.employee_id == emp_id
-                ).first()
-
+                    OrgHierarchy.employee_id == emp_id).first()
                 if existing:
                     existing.reports_to_id = manager_id
                     existing.hierarchy_level = level
                 else:
                     new_hierarchy = OrgHierarchy(
-                        employee_id=emp_id,
-                        reports_to_id=manager_id,
-                        hierarchy_level=level
-                    )
+                        employee_id=emp_id, reports_to_id=manager_id, hierarchy_level=level)
                     db.add(new_hierarchy)
-
                 db.commit()
-                self._show_success("Hierarchy updated successfully!")
+                self._show_success("Hierarchy updated!")
                 self._close_dialog()
                 self._refresh()
             except Exception as ex:
                 self._show_error(f"Error: {str(ex)}")
             finally:
                 db.close()
-
-        hierarchy_list = ft.Column([
-            ft.Text("Current Hierarchy Assignments",
-                    size=14, weight=ft.FontWeight.BOLD),
-            ft.Divider()
-        ])
-
-        for emp_id, h in hierarchy.items():
-            emp = next((e for e in employees if e.id == emp_id), None)
-            if emp:
-                manager = next(
-                    (e for e in employees if e.id == h.reports_to_id), None)
-                manager_name = f"{manager.first_name} {manager.last_name}" if manager else "None (Root)"
-
-                level_names = {1: "CEO", 2: "Head",
-                               3: "Manager", 4: "Team Lead", 5: "Employee"}
-
-                hierarchy_list.controls.append(
-                    ft.Container(
-                        padding=10,
-                        bgcolor="#F5F5F5",
-                        border_radius=8,
-                        margin=ft.margin.only(bottom=5),
-                        content=ft.Row([
-                            ft.Text(f"{emp.first_name} {emp.last_name}",
-                                    weight=ft.FontWeight.BOLD, expand=True),
-                            ft.Text(f"→ {manager_name}", size=12,
-                                    color=TEXT_SECONDARY),
-                            ft.Container(
-                                content=ft.Text(level_names.get(
-                                    h.hierarchy_level, "Employee"), size=10),
-                                bgcolor=PRIMARY,
-                                padding=5,
-                                border_radius=4,
-                            ),
-                            ft.IconButton(
-                                icon=ft.Icons.DELETE,
-                                icon_color=ERROR,
-                                on_click=lambda e, eid=emp_id: self._delete_hierarchy(
-                                    eid),
-                                scale=0.7
-                            ),
-                        ])
-                    )
-                )
 
         dialog = ft.AlertDialog(
             modal=True,
@@ -1411,31 +1077,14 @@ class OrganizationTreeScreen(ft.Container):
                 content=ft.Column([
                     ft.Text("Add/Update Employee Hierarchy",
                             size=14, weight=ft.FontWeight.BOLD),
-                    emp_dropdown,
-                    manager_dropdown,
-                    level_dropdown,
+                    emp_dropdown, manager_dropdown, level_dropdown,
                     ft.ElevatedButton("Save", on_click=save_hierarchy, style=ft.ButtonStyle(
                         bgcolor=SUCCESS, color="WHITE")),
-                    ft.Divider(),
-                    ft.Container(height=10),
-                    ft.Container(
-                        content=ft.ListView(
-                            [hierarchy_list],
-                            spacing=5,
-                            padding=10,
-                            auto_scroll=True,
-                        ),
-                        height=280,
-                        width=450,
-                    ),
                 ], scroll=ft.ScrollMode.AUTO),
-                width=500,
-                height=550,
+                width=500, height=300
             ),
-            actions=[
-                ft.TextButton(
-                    "Close", on_click=lambda e: self._close_dialog()),
-            ]
+            actions=[ft.TextButton(
+                "Close", on_click=lambda e: self._close_dialog())]
         )
 
         self._page.overlay.append(dialog)
@@ -1457,13 +1106,13 @@ class OrganizationTreeScreen(ft.Container):
             db.close()
 
     def _close_dialog(self):
-        for overlay in self._page.overlay:
+        for overlay in self._page.overlay[:]:
             if isinstance(overlay, ft.AlertDialog) and overlay.open:
                 overlay.open = False
         self._page.update()
 
     def _refresh(self):
-        """Refresh the org tree to reflect database changes"""
+        """Refresh the org tree"""
         self._last_refresh = time.time()
         self.content = self._build_content()
         self._page.update()
@@ -1480,6 +1129,9 @@ class OrganizationTreeScreen(ft.Container):
         self._page.overlay.append(snack)
         snack.open = True
         self._page.update()
+
+    def on_back(self, e):
+        _safe_navigate_to_home(self._page, self.user)
 
 
 def show_org_tree(page, user):
