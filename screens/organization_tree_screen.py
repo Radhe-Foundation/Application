@@ -91,7 +91,7 @@ class OrganizationTreeScreen(ft.Container):
         from config import SUPABASE_URL, SUPABASE_STORAGE_BUCKET
 
         if SUPABASE_URL and SUPABASE_STORAGE_BUCKET:
-            logo_src = f"{SUPABASE_URL}/storage/v1/object/public/{SUPABASE_STORAGE_BUCKET}/logo/Vernikalogo.png"
+            logo_src = f"{SUPABASE_URL}/storage/v1/object/public/{SUPABASE_STORAGE_BUCKET}/logo/Radhefoundation.jpeg"
         else:
             logo_src = "/assets/logo/Vernikalogo.png"
 
